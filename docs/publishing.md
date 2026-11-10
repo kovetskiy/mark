@@ -214,6 +214,17 @@ where it is, `archive` or `delete` for one that was archived or trashed. A page
 pages or folders, or because nothing was published in its space this run -- is
 `report`, with a `reason` saying why.
 
+`untracked` lists the spaces published to without a page manifest under
+[`--manifest-page-optional`](page-tree.md#when-the-manifest-page-does-not-exist-yet),
+because the manifest page does not exist there, each with the page it was
+given as:
+
+```json
+"untracked": [
+  {"space": "DOCS", "manifestPage": "Team Handbook"}
+]
+```
+
 `errors` lists what failed that was not one document's doing: `ac:` links that
 still resolve to no page once everything is published, a page manifest that
 could not be saved, a failed ordering pass, an orphan that could not be
@@ -242,6 +253,7 @@ so that a failure appears against the file that caused it in a pull request:
 ::warning file=docs/notes.md::edited in Confluence since mark published it (version 7, mark wrote 5)
 ::error file=docs/broken.md::unable to compile markdown: ...
 ::warning file=docs/old.md::page "Old" was deleted: its source file is gone
+::warning::space "DOCS" was published untracked: its manifest page "Team Handbook" does not exist
 ::error::unable to save page manifest: ...
 ```
 

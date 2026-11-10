@@ -332,6 +332,10 @@ type Store struct {
 	// it. Empty means the default backend; see SetManifestPage.
 	manifestPage string
 
+	// manifestPageOptional lets a space whose manifest page does not exist run
+	// untracked instead of failing; see SetManifestPageOptional.
+	manifestPageOptional bool
+
 	// prefix is what every property of this manifest is named under; see
 	// SetPropertyKeyPrefix.
 	prefix string
@@ -356,6 +360,14 @@ type spaceState struct {
 	backend   backend
 	spaceID   string
 	contentID string
+
+	// untracked marks a space whose manifest page was missing when it was
+	// loaded, under SetManifestPageOptional. It starts from an empty manifest,
+	// which is what it has: no manifest exists where it was asked to be kept.
+	untracked bool
+	// lateChecked records that Save has looked for the manifest page once
+	// more and not found it, so a second Save does not ask again.
+	lateChecked bool
 
 	// prefix is what this space's properties were read under, and so what
 	// they are written back under.
@@ -469,6 +481,64 @@ func (s *Store) SetManifestPage(page string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.manifestPage = strings.TrimSpace(page)
+}
+
+// SetManifestPageOptional lets a space whose manifest page, set with
+// SetManifestPage, does not exist run untracked rather than fail: nothing is
+// found through an earlier mapping there, since none exists, and none is
+// written unless the page exists by the time Save is called -- a run may
+// publish it itself, after the documents that belong under it. Untracked and
+// UntrackedSpaces say which spaces ran so. Without it, a missing manifest page
+// is a *MissingPageError from the first call that needs the space.
+//
+// Only a page that is not there is excused. Any other failure to look it up is
+// still an error.
+func (s *Store) SetManifestPageOptional(optional bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.manifestPageOptional = optional
+}
+
+// MissingPageError is the error a Store returns when the page SetManifestPage
+// names is not a page in a space it is asked about.
+type MissingPageError struct {
+	// Page is the title or id the manifest page was given as.
+	Page string
+	// Space is the key of the space it was looked for in.
+	Space string
+}
+
+func (e *MissingPageError) Error() string {
+	return fmt.Sprintf("--manifest-page names %q, which is not a page in space %q", e.Page, e.Space)
+}
+
+// Untracked reports whether spaceKey, as loaded so far, is running untracked
+// because its manifest page is missing; see SetManifestPageOptional. A space
+// not loaded yet is not.
+func (s *Store) Untracked(spaceKey string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	state, ok := s.spaces[spaceKey]
+	return ok && state.untracked
+}
+
+// UntrackedSpaces returns, sorted, the spaces running untracked because their
+// manifest page is missing. Called after Save, it is the spaces whose mapping
+// was not saved, a space whose page the run published itself being tracked
+// from then on.
+func (s *Store) UntrackedSpaces() []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	var spaces []string
+	for _, key := range s.sortedSpaces() {
+		if s.spaces[key].untracked {
+			spaces = append(spaces, key)
+		}
+	}
+
+	return spaces
 }
 
 // SetRunFiles tells the store every path this run intends to publish.
@@ -587,10 +657,7 @@ func (s *Store) resolveManifestPage(ctx context.Context, spaceKey string) (strin
 		return "", fmt.Errorf("unable to find the manifest page %q in space %q: %w", s.manifestPage, spaceKey, err)
 	}
 	if found == nil {
-		return "", fmt.Errorf(
-			"--manifest-page names %q, which is not a page in space %q",
-			s.manifestPage, spaceKey,
-		)
+		return "", &MissingPageError{Page: s.manifestPage, Space: spaceKey}
 	}
 
 	return found.ID, nil
@@ -609,7 +676,7 @@ func (s *Store) resolveManifestPage(ctx context.Context, spaceKey string) (strin
 // so the run says so instead.
 func (s *Store) refuseSharedPage(spaceKey, contentID string) error {
 	for _, other := range s.sortedSpaces() {
-		if other == spaceKey || s.spaces[other].contentID != contentID {
+		if other == spaceKey || s.spaces[other].untracked || s.spaces[other].contentID != contentID {
 			continue
 		}
 		return fmt.Errorf(
@@ -622,6 +689,52 @@ func (s *Store) refuseSharedPage(spaceKey, contentID string) error {
 	}
 
 	return nil
+}
+
+// pageBackend is the backend that keeps a manifest on a page.
+func pageBackend(cloud bool) backend {
+	if cloud {
+		return pageProperties
+	}
+	return contentProperties
+}
+
+// attachLatePage looks once more, at Save, for the manifest page of a space
+// that ran untracked, and keeps the manifest there when the run has published
+// it. What the run recorded is what a tracked run would have recorded: it
+// started from an empty manifest, and there was none. It reports whether the
+// space now has somewhere to save to.
+func (s *Store) attachLatePage(ctx context.Context, spaceKey string, state *spaceState) (bool, error) {
+	if state.lateChecked {
+		return false, nil
+	}
+
+	contentID, err := s.resolveManifestPage(ctx, spaceKey)
+	var missing *MissingPageError
+	if errors.As(err, &missing) {
+		state.lateChecked = true
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+
+	if err := s.refuseSharedPage(spaceKey, contentID); err != nil {
+		return false, err
+	}
+
+	cloud, err := s.api.Cloud(ctx)
+	if err != nil {
+		return false, fmt.Errorf("unable to tell where the manifest of space %q is kept: %w", spaceKey, err)
+	}
+
+	state.contentID = contentID
+	state.backend = pageBackend(cloud)
+	state.untracked = false
+
+	log.Info().Msgf("manifest page %q now exists in space %q; the page mapping is saved there", s.manifestPage, spaceKey)
+
+	return true, nil
 }
 
 func isNumeric(s string) bool {
@@ -729,13 +842,21 @@ func (s *Store) load(ctx context.Context, spaceKey string) (*spaceState, error) 
 	switch {
 	case s.manifestPage != "":
 		state.contentID, err = s.resolveManifestPage(ctx, spaceKey)
+		var missing *MissingPageError
+		if s.manifestPageOptional && errors.As(err, &missing) {
+			log.Warn().Msgf(
+				"manifest page %q is not a page in space %q: publishing there untracked; "+
+					"the page mapping is saved only if this run publishes that page",
+				s.manifestPage, spaceKey,
+			)
+			state.untracked = true
+			s.spaces[spaceKey] = state
+			return state, nil
+		}
 		if err != nil {
 			return nil, err
 		}
-		state.backend = contentProperties
-		if cloud {
-			state.backend = pageProperties
-		}
+		state.backend = pageBackend(cloud)
 
 		if err := s.refuseSharedPage(spaceKey, state.contentID); err != nil {
 			return nil, err
@@ -1313,7 +1434,8 @@ func (s *Store) Orphans(spaceKey string) []string {
 // forgets the same stale entries Orphans does.
 func (s *Store) orphans(spaceKey string) []string {
 	state, ok := s.spaces[spaceKey]
-	if !ok {
+	// An untracked space has no earlier mapping for a page to be missing from.
+	if !ok || state.untracked {
 		return nil
 	}
 
@@ -1383,6 +1505,16 @@ func (s *Store) Save(ctx context.Context) error {
 
 	for _, spaceKey := range s.sortedSpaces() {
 		state := s.spaces[spaceKey]
+
+		if state.untracked {
+			attached, err := s.attachLatePage(ctx, spaceKey, state)
+			if err != nil {
+				return err
+			}
+			if !attached {
+				continue
+			}
+		}
 
 		if state.foldersDirty {
 			value, err := json.Marshal(folderDocument{

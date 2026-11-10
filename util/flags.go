@@ -375,6 +375,12 @@ func publishFlags(config *configFile) []cli.Flag {
 			Usage:   "keep the --track-pages mapping as content properties of this page, given by title or id, instead of as space properties. Needs only the right to edit that page where a space property needs space administration, and works with a scoped API token. Requires --track-pages.",
 			Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_MANIFEST_PAGE"), config.value("manifest-page")),
 		},
+		&cli.BoolFlag{
+			Name:    "manifest-page-optional",
+			Value:   false,
+			Usage:   "publish to a space where the --manifest-page page does not exist untracked, with a warning, instead of failing. The mapping is saved if the run publishes that page itself. Requires --manifest-page.",
+			Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_MANIFEST_PAGE_OPTIONAL"), config.value("manifest-page-optional")),
+		},
 		&cli.StringFlag{
 			Name:    "manifest-prefix",
 			Value:   "mark.manifest",

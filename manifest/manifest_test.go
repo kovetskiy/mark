@@ -999,6 +999,96 @@ func TestManifestPageMustExist(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "--manifest-page")
 	assert.Contains(t, err.Error(), "Nowhere")
+
+	var missing *manifest.MissingPageError
+	require.ErrorAs(t, err, &missing, "a caller can tell a missing page from a failed lookup")
+	assert.Equal(t, manifest.MissingPageError{Page: "Nowhere", Space: "DOCS"}, *missing)
+}
+
+// TestManifestPageOptionalMissing: under SetManifestPageOptional a missing
+// manifest page leaves the space untracked instead of failing. It starts from
+// an empty manifest, reports no orphans, and Save writes nothing anywhere --
+// and asks for the page once more, not once per Save.
+func TestManifestPageOptionalMissing(t *testing.T) {
+	ctx := t.Context()
+	store, server := newStore(t)
+	homeID := docsWithHomepage(t, server)
+	store.SetManifestPage("Nowhere")
+	store.SetManifestPageOptional(true)
+
+	assert.False(t, store.Untracked("DOCS"), "not loaded yet")
+	_, ok, err := store.Lookup(ctx, "DOCS", "a.md")
+	require.NoError(t, err)
+	assert.False(t, ok)
+	assert.True(t, store.Untracked("DOCS"))
+
+	require.NoError(t, store.Record(ctx, "DOCS", "a.md", "1", "A", ""))
+	assert.Empty(t, store.Orphans("DOCS"))
+	assert.Empty(t, store.OrphanEntries("DOCS"))
+
+	server.ResetRequests()
+	require.NoError(t, store.Save(ctx))
+	require.NoError(t, store.Save(ctx))
+	assert.Equal(t, 0, server.CountRequests("POST", ""), "nothing is written")
+	assert.Equal(t, 0, server.CountRequests("PUT", ""), "nothing is written")
+	assert.Nil(t, shardOf(server, spaceID(t, server, "DOCS"), "a.md"), "not on the space")
+	assert.Nil(t, shardOf(server, homeID, "a.md"), "nor on the homepage")
+
+	assert.Equal(t, []string{"DOCS"}, store.UntrackedSpaces())
+}
+
+// TestManifestPageOptionalPublishedLate: a run may publish the manifest page
+// itself after the documents under it. The space ran untracked, from an empty
+// manifest, which is what a tracked run would have started from, so what it
+// recorded is saved on the page once it exists.
+func TestManifestPageOptionalPublishedLate(t *testing.T) {
+	ctx := t.Context()
+	server := confluencetest.New(t)
+	api := confluence.NewAPI(server.URL, confluence.Options{Username: "user", Password: "token"})
+	store := manifest.NewStore(api)
+	store.SetRunFiles("*.md", nil)
+	docsWithHomepage(t, server)
+	store.SetManifestPage("Team Handbook")
+	store.SetManifestPageOptional(true)
+
+	require.NoError(t, store.Record(ctx, "DOCS", "a.md", "1", "A", ""))
+	require.True(t, store.Untracked("DOCS"))
+
+	// Published by the run, through the API the store reads with.
+	handbook, err := api.CreatePage(ctx, "DOCS", confluence.ContentPage, nil, "Team Handbook", "")
+	require.NoError(t, err)
+	require.NoError(t, store.Save(ctx))
+
+	assert.NotNil(t, shardOf(server, handbook.ID, "a.md"), "saved on the page the run published")
+	assert.False(t, store.Untracked("DOCS"))
+	assert.Empty(t, store.UntrackedSpaces())
+
+	next := newStoreOn(t, server)
+	next.SetManifestPage("Team Handbook")
+	entry, ok, err := next.Lookup(ctx, "DOCS", "a.md")
+	require.NoError(t, err)
+	require.True(t, ok, "the next run is tracked")
+	assert.Equal(t, "1", entry.PageID)
+}
+
+// TestManifestPageOptionalOnlyExcusesAMissingPage: a lookup that fails is
+// still an error; only a page that is not there runs untracked.
+func TestManifestPageOptionalOnlyExcusesAMissingPage(t *testing.T) {
+	ctx := t.Context()
+	store, server := newStore(t)
+	docsWithHomepage(t, server)
+	store.SetManifestPage("Team Handbook")
+	store.SetManifestPageOptional(true)
+	server.SetFail(func(r *http.Request) (int, string, bool) {
+		if r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/rest/api/content/") {
+			return http.StatusForbidden, `{"message":"not permitted"}`, true
+		}
+		return 0, "", false
+	})
+
+	_, _, err := store.Lookup(ctx, "DOCS", "a.md")
+	require.Error(t, err)
+	assert.False(t, store.Untracked("DOCS"))
 }
 
 // TestManifestPageOnServer: the same choice on Server and Data Center moves the
