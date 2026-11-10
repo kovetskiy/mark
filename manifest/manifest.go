@@ -1176,7 +1176,7 @@ func (s *Store) Record(ctx context.Context, spaceKey, path, pageID, title, hash 
 			if s.partial && s.absent(state, owner) && ownerEntry.Glob != "" &&
 				!s.covers(owner, ownerEntry) {
 				hint = fmt.Sprintf(
-					"; if %s moved to %s, name both paths in --files to follow the move",
+					"; if %s moved to %s, name both paths in --files or --files-from to follow the move",
 					owner, path,
 				)
 			}

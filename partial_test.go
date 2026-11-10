@@ -251,7 +251,7 @@ func TestPartialRunNamesTheMissingPathOfAMove(t *testing.T) {
 		require.NoError(t, Run(context.Background(), partialOf(full, dir, "moved.md")))
 	})
 	assert.Contains(t, logged, "both publish to page")
-	assert.Contains(t, logged, "name both paths in --files to follow the move")
+	assert.Contains(t, logged, "name both paths in --files or --files-from to follow the move")
 }
 
 // TestPartialRunFollowsARename: a file renamed along with its title is found
@@ -341,5 +341,17 @@ func TestPathsAreNotPatterns(t *testing.T) {
 	require.NoError(t, Run(context.Background(), config))
 
 	assert.Equal(t, 1, countPagesTitled(t, server, "Literal"))
+	assert.Zero(t, countPagesTitled(t, server, "Page a"))
+}
+
+func TestPathsWithParentsFromPathNeedARoot(t *testing.T) {
+	server, _ := docsSpace(t)
+	dir := t.TempDir()
+	config := trackingConfig(server, "")
+	config.Paths = []string{writeFile(t, dir, "a.md", markdownWithTitle("Page a"))}
+	config.ParentsFromPath = true
+
+	err := Run(context.Background(), config)
+	require.ErrorContains(t, err, "needs --parents-from-path-root")
 	assert.Zero(t, countPagesTitled(t, server, "Page a"))
 }
