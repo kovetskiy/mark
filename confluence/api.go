@@ -2017,7 +2017,7 @@ func (api *API) GetCurrentUser(ctx context.Context) (*User, error) {
 func IsCloudHost(host string) bool {
 	host = strings.ToLower(strings.TrimSuffix(host, "."))
 
-	if host == "api.atlassian.com" {
+	if host == gatewayHost {
 		return true
 	}
 

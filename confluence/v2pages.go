@@ -44,7 +44,7 @@ func isGatewayURL(baseURL string) bool {
 		return false
 	}
 
-	return strings.EqualFold(parsed.Hostname(), "api.atlassian.com") ||
+	return strings.EqualFold(parsed.Hostname(), gatewayHost) ||
 		strings.HasPrefix(parsed.Path, "/ex/confluence/")
 }
 

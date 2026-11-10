@@ -91,15 +91,9 @@ func (api *API) AttachmentURL(pageID string, info AttachmentInfo) (string, error
 // and port SameInstance compares. A URL that is not one it compares, such as
 // one carrying a user name, is no server of the configured one.
 func sameServer(a, b *url.URL) bool {
-	x, err := originOf(a)
-	if err != nil {
-		return false
-	}
-	y, err := originOf(b)
-	if err != nil {
-		return false
-	}
-	return x == y
+	x, errA := originOf(a)
+	y, errB := originOf(b)
+	return errA == nil && errB == nil && x == y
 }
 
 // DownloadAttachment writes the content of an attachment of page pageID to w.
