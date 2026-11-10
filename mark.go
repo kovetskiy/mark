@@ -51,7 +51,9 @@ type Config struct {
 	ParentsFromPathRoot string
 
 	// ContinueOnError goes on to the next file after one fails, and fails the
-	// run at the end with a *FilesFailedError holding a *FileError for each.
+	// run at the end with a *FilesFailedError holding a *FileError for each,
+	// unless the run as a whole fails after its files -- an orphan that could
+	// not be handled, or a link left unresolved -- which is then the error.
 	// Without it, Run stops at the first file that fails, with a *FileError.
 	// A cancelled run's error is the cancellation to errors.Is, and any files
 	// that failed before it are only in the report.
@@ -931,7 +933,7 @@ func newPublisher(
 // Returns nil for the page info when compile-only or dry-run mode is active,
 // and a *FileError when the file fails to publish or its links do not resolve.
 // A caller looping over files gets what Run does on cancellation by stopping
-// when one fails with ctx.Err().
+// when errors.Is(err, ctx.Err()).
 func (p *Publisher) Publish(ctx context.Context, file string) (*confluence.PageInfo, error) {
 	if p == nil || p.run == nil {
 		return nil, errNoPublisher
