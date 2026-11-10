@@ -203,8 +203,8 @@ func expand(opener Opener, base, name string) (matches []string, matched bool, e
 	}
 
 	var found []string
-	if root, ok := opener.(Root); ok && root.fsys != nil {
-		found, err = root.globIn(base, name)
+	if root, ok := opener.(rooted); ok {
+		found, err = root.glob(base, name)
 	} else {
 		found, err = glob(base, name)
 	}
@@ -320,14 +320,13 @@ func checkAttachmentPath(base, name string) error {
 // checkPath holds a resolved path to the project boundary. named is what the
 // document actually wrote, which is what the reader has to go and look at.
 func checkPath(base, resolved, named string) error {
-	path := fspath.ResolveDeepest(resolved)
-
-	roots := []string{fspath.ResolveDeepest(base)}
+	roots := []string{base}
 	if cwd, err := os.Getwd(); err == nil {
-		roots = append(roots, fspath.ResolveDeepest(cwd))
+		roots = append(roots, cwd)
 	}
 
-	if withinAny(path, roots) {
+	path, ok := within(roots, resolved)
+	if ok {
 		return nil
 	}
 
@@ -339,6 +338,19 @@ func checkPath(base, resolved, named string) error {
 			"running in; publish from a directory that contains it",
 		ErrOutsideProject, named, path, base,
 	)
+}
+
+// within reports whether resolved is inside any of roots, both resolved
+// through their symlinks, and returns resolved as it compared it.
+func within(roots []string, resolved string) (string, bool) {
+	path := fspath.ResolveDeepest(resolved)
+
+	resolvedRoots := make([]string, 0, len(roots))
+	for _, root := range roots {
+		resolvedRoots = append(resolvedRoots, fspath.ResolveDeepest(root))
+	}
+
+	return path, withinAny(path, resolvedRoots)
 }
 
 // withinAny reports whether a path is inside any of the roots. It compares the
@@ -358,7 +370,12 @@ func withinAny(path string, roots []string) bool {
 func prepareAttachment(opener Opener, base, name string) (Attachment, error) {
 	attachmentPath := filepath.Join(base, name)
 
-	if err := checkOpenerPath(opener, base, name); err != nil {
+	check := checkAttachmentPath
+	if root, ok := opener.(rooted); ok {
+		check = root.checkAttachment
+	}
+
+	if err := check(base, name); err != nil {
 		return Attachment{}, err
 	}
 
