@@ -39,9 +39,7 @@ func QuoteCQL(value string) string {
 		case r == '\\' || r == '"':
 			b.WriteByte('\\')
 			b.WriteRune(r)
-		case r == '\t' || r == '\n' || r == '\r':
-			b.WriteRune(r)
-		case r < 0x20 || (r == utf8.RuneError && size == 1):
+		case (r < 0x20 && r != '\t' && r != '\n' && r != '\r') || (r == utf8.RuneError && size == 1):
 			b.WriteRune(utf8.RuneError)
 		default:
 			b.WriteRune(r)

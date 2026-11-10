@@ -963,7 +963,7 @@ func (s *Server) handleV1(w http.ResponseWriter, r *http.Request, path string) {
 	case path == "/search/user" || path == "/search":
 		// The same endpoint serves user lookup and the CQL folder search; the
 		// query says which.
-		if strings.HasPrefix(r.URL.Query().Get("cql"), "type=folder ") {
+		if cqlValue(r.URL.Query().Get("cql"), "type", "=") == "folder" {
 			s.searchFolder(w, r)
 			return
 		}
