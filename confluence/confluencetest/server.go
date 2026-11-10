@@ -2604,15 +2604,32 @@ func cqlValue(cql, field, op string) string {
 		return ""
 	}
 	if quoted, ok := strings.CutPrefix(rest, `"`); ok {
-		if end := strings.Index(quoted, `"`); end >= 0 {
-			return strings.ReplaceAll(quoted[:end], `\"`, `"`)
-		}
-		return ""
+		return unquoteCQL(quoted)
 	}
 	if end := strings.IndexAny(rest, " )"); end >= 0 {
 		return rest[:end]
 	}
 	return rest
+}
+
+// unquoteCQL reads a CQL string literal up to its closing quote, the opening
+// one already cut off: a backslash takes the character after it as written.
+// An unterminated literal is "".
+func unquoteCQL(quoted string) string {
+	var b strings.Builder
+	for i := 0; i < len(quoted); i++ {
+		switch quoted[i] {
+		case '"':
+			return b.String()
+		case '\\':
+			i++
+			if i == len(quoted) {
+				return ""
+			}
+		}
+		b.WriteByte(quoted[i])
+	}
+	return ""
 }
 
 func (s *Server) searchFolder(w http.ResponseWriter, r *http.Request) {
