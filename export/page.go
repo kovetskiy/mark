@@ -37,7 +37,8 @@ type Config struct {
 	// AttachmentsDir is where the attachments the page shows or links to are
 	// written. Empty is the directory Output is in. With the Markdown going
 	// to Stdout there is no such directory, so Page refuses an empty one with
-	// ErrNoAttachmentsDir unless NoAttachments is set.
+	// ErrNoAttachmentsDir when the page has attachments to write, unless
+	// NoAttachments is set.
 	AttachmentsDir string
 
 	// Overwrite replaces files that are already there. Without it, finding
@@ -135,12 +136,13 @@ type Result struct {
 // expansions are what an exported page is read with.
 const expansions = "body.storage,ancestors,version,space"
 
-// ErrNoAttachmentsDir refuses an export to Stdout that would write the
-// page's attachments without being told where: there is no Output for them to
-// go beside, and the process's working directory is seldom what a library
-// caller means. Set Config.AttachmentsDir, "." included, or NoAttachments.
-var ErrNoAttachmentsDir = errors.New("the document goes to standard output, so name the directory " +
-	"its attachments are written to, or export without them")
+// ErrNoAttachmentsDir refuses an export to Stdout of a page with attachments
+// to write and no AttachmentsDir to write them to: there is no Output for them
+// to go beside, and the process's working directory is seldom what a library
+// caller means. Nothing is written when it is refused. Set
+// Config.AttachmentsDir, "." for the working directory, or NoAttachments.
+var ErrNoAttachmentsDir = errors.New("the document goes to Stdout and the page has attachments to write: " +
+	`set AttachmentsDir to where they go ("." for the working directory), or NoAttachments`)
 
 // Page exports a Confluence page to a Markdown file that mark can publish
 // back: its body converted to Markdown, below the metadata headers that name
@@ -194,10 +196,6 @@ func preparePage(ctx context.Context, api *confluence.API, cfg Config) (*pageExp
 		return nil, err
 	}
 	okf := format == FormatOKF
-
-	if (cfg.Output == "" || cfg.Output == "-") && cfg.AttachmentsDir == "" && !cfg.NoAttachments {
-		return nil, ErrNoAttachmentsDir
-	}
 
 	// OKF reads these names as a directory's index and log at any level.
 	if okf && cfg.Output != "" && cfg.Output != "-" {
@@ -333,6 +331,9 @@ func preparePage(ctx context.Context, api *confluence.API, cfg Config) (*pageExp
 		downloads, missing, err = attachmentsToWrite(ctx, api, page, doc, attachmentsDir, names, pathOf)
 		if err != nil {
 			return nil, err
+		}
+		if len(downloads) > 0 && output == "" && cfg.AttachmentsDir == "" {
+			return nil, fmt.Errorf("page %s: %w", page.ID, ErrNoAttachmentsDir)
 		}
 	}
 
