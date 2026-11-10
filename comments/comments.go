@@ -107,13 +107,16 @@ type textSpan struct {
 	end   int
 }
 
-// settingElements hold text that is a setting rather than page text: a macro's
-// parameter, and a task's id and status. A marker inside one corrupts it.
+// settingElements hold text that is not page text: a macro's parameters, a
+// task's id and status, and a placeholder's editor-only prompt. A marker
+// inside one corrupts it.
 var settingElements = map[string]bool{
-	"ac:parameter":   true,
-	"ac:task-id":     true,
-	"ac:task-uuid":   true,
-	"ac:task-status": true,
+	"ac:parameter":         true,
+	"ac:default-parameter": true,
+	"ac:task-id":           true,
+	"ac:task-uuid":         true,
+	"ac:task-status":       true,
+	"ac:placeholder":       true,
 }
 
 // textSpans returns the runs of body a reader sees as page text: everything
@@ -442,7 +445,7 @@ func Merge(newBody string, oldBody string, comments *confluence.InlineComments) 
 			log.Warn().
 				Str("ref", ref).
 				Str("selection_preview", truncateSelection(selection, 50)).
-				Msg("inline comment dropped: selected text not found in new body; comment will be lost")
+				Msg("inline comment dropped: selected text not found in the new body's page text; comment will be lost")
 		}
 	}
 
