@@ -197,15 +197,25 @@ func tagName(tag string) (name string, closing, selfClosing bool) {
 type decodedText struct {
 	text string
 	// from[i] is the body offset of the character or reference text[i] was
-	// decoded from, and to[i] the offset just past it.
+	// decoded from.
 	from []int
-	to   []int
+	// end is the body offset just past the run.
+	end int
+}
+
+// bodyOffset returns the body offset at which text[i] begins, or the end of
+// the run for i == len(text).
+func (t decodedText) bodyOffset(i int) int {
+	if i == len(t.text) {
+		return t.end
+	}
+	return t.from[i]
 }
 
 // decodeText resolves the character references in span of body.
 func decodeText(body string, span textSpan) decodedText {
 	var text strings.Builder
-	var from, to []int
+	var from []int
 	for i := span.start; i < span.end; {
 		n, decoded := 1, body[i:i+1]
 		if body[i] == '&' {
@@ -215,12 +225,11 @@ func decodeText(body string, span textSpan) decodedText {
 		}
 		for range len(decoded) {
 			from = append(from, i)
-			to = append(to, i+n)
 		}
 		text.WriteString(decoded)
 		i += n
 	}
-	return decodedText{text: text.String(), from: from, to: to}
+	return decodedText{text: text.String(), from: from, end: span.end}
 }
 
 // xmlEntities are the references XML itself defines.
@@ -231,7 +240,7 @@ var xmlEntities = map[string]string{"amp": "&", "lt": "<", "gt": ">", "quot": `"
 // any HTML one, as Confluence accepts them.
 func characterReference(s string) (ref, value string, ok bool) {
 	const longestName = 32
-	semi := strings.IndexByte(s, ';')
+	semi := strings.IndexByte(s[:min(len(s), longestName+2)], ';')
 	if semi < 2 || semi > longestName+1 {
 		return "", "", false
 	}
@@ -272,7 +281,7 @@ func occurrences(texts []decodedText, selection string) iter.Seq2[int, int] {
 				end := pos + len(selection)
 				startsUnit := pos == 0 || t.from[pos] != t.from[pos-1]
 				endsUnit := end == len(t.text) || t.from[end] != t.from[end-1]
-				if startsUnit && endsUnit && !yield(t.from[pos], t.to[end-1]) {
+				if startsUnit && endsUnit && !yield(t.from[pos], t.bodyOffset(end)) {
 					return
 				}
 			}
@@ -301,7 +310,7 @@ const contextWindowBytes = 100
 // relocate each marker to the best-matching position in newBody, so comment
 // threads survive page edits even when the surrounding text has shifted.
 func Merge(newBody string, oldBody string, comments *confluence.InlineComments) (string, error) {
-	if comments == nil {
+	if comments == nil || len(comments.Results) == 0 {
 		return newBody, nil
 	}
 	// 1. Extract context for each comment from oldBody
