@@ -70,6 +70,24 @@ func TestFindFolderQuotesTitleAndSpace(t *testing.T) {
 		lastCQL(t, server, "/rest/api/search"))
 }
 
+// TestQuotedValuesStayValues: a title or name that spells out CQL is matched
+// as text, not read as a clause.
+func TestQuotedValuesStayValues(t *testing.T) {
+	api, server := newAPI(t)
+	title := `x" AND space="OTHER`
+	want := server.AddFolder("DOCS", title, "", "page")
+	server.AddUser(confluencetest.User{AccountID: "acct-1", FullName: "Ann type=folder"})
+
+	folder, err := api.FindFolder(context.Background(), "DOCS", title, "")
+	require.NoError(t, err)
+	require.NotNil(t, folder)
+	assert.Equal(t, want.ID, folder.ID)
+
+	user, err := api.GetUserByName(context.Background(), "Ann type=folder")
+	require.NoError(t, err)
+	assert.Equal(t, "acct-1", user.AccountID)
+}
+
 func TestGetUserByNameQuotesTheName(t *testing.T) {
 	api, server := newAPI(t)
 	name := "José \"Pepe\" O\\Brien\u00a0Jr"
