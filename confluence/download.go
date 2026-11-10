@@ -90,7 +90,8 @@ func (api *API) AttachmentURL(pageID string, info AttachmentInfo) (string, error
 // sameServer says whether link reaches the server at base, by the scheme,
 // host and port SameInstance compares. A link that is not one it compares,
 // such as one carrying a user name, is no server of the configured one; a user
-// name in base itself was given by whoever configured it.
+// name in base itself was given by whoever configured it, so it is ignored,
+// where SameInstance refuses a user name in either of its arguments.
 func sameServer(link, base *url.URL) bool {
 	server := *base
 	server.User = nil
