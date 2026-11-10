@@ -197,8 +197,8 @@ type ReportConfig struct {
 	// one outside it. An empty result, or file itself, means the document is
 	// its own source. A file that fails is given its source in the
 	// *FileError Run returns, whatever the format; otherwise it is not called
-	// for the url format, which names no files. It may be asked about one file
-	// more than once.
+	// for the url format, which names no files. It is asked about each file
+	// once.
 	SourcePath func(file string) string
 }
 
@@ -486,6 +486,10 @@ func Run(ctx context.Context, config Config) (err error) {
 	// that failed is recorded where it failed.
 	var reported []error
 
+	// Asked once a file: a failed file's error and the report both name its
+	// source.
+	sourcePath := onceEach(config.Report.SourcePath)
+
 	// Written on the way out, whatever the way out is. It used to be written at
 	// the end of a successful run only, so --output-format json produced zero
 	// bytes whenever the run failed after publishing -- an unresolved link, a
@@ -505,7 +509,7 @@ func Run(ctx context.Context, config Config) (err error) {
 		}
 
 		if outputFormat != report.FormatURL {
-			results.SetSources(config.Report.SourcePath)
+			results.SetSources(sourcePath)
 		}
 
 		if writeErr := results.Write(config.output(), outputFormat); writeErr != nil {
@@ -653,7 +657,7 @@ func Run(ctx context.Context, config Config) (err error) {
 		})
 
 		fileErr := &FileError{
-			File: file, Source: report.SourceOf(file, config.Report.SourcePath), Err: err,
+			File: file, Source: report.SourceOf(file, sourcePath), Err: err,
 		}
 		if stepPast(ctx, config.ContinueOnError, file, err) {
 			failed.Errors = append(failed.Errors, fileErr)
@@ -840,7 +844,10 @@ func (e *FileError) Unwrap() error { return e.Err }
 
 // FilesFailedError is what Run returns when files failed under
 // ContinueOnError: one FileError for each, in the order the files were
-// processed. errors.Is and errors.As look through every one of them.
+// processed. errors.Is and errors.As look through every one of them, so a
+// file that failed with a timeout of its own makes the run's error match
+// context.DeadlineExceeded: whether the run was cancelled is ctx.Err()'s to
+// say.
 type FilesFailedError struct {
 	Errors []*FileError
 }
@@ -857,6 +864,26 @@ func (e *FilesFailedError) Unwrap() []error {
 }
 
 func (e *FilesFailedError) any() bool { return len(e.Errors) > 0 }
+
+// onceEach is source asking source about each file only once, or nil when
+// source is.
+func onceEach(source func(file string) string) func(file string) string {
+	if source == nil {
+		return nil
+	}
+
+	named := map[string]string{}
+
+	return func(file string) string {
+		if name, ok := named[file]; ok {
+			return name
+		}
+
+		named[file] = source(file)
+
+		return named[file]
+	}
+}
 
 // stepPast reports whether the run goes on to the next file after file
 // failed with err, which it does only under --continue-on-error, logging the
