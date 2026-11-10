@@ -134,6 +134,42 @@ func TestAttachmentPatternCannotReachOutsideTheProject(t *testing.T) {
 	assert.ErrorIs(t, err, ErrOutsideProject)
 }
 
+// TestAttachmentPatternInADirectoryNamedLikeAPattern covers a document whose
+// own directory holds glob syntax: only what the document wrote is a pattern,
+// so "docs[1]" is that directory and not a character class matching "docs1",
+// and an unclosed "{" is a name rather than a syntax error.
+func TestAttachmentPatternInADirectoryNamedLikeAPattern(t *testing.T) {
+	root, _ := project(t)
+
+	for _, dir := range []string{"docs[1]", "a{b", "c}d", "e{f,g}"} {
+		t.Run(dir, func(t *testing.T) {
+			base := filepath.Join(root, dir)
+			write(t, base, "images/right.png")
+
+			// What the directory would match if it were read as a pattern.
+			write(t, root, "docs1/images/wrong.png")
+			write(t, root, "ef/images/wrong.png")
+
+			got, err := ResolveLocalAttachments(LocalOS, base, []string{"images/*.png"})
+			require.NoError(t, err)
+			assert.Equal(t, []string{"images/right.png"}, names(got))
+			assert.Equal(t, "content of images/right.png", string(got[0].FileBytes))
+		})
+	}
+}
+
+// TestAttachmentPatternWithAnUpwardPrefix covers a pattern that starts by
+// leaving the document's directory, as shared images usually are reached.
+func TestAttachmentPatternWithAnUpwardPrefix(t *testing.T) {
+	root, docs := project(t)
+	write(t, root, "shared/a.png")
+	write(t, root, "shared/b.png")
+
+	got, err := ResolveLocalAttachments(LocalOS, docs, []string{"../shared/*.png"})
+	require.NoError(t, err)
+	assert.Equal(t, []string{"../shared/a.png", "../shared/b.png"}, names(got))
+}
+
 // TestMatchedAttachmentsAreNotReportedUnused covers the noise a pattern would
 // otherwise make. Somebody who wrote "images/*.png" asked for the set: warning
 // about each file the page did not link to would be a line per file, every run,

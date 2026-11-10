@@ -200,7 +200,7 @@ func expand(base, name string) (matches []string, matched bool, err error) {
 		return []string{name}, false, nil
 	}
 
-	found, err := doublestar.FilepathGlob(filepath.Join(base, name))
+	found, err := glob(base, name)
 	if err != nil {
 		return nil, false, fmt.Errorf("unable to expand attachment pattern %q: %w", name, err)
 	}
@@ -229,6 +229,29 @@ func expand(base, name string) (matches []string, matched bool, err error) {
 	slices.Sort(matches)
 
 	return matches, true, nil
+}
+
+// glob matches a pattern a document declared against the files under base.
+//
+// Only the pattern is glob syntax: base is the document's directory, and a
+// directory called "docs[1]" or "a{b" is a name. It is not escaped into the
+// pattern, because on Windows the backslash is a separator and cannot escape
+// anything; the pattern is matched in a filesystem rooted at base instead,
+// after its literal leading directories, "../" included, have moved that root.
+func glob(base, pattern string) ([]string, error) {
+	prefix, rest := doublestar.SplitPattern(path.Clean(filepath.ToSlash(pattern)))
+	root := filepath.Join(base, filepath.FromSlash(prefix))
+
+	found, err := doublestar.Glob(os.DirFS(root), rest)
+	if err != nil {
+		return nil, err
+	}
+
+	for i, match := range found {
+		found[i] = filepath.Join(root, filepath.FromSlash(match))
+	}
+
+	return found, nil
 }
 
 // hasPattern reports whether a declared name is a pattern rather than a path.
