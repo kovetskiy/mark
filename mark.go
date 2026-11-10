@@ -800,23 +800,11 @@ func Run(ctx context.Context, config Config) (err error) {
 		}
 	}
 
-	documents, err := documentInputs(config.Documents, files)
+	run, err := indexInputs(files, config.Documents)
 	if err != nil {
 		return err
 	}
-
-	inputs := make([]input, 0, len(files)+len(documents))
-	for _, file := range files {
-		inputs = append(inputs, fileInput(file))
-	}
-	inputs = append(inputs, documents...)
-
-	if config.Page.PageID != "" && len(documents) > 0 && len(inputs) > 1 {
-		return fmt.Errorf(
-			"--url names one page, but the run has %d documents: give it the one document to publish there",
-			len(inputs),
-		)
-	}
+	inputs, documents := run.all, run.documents
 
 	// A document the staged root does not contain is refused before any is
 	// published, rather than part way through the run.
@@ -826,9 +814,16 @@ func Run(ctx context.Context, config Config) (err error) {
 		}
 	}
 
-	// Every file would be published over the one page in turn, and only the
-	// last would be left on it.
-	if config.Page.PageID != "" && len(files) > 1 {
+	// Every document would be published over the one page in turn, and only
+	// the last would be left on it.
+	if config.Page.PageID != "" && len(inputs) > 1 {
+		if len(documents) > 0 {
+			return fmt.Errorf(
+				"--url names one page, but the run has %d documents: give it the one document to publish there",
+				len(inputs),
+			)
+		}
+
 		named := files
 		if len(named) > 3 {
 			named = append(slices.Clone(named[:3]), "...")
@@ -1030,16 +1025,13 @@ func Run(ctx context.Context, config Config) (err error) {
 	pub.deferrals = deferrals
 	pub.warnings = map[string]*report.Warnings{}
 	if len(documents) > 0 {
-		pub.documents = newDocumentFiles(inputs)
+		pub.inputs = run
 	}
 
 	if tracker != nil {
 		// The manifest knows a document by its key, which is how it says
 		// which document a warning of its is about.
-		byKey := make(map[string]string, len(inputs))
-		for _, in := range inputs {
-			byKey[manifest.Key(in.key)] = in.file
-		}
+		byKey := run.byKey
 		tracker.SetWarningsFor(func(key string) *report.Warnings {
 			if file, ok := byKey[key]; ok {
 				return pub.warningsFor(file)
@@ -1181,7 +1173,7 @@ func Run(ctx context.Context, config Config) (err error) {
 
 			log.Info().Msgf("processing %s again", file)
 
-			if _, _, err := lastLook.processFile(ctx, inputNamed(inputs, file)); err != nil {
+			if _, _, err := lastLook.processFile(ctx, pub.inputs.named(file)); err != nil {
 				// Over what the first pass recorded: the document published
 				// then, but the page now holds whatever this pass left it with.
 				if stop := fail(file, err); stop != nil {
@@ -1760,9 +1752,9 @@ type publishRun struct {
 	// Nil, as a Publisher has it, starts each read afresh.
 	warnings map[string]*report.Warnings
 
-	// documents holds the run's files and Documents by absPath of their
-	// name, for links between them; nil when it has no Documents.
-	documents map[string]input
+	// inputs indexes the run's files and Documents by name, for links
+	// between them and for the second pass; nil when it has no Documents.
+	inputs *runInputs
 }
 
 // runUsers is the "user" template func's lookup for a run's templates and
@@ -1780,11 +1772,8 @@ func (u *runUsers) LookupUser(_ context.Context, name string) (*confluence.User,
 
 // document is one source file, or one Document, as read for publishing.
 type document struct {
-	file string
-	// key is what the page manifest keys it by.
-	key string
-	// root is where the files it names are read from.
-	root attachment.Root
+	// input is where it came from: its name, manifest key and root.
+	input
 	// sourceHash fingerprints the source as read; see readDocument.
 	sourceHash string
 	// meta is nil when publishing straight to a page id.
@@ -2003,7 +1992,7 @@ func (r *publishRun) readDocument(in input) (*document, error) {
 	}
 
 	return &document{
-		file: file, key: in.key, root: in.root, sourceHash: sourceHash, meta: meta, markdown: markdown, warnings: warnings,
+		input: in, sourceHash: sourceHash, meta: meta, markdown: markdown, warnings: warnings,
 	}, nil
 }
 
@@ -2280,7 +2269,7 @@ func (r *publishRun) previewLocation(ctx context.Context, doc *document) (pagePr
 		// the manifest. Saying so is the whole point of a dry run:
 		// otherwise it reports a new page for every rename and retitle
 		// the run would actually have handled in place.
-		found.page, err = previewTrackedResolution(ctx, r.tracker, r.api, meta, file, doc.key, doc.sourceHash, doc.warnings)
+		found.page, err = previewTrackedResolution(ctx, r.tracker, r.api, doc)
 		if err != nil {
 			return found, err
 		}
@@ -2561,7 +2550,7 @@ func (r *publishRun) resolveDestination(ctx context.Context, doc *document) (*de
 // renames the manifest knows of, and creates or relocates it under the
 // parents the document declares.
 func (r *publishRun) resolveDocumentPage(ctx context.Context, doc *document) (*destination, error) {
-	api, meta, file := r.api, doc.meta, doc.file
+	api, meta := r.api, doc.meta
 	dest := &destination{}
 
 	// Parents are named by title, so a parent that has itself been renamed
@@ -2582,7 +2571,7 @@ func (r *publishRun) resolveDocumentPage(ctx context.Context, doc *document) (*d
 	// and "this page was renamed" look. Ask the manifest which of the two
 	// this is before creating a second page beside the first.
 	if pg == nil {
-		pg, err = resolveTrackedPage(ctx, r.tracker, api, meta, file, doc.key, doc.warnings)
+		pg, err = resolveTrackedPage(ctx, r.tracker, api, doc)
 		if err != nil {
 			return nil, err
 		}
@@ -2590,7 +2579,7 @@ func (r *publishRun) resolveDocumentPage(ctx context.Context, doc *document) (*d
 			// Not published under this path before. It may have been
 			// published under another: a renamed file is a new key holding
 			// an old document.
-			pg, err = resolveRenamedFile(ctx, r.tracker, api, meta, file, doc.key, doc.sourceHash, doc.warnings)
+			pg, err = resolveRenamedFile(ctx, r.tracker, api, doc)
 			if err != nil {
 				return nil, err
 			}
