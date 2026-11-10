@@ -155,6 +155,8 @@ page some other way, with `--url`, or with `--space` and a title, which
 With no `Label` headers, publishing it removes the page's
 labels, unless `--append-labels` is given (see
 [Labels applied in Confluence](metadata.md#labels-applied-in-confluence)).
+The width goes the same way: with no `Content-Appearance` header, the page
+takes `--content-appearance`, full width when that is unset.
 An article layout's sidebar, which would travel in the
 metadata, stays in the body, written as
 [layout comments](formatting.md#customizing-the-page-layout). `--recursive`
@@ -162,7 +164,9 @@ refuses `--metadata none` given on its command line for mark's documents,
 since a tree is exported to be published back where it was, and writes the
 comment headers when `MARK_METADATA` or the configuration file says `none`,
 which it takes for a single page's setting, with a warning saying so; with
-`--format okf` it is ignored, as any `--metadata` is.
+`--format okf` it is ignored, as any `--metadata` is. A body that opens with
+a horizontal rule writes it as `***`, since a document opening with `---` is
+read as front matter.
 
 A Go program calling `mark.Export` gets the title, the labels and the
 document as values on the result, `Title`, `Labels` and `Markdown`, whatever

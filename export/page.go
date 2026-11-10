@@ -48,7 +48,8 @@ type Config struct {
 	// where they would have been written.
 	NoAttachments bool
 
-	// Stdout is where the Markdown goes when Output names no file.
+	// Stdout is where the Markdown goes when Output names no file. Nil
+	// discards it; the Result carries it either way.
 	Stdout io.Writer
 
 	// Format is FormatMark, or "", for a document mark publishes back, or
@@ -362,6 +363,11 @@ func preparePage(ctx context.Context, api *confluence.API, cfg Config) (*pageExp
 		markdown += "\n"
 	}
 	markdown += doc.Markdown
+	// With no metadata above it, a body opening with a thematic break would
+	// open with "---", which is read as the start of front matter.
+	if header == "" && (markdown == "---" || strings.HasPrefix(markdown, "---\n")) {
+		markdown = "***" + markdown[len("---"):]
+	}
 
 	return &pageExport{
 		page: page, output: output, markdown: markdown, downloads: downloads, stdout: cfg.Stdout,
@@ -384,6 +390,9 @@ func (e *pageExport) write(ctx context.Context, api *confluence.API) (*Result, e
 	result.Attachments = written
 
 	if e.output == "" {
+		if e.stdout == nil {
+			return result, nil
+		}
 		if _, err := io.WriteString(e.stdout, e.markdown); err != nil {
 			return nil, fmt.Errorf("unable to write the page: %w", err)
 		}

@@ -598,7 +598,7 @@ func CheckExportFlags(ctx context.Context, command *cli.Command) (context.Contex
 	case command.Int("depth") < 0:
 		return ctx, errors.New("--depth counts levels, and cannot be negative")
 	case command.Bool("recursive") && format != export.FormatOKF && spelling == export.MetadataNone && fromCommandLine(command, "metadata"):
-		return ctx, export.ErrTreeWithoutMetadata
+		return ctx, fmt.Errorf("--metadata none: %w", export.ErrTreeWithoutMetadata)
 	case command.Bool("recursive") && (command.String("output") == "" || command.String("output") == "-"):
 		return ctx, errors.New("--recursive writes a directory: name it with --output")
 	case command.Bool("recursive") && command.String("attachments-dir") != "" && fromCommandLine(command, "attachments-dir"):

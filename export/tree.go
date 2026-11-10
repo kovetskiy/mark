@@ -24,7 +24,7 @@ const TreeDocument = "index.md"
 // documents: a tree is exported to be published back where it was, which
 // takes the metadata that names each page.
 var ErrTreeWithoutMetadata = errors.New("a recursive export writes documents that publish back where they were, " +
-	"so --metadata none does not apply")
+	"which takes the metadata that names each page")
 
 // TreeOptions are what Tree adds to the Config of a single page.
 type TreeOptions struct {
