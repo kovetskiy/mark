@@ -65,7 +65,8 @@ type Config struct {
 	// A Files pattern that matches nothing still fails the run, documents or
 	// not, unless CI is set: the pattern's pages would otherwise all read as
 	// orphans, with the documents' pages keeping the space from looking
-	// empty.
+	// empty. Under CI such a pattern is only warned about, and its pages are
+	// not looked at for orphans.
 	Documents []Document
 
 	// DocumentScope names the Documents for the page manifest the way Files
@@ -980,7 +981,11 @@ func Run(ctx context.Context, config Config) (err error) {
 		// The whole file set is known before any of it is processed, which is
 		// what lets a recorded path missing from the run be read as a rename
 		// rather than a guess made one document at a time.
-		if config.Files != "" || len(config.Paths) > 0 || len(documents) == 0 {
+		// A pattern that matched nothing, let through by CI, is not the run's
+		// scope when documents are published beside it: they would keep the
+		// space from looking empty, and every page the pattern published would
+		// read as an orphan.
+		if len(files) > 0 || len(documents) == 0 {
 			tracker.SetRunFiles(config.Files, files)
 		}
 		tracker.SetRunPaths(config.Paths)

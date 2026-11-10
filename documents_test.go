@@ -592,6 +592,30 @@ func TestUnscopedDocumentBesideFilesIsNotTheGlobsOrphan(t *testing.T) {
 	assert.False(t, server.Page(docID).Trashed)
 }
 
+// TestEmptyPatternBesideDocumentsOrphansNothing: under CI a pattern that
+// matches nothing is let through, and the documents published beside it must
+// not make every page the pattern published look orphaned.
+func TestEmptyPatternBesideDocumentsOrphansNothing(t *testing.T) {
+	server, _ := docsSpace(t)
+	dir := t.TempDir()
+	writeFile(t, dir, "file.md", markdownWithTitle("From Disk"))
+
+	config := trackingConfig(server, filepath.Join(dir, "*.md"))
+	config.Tracking.OnOrphan = report.OnOrphanDelete
+	config.CI = true
+	require.NoError(t, Run(context.Background(), config))
+	fileID := mustFind(t, server, "From Disk")
+
+	// A checkout that lost its files, with generated documents still there.
+	require.NoError(t, os.Remove(filepath.Join(dir, "file.md")))
+	config.Documents = []Document{{
+		Path: "generated/doc.md", Content: []byte(markdownWithTitle("From Memory")), FS: fstest.MapFS{},
+	}}
+	require.NoError(t, Run(context.Background(), config))
+
+	assert.False(t, server.Page(fileID).Trashed)
+}
+
 // TestDocumentScopeIsNotAFilesPattern: a --files run whose pattern is
 // spelled like a document scope still does not take the scope's pages for
 // its own.
