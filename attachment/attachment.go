@@ -19,6 +19,8 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/kovetskiy/mark/v17/internal/fspath"
+
 	"github.com/bmatcuk/doublestar/v4"
 	"github.com/rs/zerolog/log"
 )
@@ -313,11 +315,11 @@ func checkAttachmentPath(base, name string) error {
 // checkPath holds a resolved path to the project boundary. named is what the
 // document actually wrote, which is what the reader has to go and look at.
 func checkPath(base, resolved, named string) error {
-	path := resolveDeepest(resolved)
+	path := fspath.ResolveDeepest(resolved)
 
-	roots := []string{resolveDeepest(base)}
+	roots := []string{fspath.ResolveDeepest(base)}
 	if cwd, err := os.Getwd(); err == nil {
-		roots = append(roots, resolveDeepest(cwd))
+		roots = append(roots, fspath.ResolveDeepest(cwd))
 	}
 
 	if withinAny(path, roots) {
@@ -334,43 +336,9 @@ func checkPath(base, resolved, named string) error {
 	)
 }
 
-// resolveDeepest resolves the longest leading part of a path that exists and
-// re-appends whatever is left.
-//
-// Both sides of the comparison have to be in the same terms or a directory is
-// found not to contain the file sitting in it: with mark run in
-// "/mnt/data/work" and the document named through a link as
-// "~/work/docs/x.md", "/home/me/work/docs/logo.png" is not relative to
-// "/mnt/data/work", however plainly it sits beside its own document. Symlinked
-// checkouts, bind-mounted CI workspaces and every path under macOS's /tmp
-// arrive this way.
-//
-// The deepest part rather than the whole path, because the file itself need not
-// exist: a name that is merely misspelled should be refused by the open, which
-// says so, rather than by the boundary, which would say something else.
-func resolveDeepest(path string) string {
-	path = filepath.Clean(path)
-
-	rest := ""
-	for {
-		if resolved, err := filepath.EvalSymlinks(path); err == nil {
-			return filepath.Join(resolved, rest)
-		}
-
-		parent := filepath.Dir(path)
-		if parent == path {
-			// The root itself did not resolve; nothing is left to walk up to.
-			return filepath.Join(path, rest)
-		}
-
-		rest = filepath.Join(filepath.Base(path), rest)
-		path = parent
-	}
-}
-
 // withinAny reports whether a path is inside any of the roots. It compares the
 // paths as it is given them; resolving one side but not the other is the bug
-// resolveDeepest exists to prevent.
+// fspath.ResolveDeepest exists to prevent.
 func withinAny(path string, roots []string) bool {
 	absolute, err := filepath.Abs(path)
 	if err != nil {

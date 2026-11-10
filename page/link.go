@@ -51,6 +51,14 @@ type LinkResolver struct {
 	// their meaning.
 	SearchDirs []string
 
+	// CheckOnlyDirs are tried after SearchDirs, for the internal check alone.
+	// A file found only there is enough for the link to pass the check, but
+	// the link is left as written: what page that file publishes as is not
+	// known from it -- a staging build may give it the headers it lacks, or a
+	// title other than one derived from its name -- so it is not rewritten to
+	// a page guessed from it.
+	CheckOnlyDirs []string
+
 	// Checker decides how much is verified. Nil checks nothing.
 	Checker *LinkChecker
 
@@ -162,10 +170,21 @@ func (r *LinkResolver) Resolve(ctx context.Context, target, text string) (string
 	}
 
 	filename, hash, _ := strings.Cut(target, "#")
+	bases := append([]string{r.Base}, r.SearchDirs...)
+
+	if len(r.CheckOnlyDirs) > 0 && filename != "" {
+		if _, missing := findLinkTarget(bases, filename); missing != nil {
+			if _, absent := findLinkTarget(r.CheckOnlyDirs, filename); absent == nil {
+				log.Debug().Msgf("link %q names a file only the check looks for; left as written", target)
+
+				return "", nil
+			}
+		}
+	}
 
 	resolved, why, err := resolveLink(
 		ctx,
-		r.API, append([]string{r.Base}, r.SearchDirs...),
+		r.API, bases,
 		markdownLink{full: target, filename: filename, hash: hash},
 		r.Extract,
 		r.ReadMeta,

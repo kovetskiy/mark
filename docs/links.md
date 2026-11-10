@@ -139,6 +139,16 @@ happens to be. In a Go program they are `LinkConfig.StagedRoot` and
 documents sit under the staged root is only known once they are named, so
 `Publisher.Publish` refuses one outside it on its own.
 
+A file found only in the source tree is read for its page the way a staged one
+is, and the source copy is not what publishes: without the headers the build
+gives it, a checked link to it fails as never published, an unchecked one is
+left as written, and under `--title-from-filename` or `--title-from-h1` it is
+taken for whatever page bears the title its name or heading gives. With
+`--links-source-root-check-only` (`LinkConfig.SourceRootCheckOnly`) the source
+tree answers the check alone: a link to a file found only there passes
+`--check-links internal` and is left as written, and a link to a staged file is
+rewritten as before.
+
 One case is reported but does not fail: a link to a document that exists and has
 a title, but is not in the space and is not being published by this run either.
 A page the run is about to create is waited for rather than complained about --
