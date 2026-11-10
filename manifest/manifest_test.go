@@ -1076,6 +1076,23 @@ func TestPrefixIsValidated(t *testing.T) {
 	require.NoError(t, store.SetPropertyKeyPrefix(""), "empty means the default")
 }
 
+// TestNormalizePropertyKeyPrefix: what a caller checks up front is what the
+// Store will use.
+func TestNormalizePropertyKeyPrefix(t *testing.T) {
+	for given, want := range map[string]string{
+		"":            manifest.PropertyKeyPrefix,
+		"  ":          manifest.PropertyKeyPrefix,
+		" team.docs ": "team.docs",
+	} {
+		got, err := manifest.NormalizePropertyKeyPrefix(given)
+		require.NoError(t, err, given)
+		assert.Equal(t, want, got, given)
+	}
+
+	_, err := manifest.NormalizePropertyKeyPrefix("has space")
+	assert.EqualError(t, err, manifest.ValidatePropertyKeyPrefix("has space").Error())
+}
+
 // captureLog sends the package logger to a buffer for the rest of the test.
 func captureLog(t *testing.T) *bytes.Buffer {
 	t.Helper()
