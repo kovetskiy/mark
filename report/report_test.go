@@ -254,3 +254,17 @@ func TestJSONKeepsTheFileBesideItsSource(t *testing.T) {
 	assert.Equal(t, 1, strings.Count(out.String(), `"source"`), "a page that is its own source has no source field")
 	assert.Equal(t, StatusPublished, r.StatusOf("build/a.md"), "pages are still found by the file mark read")
 }
+
+func TestSourceOf(t *testing.T) {
+	source := func(file string) string {
+		if file == "build/a.md" {
+			return "src/a.md.tmpl"
+		}
+
+		return file
+	}
+
+	assert.Equal(t, "src/a.md.tmpl", SourceOf("build/a.md", source))
+	assert.Empty(t, SourceOf("docs/b.md", source), "a file that is its own source has none")
+	assert.Empty(t, SourceOf("build/a.md", nil))
+}

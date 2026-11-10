@@ -235,17 +235,23 @@ func (r *Report) SetSources(source func(file string) string) {
 	defer r.mu.Unlock()
 
 	for i := range r.Pages {
-		r.Pages[i].Source = sourceOf(r.Pages[i].File, source)
+		r.Pages[i].Source = SourceOf(r.Pages[i].File, source)
 	}
 
 	for i := range r.Orphans {
-		r.Orphans[i].Source = sourceOf(r.Orphans[i].File, source)
+		r.Orphans[i].Source = SourceOf(r.Orphans[i].File, source)
 	}
 }
 
-// sourceOf is what source names for file, or empty when that is file itself,
-// so that Source is set only on a document made from another file.
-func sourceOf(file string, source func(file string) string) string {
+// SourceOf is what source names for file, or empty when that is file itself
+// or source is nil, so that a Source is set only on a document made from
+// another file. It is the rule SetSources applies, for a caller naming the
+// source of something the report does not hold.
+func SourceOf(file string, source func(file string) string) string {
+	if source == nil {
+		return ""
+	}
+
 	if named := source(file); named != file {
 		return named
 	}
