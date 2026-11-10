@@ -155,7 +155,10 @@ func resolveTrackedPage(
 // everything downstream compares titles: validation, the decision that a page
 // is misplaced, and the lookup that walks the chain. Repairing the title once,
 // before any of them run, leaves them all agreeing.
-func refreshStaleParents(ctx context.Context, tracker *manifest.Store, api *confluence.API, meta *metadata.Meta, titles *runTitles) error {
+func refreshStaleParents(
+	ctx context.Context, tracker *manifest.Store, api *confluence.API, meta *metadata.Meta, titles *runTitles,
+	warnings *report.Warnings,
+) error {
 	if tracker == nil {
 		return nil
 	}
@@ -218,7 +221,7 @@ func refreshStaleParents(ctx context.Context, tracker *manifest.Store, api *conf
 				)
 			}
 
-			log.Warn().Msgf(
+			warnings.Add(report.WarningMissingPage,
 				"parent %q was recorded as page %s, which no longer exists; leaving the title as written",
 				title, pageID,
 			)
