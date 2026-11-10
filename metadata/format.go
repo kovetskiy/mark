@@ -234,7 +234,9 @@ func yamlNode(v reflect.Value, depth int) (*yaml.Node, error) {
 	case reflect.Map:
 		node := &yaml.Node{Kind: yaml.MappingNode, Tag: "!!map"}
 		keys := v.MapKeys()
-		slices.SortFunc(keys, func(a, b reflect.Value) int { return strings.Compare(yamlSortKey(a), yamlSortKey(b)) })
+		slices.SortFunc(keys, func(a, b reflect.Value) int {
+			return strings.Compare(fmt.Sprint(a.Interface()), fmt.Sprint(b.Interface()))
+		})
 		for _, key := range keys {
 			keyNode, err := yamlNode(key, depth+1)
 			if err != nil {
@@ -251,16 +253,4 @@ func yamlNode(v reflect.Value, depth int) (*yaml.Node, error) {
 	default:
 		return nil, fmt.Errorf("a %s has no form in front matter", v.Type())
 	}
-}
-
-// yamlSortKey is what a map key is ordered by: the string itself, or the
-// number or boolean as text.
-func yamlSortKey(v reflect.Value) string {
-	if v.Kind() == reflect.Interface && !v.IsNil() {
-		v = v.Elem()
-	}
-	if v.Kind() == reflect.String {
-		return v.String()
-	}
-	return fmt.Sprint(v.Interface())
 }
