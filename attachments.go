@@ -74,12 +74,12 @@ func (p *attachmentPreview) uploads(inline []attachment.Attachment) (bool, error
 }
 
 // declaredAttachments reads the files the document's headers declare.
-func declaredAttachments(file string, meta *metadata.Meta) ([]attachment.Attachment, error) {
+func declaredAttachments(root attachment.Root, file string, meta *metadata.Meta) ([]attachment.Attachment, error) {
 	if meta == nil {
 		return nil, nil
 	}
 
-	declared, err := attachment.ResolveLocalAttachments(attachment.LocalOS, filepath.Dir(file), meta.Attachments)
+	declared, err := attachment.ResolveLocalAttachments(root, filepath.Dir(file), meta.Attachments)
 	if err != nil {
 		return nil, fmt.Errorf("unable to locate attachments: %w", err)
 	}

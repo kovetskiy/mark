@@ -54,6 +54,30 @@ type Config struct {
 	// included.
 	Paths []string
 
+	// Documents are published in addition to the files Files matches, or
+	// instead of them when Files is empty: documents handed over from memory,
+	// each named by its Path and kept in the page manifest under its Key.
+	// They are published after the files, in the order given. They take part
+	// in everything a run does across its files, except ParentsFromPath,
+	// which they are refused with: a run's whole file set lays out the
+	// hierarchy, and a document's Path need not be anywhere on disk.
+	Documents []Document
+
+	// DocumentScope names the Documents for the page manifest the way Files
+	// names the files: a page published from a document is recorded under
+	// it, and a later run with the same scope that no longer publishes that
+	// document's Key finds the page orphaned, and --on-orphan acts on it. A
+	// run's documents are also only taken for renames, by their content, of
+	// documents recorded under the same scope.
+	//
+	// Empty, documents take part in no orphan handling and no rename
+	// detection: a page is found again by its Key alone, and never reported,
+	// archived or deleted because a later run did not publish it. Files
+	// published alongside keep their own scope, their pattern, either way.
+	// It needs Tracking.TrackPages, and a scope is never mistaken for a
+	// --files pattern.
+	DocumentScope string
+
 	Connection ConnectionConfig
 
 	// ParentsFromPath places each page under pages standing for the
@@ -623,8 +647,8 @@ func runFiles(glob string, paths []string) ([]string, error) {
 	return files, nil
 }
 
-// Run processes all files matching Config.Files and publishes them to
-// Confluence.
+// Run processes all files matching Config.Files or named in Config.Paths, and
+// Config.Documents, and publishes them to Confluence.
 //
 // Every Confluence request the run makes carries ctx, so cancelling it cuts
 // short a read in flight and the backoff before retrying any request, and the
@@ -736,6 +760,10 @@ func Run(ctx context.Context, config Config) (err error) {
 			"it names the page manifest's properties, and nothing else keeps one")
 	}
 
+	if err := config.checkDocuments(onOrphan); err != nil {
+		return err
+	}
+
 	api := config.Connection.api(confluence.Options{
 		// An update refused as a conflict is retried against the page's
 		// current version, which overwrites whatever changed it.
@@ -748,18 +776,40 @@ func Run(ctx context.Context, config Config) (err error) {
 	// An interrupted run does not: it warns which pages stay watched.
 	defer api.UnwatchWritten(ctx)
 
-	files, err := runFiles(config.Files, config.Paths)
+	// Documents alone need no glob, and an empty one matches nothing.
+	var files []string
+	if config.Files != "" || len(config.Paths) > 0 || len(config.Documents) == 0 {
+		files, err = runFiles(config.Files, config.Paths)
+		if err != nil {
+			return err
+		}
+
+		if len(files) == 0 {
+			msg := "no files matched"
+			if config.CI {
+				log.Warn().Msg(msg)
+			} else {
+				return errors.New(msg)
+			}
+		}
+	}
+
+	documents, err := documentInputs(config.Documents, files)
 	if err != nil {
 		return err
 	}
 
-	if len(files) == 0 {
-		msg := "no files matched"
-		if config.CI {
-			log.Warn().Msg(msg)
-		} else {
-			return errors.New(msg)
-		}
+	inputs := make([]input, 0, len(files)+len(documents))
+	for _, file := range files {
+		inputs = append(inputs, fileInput(file))
+	}
+	inputs = append(inputs, documents...)
+
+	if config.Page.PageID != "" && len(documents) > 0 && len(inputs) > 1 {
+		return fmt.Errorf(
+			"--url names one page, but the run has %d documents: give it the one document to publish there",
+			len(inputs),
+		)
 	}
 
 	// A document the staged root does not contain is refused before any is
@@ -800,8 +850,8 @@ func Run(ctx context.Context, config Config) (err error) {
 	var reported []error
 
 	// Asked once a file: a failed file's error and the report both name its
-	// source.
-	sourcePath := onceEach(config.Report.SourcePath)
+	// source. A Document's own Source answers before SourcePath is asked.
+	sourcePath := onceEach(sourcesOf(inputs, config.Report.SourcePath))
 
 	// Written on the way out, whatever the way out is. It used to be written at
 	// the end of a successful run only, so --output-format json produced zero
@@ -925,8 +975,17 @@ func Run(ctx context.Context, config Config) (err error) {
 		// The whole file set is known before any of it is processed, which is
 		// what lets a recorded path missing from the run be read as a rename
 		// rather than a guess made one document at a time.
-		tracker.SetRunFiles(config.Files, files)
+		if config.Files != "" || len(config.Paths) > 0 || len(documents) == 0 {
+			tracker.SetRunFiles(config.Files, files)
+		}
 		tracker.SetRunPaths(config.Paths)
+		if len(documents) > 0 {
+			keys := make([]string, 0, len(documents))
+			for _, in := range documents {
+				keys = append(keys, in.key)
+			}
+			tracker.SetRunDocuments(documentScopePattern(config.DocumentScope), keys)
+		}
 	}
 
 	// A link is resolved by finding the page it points at, so a document linking
@@ -960,13 +1019,16 @@ func Run(ctx context.Context, config Config) (err error) {
 	pub.ancestryTracker = ancestryTracker
 	pub.deferrals = deferrals
 	pub.warnings = map[string]*report.Warnings{}
+	if len(documents) > 0 {
+		pub.documents = newDocumentFiles(documents)
+	}
 
 	if tracker != nil {
 		// The manifest knows a document by its key, which is how it says
 		// which document a warning of its is about.
-		byKey := make(map[string]string, len(files))
-		for _, file := range files {
-			byKey[manifest.Key(file)] = file
+		byKey := make(map[string]string, len(inputs))
+		for _, in := range inputs {
+			byKey[manifest.Key(in.key)] = in.file
 		}
 		tracker.SetWarningsFor(func(key string) *report.Warnings {
 			if file, ok := byKey[key]; ok {
@@ -993,7 +1055,7 @@ func Run(ctx context.Context, config Config) (err error) {
 	urlsAreReport := config.Report.Output != nil && outputFormat == report.FormatURL
 	// Read only once a parent is missing.
 	pub.titles = &runTitles{
-		config: config.PublishConfig, files: files, hierarchy: hierarchy,
+		config: config.PublishConfig, inputs: inputs, hierarchy: hierarchy,
 		warningsFor: pub.warningsFor,
 	}
 
@@ -1025,14 +1087,16 @@ func Run(ctx context.Context, config Config) (err error) {
 		return fileErr
 	}
 
-	for _, file := range files {
+	for _, in := range inputs {
+		file := in.file
+
 		if err := ctx.Err(); err != nil {
 			return err
 		}
 
 		log.Info().Msgf("processing %s", file)
 
-		target, placement, err := pub.processFile(ctx, file)
+		target, placement, err := pub.processFile(ctx, in)
 		if placement != nil {
 			ordered = append(ordered, *placement)
 		}
@@ -1107,7 +1171,7 @@ func Run(ctx context.Context, config Config) (err error) {
 
 			log.Info().Msgf("processing %s again", file)
 
-			if _, _, err := lastLook.processFile(ctx, file); err != nil {
+			if _, _, err := lastLook.processFile(ctx, inputNamed(inputs, file)); err != nil {
 				// Over what the first pass recorded: the document published
 				// then, but the page now holds whatever this pass left it with.
 				if stop := fail(file, err); stop != nil {
@@ -1203,11 +1267,11 @@ func Run(ctx context.Context, config Config) (err error) {
 // unchanged: the file is in File, and the run's log and report name it beside
 // the message.
 type FileError struct {
-	// File is the path mark read the document from.
+	// File is the path mark read the document from, or a Document's Path.
 	File string
-	// Source is the file the document was made from, as
-	// ReportConfig.SourcePath names it for the report; empty when it is its
-	// own source, and always from a Publisher, which has no SourcePath.
+	// Source is the file the document was made from, as a Document's Source
+	// or ReportConfig.SourcePath names it for the report; empty when it is
+	// its own source, and from a Publisher unless a Document named one.
 	Source string
 	Err    error
 }
@@ -1353,7 +1417,7 @@ func (p *Publisher) Publish(ctx context.Context, file string) (*confluence.PageI
 		return nil, err
 	}
 
-	target, err := p.publish(ctx, file)
+	target, err := p.publish(ctx, fileInput(file))
 	if err != nil {
 		return target, &FileError{File: file, Err: err}
 	}
@@ -1362,11 +1426,11 @@ func (p *Publisher) Publish(ctx context.Context, file string) (*confluence.PageI
 }
 
 // publish is Publish's work on file, its failures not yet tied to the file.
-func (p *Publisher) publish(ctx context.Context, file string) (*confluence.PageInfo, error) {
+func (p *Publisher) publish(ctx context.Context, in input) (*confluence.PageInfo, error) {
 	// Each file's ac: links are checked, and reported, on their own.
 	p.run.checker.ForgetPages()
 
-	target, _, err := p.run.processFile(ctx, file)
+	target, _, err := p.run.processFile(ctx, in)
 	if err != nil {
 		return target, err
 	}
@@ -1482,6 +1546,11 @@ func readSource(file string) (source, markdown []byte, lineOf func(int) int, err
 		return nil, nil, nil, fmt.Errorf("unable to read file %q: %w", file, err)
 	}
 
+	return prepareSource(file, source)
+}
+
+// prepareSource is readSource for source as read from file.
+func prepareSource(file string, source []byte) (_, markdown []byte, lineOf func(int) int, err error) {
 	// A byte-order mark left in front of the first header comment would be
 	// reported as "doesn't contain metadata", which is not where the author
 	// would look.
@@ -1680,6 +1749,10 @@ type publishRun struct {
 	// a document that fails is reported with what was found before it did.
 	// Nil, as a Publisher has it, starts each read afresh.
 	warnings map[string]*report.Warnings
+
+	// documents holds the content of the run's Documents by absPath of
+	// their Path, for links between them; nil when it has none.
+	documents map[string][]byte
 }
 
 // runUsers is the "user" template func's lookup for a run's templates and
@@ -1695,9 +1768,13 @@ func (u *runUsers) LookupUser(_ context.Context, name string) (*confluence.User,
 	return u.api.LookupUser(u.ctx, name)
 }
 
-// document is one source file as read for publishing.
+// document is one source file, or one Document, as read for publishing.
 type document struct {
 	file string
+	// key is what the page manifest keys it by.
+	key string
+	// root is where the files it names are read from.
+	root attachment.Root
 	// sourceHash fingerprints the source as read; see readDocument.
 	sourceHash string
 	// meta is nil when publishing straight to a page id.
@@ -1737,7 +1814,9 @@ type pagePreview struct {
 	misplaced bool
 }
 
-func (r *publishRun) processFile(ctx context.Context, file string) (*confluence.PageInfo, *page.Ordered, error) {
+func (r *publishRun) processFile(ctx context.Context, in input) (*confluence.PageInfo, *page.Ordered, error) {
+	file := in.file
+
 	if r.pageFile != "" && r.pageFile != absPath(file) {
 		return nil, nil, fmt.Errorf(
 			"Page.PageID names one page, which %s publishes to: refusing to publish %s over it",
@@ -1747,7 +1826,7 @@ func (r *publishRun) processFile(ctx context.Context, file string) (*confluence.
 
 	r.users.ctx = ctx
 
-	doc, err := r.readDocument(file)
+	doc, err := r.readDocument(in)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -1783,7 +1862,7 @@ func (r *publishRun) processFile(ctx context.Context, file string) (*confluence.
 
 	// From here on the page may be written to, so a file failing later has
 	// still put something of itself on it.
-	r.claimPage(file)
+	r.claimPage(doc.file)
 
 	// Checked here, before anything is written: there is no point uploading
 	// attachments for a page that is about to be left alone.
@@ -1874,8 +1953,10 @@ func absPath(file string) string {
 }
 
 // readDocument reads a file and settles the metadata it publishes under.
-func (r *publishRun) readDocument(file string) (*document, error) {
-	source, markdown, lineOf, err := readSource(file)
+func (r *publishRun) readDocument(in input) (*document, error) {
+	file := in.file
+
+	source, markdown, lineOf, err := in.read()
 	if err != nil {
 		return nil, err
 	}
@@ -1912,7 +1993,7 @@ func (r *publishRun) readDocument(file string) (*document, error) {
 	}
 
 	return &document{
-		file: file, sourceHash: sourceHash, meta: meta, markdown: markdown, warnings: warnings,
+		file: file, key: in.key, root: in.root, sourceHash: sourceHash, meta: meta, markdown: markdown, warnings: warnings,
 	}, nil
 }
 
@@ -2006,7 +2087,7 @@ func (r *publishRun) leaveUnsynchronized(ctx context.Context, doc *document) (bo
 	// having no source file and its mapping is dropped, so synchronising it
 	// again later would no longer know which page was already its own.
 	if r.tracker != nil && meta != nil && meta.Space != "" {
-		if _, _, err := r.tracker.Lookup(ctx, meta.Space, file); err != nil {
+		if _, _, err := r.tracker.Lookup(ctx, meta.Space, doc.key); err != nil {
 			return true, fmt.Errorf("unable to look up page mapping for %q: %w", file, err)
 		}
 	}
@@ -2100,6 +2181,7 @@ func (r *publishRun) linkResolver(doc *document) (*page.LinkResolver, error) {
 	resolver.Offline = config.Mode.Offline
 	resolver.SourceFile = file
 	resolver.Deferrals = r.deferrals
+	resolver.Files = r.linkFiles(doc)
 	resolver.Warnings = doc.warnings
 	resolver.ReadMeta = func(markdown []byte, opts metadata.ExtractOptions) (*metadata.Meta, []byte, error) {
 		// The hierarchy places only the run's own files. Another is published
@@ -2188,7 +2270,7 @@ func (r *publishRun) previewLocation(ctx context.Context, doc *document) (pagePr
 		// the manifest. Saying so is the whole point of a dry run:
 		// otherwise it reports a new page for every rename and retitle
 		// the run would actually have handled in place.
-		found.page, err = previewTrackedResolution(ctx, r.tracker, r.api, meta, file, doc.sourceHash, doc.warnings)
+		found.page, err = previewTrackedResolution(ctx, r.tracker, r.api, meta, file, doc.key, doc.sourceHash, doc.warnings)
 		if err != nil {
 			return found, err
 		}
@@ -2205,7 +2287,7 @@ func (r *publishRun) previewLocation(ctx context.Context, doc *document) (pagePr
 		// a renamed file's old entry, --no-overwrite baseline included, to
 		// the new path. A dry run returns before then, so it records here;
 		// its store never saves.
-		if err := r.tracker.Record(ctx, meta.Space, file, found.page.ID, meta.Title, doc.sourceHash); err != nil {
+		if err := r.tracker.Record(ctx, meta.Space, doc.key, found.page.ID, meta.Title, doc.sourceHash); err != nil {
 			return found, fmt.Errorf("unable to record page mapping for %q: %w", file, err)
 		}
 	}
@@ -2358,7 +2440,7 @@ func (r *publishRun) previewBody(
 	var declared []attachment.Attachment
 	var attachments *attachmentPreview
 	if compare {
-		declared, err = declaredAttachments(file, meta)
+		declared, err = declaredAttachments(doc.root, file, meta)
 		if err != nil {
 			return "", "", "", err
 		}
@@ -2393,7 +2475,7 @@ func (r *publishRun) previewBody(
 	// only when there is something to clash with them.
 	if len(headerAttachments) > 0 || len(inline) > 0 {
 		if !compare {
-			declared, err = declaredAttachments(file, meta)
+			declared, err = declaredAttachments(doc.root, file, meta)
 			if err != nil {
 				return "", "", "", err
 			}
@@ -2490,7 +2572,7 @@ func (r *publishRun) resolveDocumentPage(ctx context.Context, doc *document) (*d
 	// and "this page was renamed" look. Ask the manifest which of the two
 	// this is before creating a second page beside the first.
 	if pg == nil {
-		pg, err = resolveTrackedPage(ctx, r.tracker, api, meta, file, doc.warnings)
+		pg, err = resolveTrackedPage(ctx, r.tracker, api, meta, file, doc.key, doc.warnings)
 		if err != nil {
 			return nil, err
 		}
@@ -2498,7 +2580,7 @@ func (r *publishRun) resolveDocumentPage(ctx context.Context, doc *document) (*d
 			// Not published under this path before. It may have been
 			// published under another: a renamed file is a new key holding
 			// an old document.
-			pg, err = resolveRenamedFile(ctx, r.tracker, api, meta, file, doc.sourceHash, doc.warnings)
+			pg, err = resolveRenamedFile(ctx, r.tracker, api, meta, file, doc.key, doc.sourceHash, doc.warnings)
 			if err != nil {
 				return nil, err
 			}
@@ -2583,7 +2665,7 @@ func (r *publishRun) compile(ctx context.Context, doc *document, target *conflue
 	}
 
 	localAttachments, err := attachment.ResolveLocalAttachments(
-		attachment.LocalOS,
+		doc.root,
 		filepath.Dir(file),
 		declared,
 	)
@@ -2944,6 +3026,7 @@ func (c RenderingConfig) documentConfig(ctx context.Context, res *resources, doc
 	cfg.ImageAlign = imageAlign
 	cfg.ResolveLink = linksUnder(ctx, doc.resolver)
 	cfg.Warnings = doc.warnings
+	cfg.Root = doc.root
 
 	return cfg, nil
 }
