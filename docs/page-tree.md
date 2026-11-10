@@ -245,8 +245,9 @@ mark publish --track-pages --manifest-page "Team Handbook" --manifest-page-optio
 Such a space starts from an empty mapping, which is what it has: nothing is
 found through an earlier mapping, so it behaves as a first run of
 `--track-pages`. If the run publishes the manifest page itself, the mapping it
-gathered is saved there at the end, and the next run is tracked. Otherwise
-nothing is saved and the space is listed under `untracked` in the
+gathered is saved there at the end, and the next run is tracked, unless the
+page already holds a mapping by then, kept by another run, which is left as it
+is. Otherwise nothing is saved and the space is listed under `untracked` in the
 [JSON report](publishing.md#reporting-what-a-run-did).
 
 What needs an earlier mapping does not happen in an untracked space:
