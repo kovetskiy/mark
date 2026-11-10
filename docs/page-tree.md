@@ -342,24 +342,33 @@ later run with a wider scope knows about it.
 ### Publishing only some of the files
 
 A job that publishes only the files a change touched, beside the run that
-publishes them all, says so with `--partial`:
+publishes them all, says so with `--partial`, and names the paths the change
+touched, deleted and renamed ones included:
 
 ```bash
-mark publish --track-pages --partial --files "docs/{setup,install}.md"
+mark publish --track-pages --partial --files "docs/{setup,install,old-name}.md"
 ```
 
-Without it, Mark reads every tracked file missing from the run as deleted: given
-the full pattern on a checkout holding only the changed files, it reports the
-rest once and forgets them, losing their `--no-overwrite` baseline and rename
-tracking. Given a narrower pattern instead, it records the pages it publishes
-under that pattern, and the full run would no longer notice those files being
-deleted.
+Without it, Mark ties a tracked file to the `--files` pattern that last
+published it. A run with a narrower pattern then neither notices a deleted file
+nor follows a renamed one, which the full pattern recorded, and it records the
+pages it publishes under its own pattern, so the full run no longer notices
+those files being deleted either. And the full pattern on a checkout holding
+only the changed files reads every other file as deleted.
 
-With `--partial`, a run neither reports nor forgets a file it left out, and a
-page it publishes keeps the pattern its file was tracked under. A file no run
-has tracked yet is recorded under the partial run's pattern until the full run
-publishes it. `--partial` takes no `--on-orphan` other than `report`, since the
-files it leaves out are not gone. A library caller sets `TrackingConfig.Partial`.
+A run with `--partial` looks for deleted and renamed files among the tracked
+files its `--files` pattern names, whichever run recorded them, and leaves every
+other tracked file alone: one of those it names that is missing is reported,
+and dealt with by `--on-orphan`, as in a full run, and a renamed one is
+followed to its page with its `--no-overwrite` baseline. A page it publishes
+keeps the pattern its file was tracked under, or that of the file it was
+renamed from, so the full run still covers it. A file no run has tracked yet is
+recorded under the partial run's pattern until the full run publishes it.
+
+The full pattern with `--partial` names every file, so on a checkout holding
+only some of them it reports the rest as gone: give the paths instead. A library
+caller sets `TrackingConfig.Partial`; a caller driving `manifest.Store` itself
+calls `SetPartial`.
 
 ### Flags that need other flags
 
@@ -368,7 +377,7 @@ outright rather than warned about, because the belief comes from silence:
 
 * `--on-orphan archive` or `delete` without `--track-pages`
 * `--no-overwrite` without `--track-pages`
-* `--partial` without `--track-pages`, or with `--on-orphan archive` or `delete`
+* `--partial` without `--track-pages`
 * `--manifest-page-optional` without `--manifest-page`
 * `--check-links-warn-only` without `--check-links`, or with one that names no
   kind of link

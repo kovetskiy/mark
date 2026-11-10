@@ -4,9 +4,11 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/kovetskiy/mark/v17/confluence"
+	"github.com/kovetskiy/mark/v17/confluence/confluencetest"
 	"github.com/kovetskiy/mark/v17/manifest"
 	"github.com/kovetskiy/mark/v17/report"
 	"github.com/stretchr/testify/assert"
@@ -15,7 +17,7 @@ import (
 
 // partialFixture publishes a.md, b.md and c.md under one pattern with
 // --track-pages, as the run that owns them does.
-func partialFixture(t *testing.T) (Config, string, func() *manifest.Store) {
+func partialFixture(t *testing.T) (*confluencetest.Server, Config, string) {
 	t.Helper()
 
 	server, _ := docsSpace(t)
@@ -27,40 +29,74 @@ func partialFixture(t *testing.T) (Config, string, func() *manifest.Store) {
 	full := trackingConfig(server, filepath.Join(dir, "*.md"))
 	require.NoError(t, Run(context.Background(), full))
 
-	// A store reads the manifest once, so each look gets its own.
-	store := func() *manifest.Store {
-		return manifest.NewStore(confluence.NewAPI(server.URL, confluence.Options{Username: "user", Password: "token"}))
-	}
-
-	return full, dir, store
+	return server, full, dir
 }
 
-func tracked(t *testing.T, store func() *manifest.Store, file string) (manifest.Entry, bool) {
+// partialOf is the run a job publishing only some of full's files makes.
+func partialOf(full Config, dir, files string) Config {
+	partial := full
+	partial.Files = filepath.Join(dir, files)
+	partial.Tracking.Partial = true
+
+	return partial
+}
+
+// tracked reads the manifest afresh: a store reads it once and keeps it.
+func tracked(t *testing.T, server *confluencetest.Server, file string) (manifest.Entry, bool) {
 	t.Helper()
 
-	entry, ok, err := store().Lookup(context.Background(), "DOCS", file)
+	api := confluence.NewAPI(server.URL, confluence.Options{Username: "user", Password: "token"})
+	entry, ok, err := manifest.NewStore(api).Lookup(context.Background(), "DOCS", file)
 	require.NoError(t, err)
 
 	return entry, ok
 }
 
-// TestPartialRunKeepsTheFilesItLeftOut: a job publishing only the files a
-// change touched gives the owning run's pattern on a checkout holding just
-// those files. Without --partial the absent files are reported once and
-// forgotten, losing their --no-overwrite baseline and rename tracking.
-func TestPartialRunKeepsTheFilesItLeftOut(t *testing.T) {
-	full, dir, store := partialFixture(t)
+// TestPartialRunReportsOnlyWhatItNames: a job given the paths a change
+// touched, a deleted one among them, reports that one as gone and nothing
+// else. Without --partial its pattern matches no entry, the owning run's
+// pattern having recorded them all, so the deleted file is not reported, and
+// with the owning run's pattern every file it left out would be.
+func TestPartialRunReportsOnlyWhatItNames(t *testing.T) {
+	server, full, dir := partialFixture(t)
+	require.NoError(t, os.Remove(filepath.Join(dir, "b.md")))
+
+	logged := captureLog(t, func() {
+		require.NoError(t, Run(context.Background(), partialOf(full, dir, "{a,b}.md")))
+	})
+
+	reported := ""
+	for _, line := range strings.Split(logged, "\n") {
+		if strings.Contains(line, "had no matching source file") {
+			reported = line
+		}
+	}
+	assert.Contains(t, reported, "b.md")
+	assert.NotContains(t, reported, "c.md", "c.md is not this run's business")
+
+	_, ok := tracked(t, server, filepath.Join(dir, "b.md"))
+	assert.False(t, ok, "b.md was reported, and so forgotten")
+	_, ok = tracked(t, server, filepath.Join(dir, "c.md"))
+	assert.True(t, ok, "c.md is still tracked")
+}
+
+// TestPartialRunActsOnlyOnWhatItNames: --on-orphan in a partial run removes
+// the page of a file the run names and finds gone, and no other.
+func TestPartialRunActsOnlyOnWhatItNames(t *testing.T) {
+	server, full, dir := partialFixture(t)
+	bID := pageIDTitled(t, server, "Page b")
+	cID := pageIDTitled(t, server, "Page c")
 	require.NoError(t, os.Remove(filepath.Join(dir, "b.md")))
 	require.NoError(t, os.Remove(filepath.Join(dir, "c.md")))
 
-	partial := full
-	partial.Tracking.Partial = true
+	partial := partialOf(full, dir, "{a,b}.md")
+	partial.Tracking.OnOrphan = report.OnOrphanDelete
 	require.NoError(t, Run(context.Background(), partial))
 
-	for _, name := range []string{"a", "b", "c"} {
-		_, ok := tracked(t, store, filepath.Join(dir, name+".md"))
-		assert.True(t, ok, "%s.md is still tracked", name)
-	}
+	assert.True(t, server.Page(bID).Trashed, "b.md was named and is gone")
+	assert.False(t, server.Page(cID).Trashed, "c.md was not named, and is left for the owning run")
+	_, ok := tracked(t, server, filepath.Join(dir, "c.md"))
+	assert.True(t, ok)
 }
 
 // TestPartialRunLeavesEntriesUnderTheirPattern: a run narrowed to one file
@@ -68,18 +104,15 @@ func TestPartialRunKeepsTheFilesItLeftOut(t *testing.T) {
 // drop out of the owning run's scope, and that run would never notice the file
 // being deleted.
 func TestPartialRunLeavesEntriesUnderTheirPattern(t *testing.T) {
-	full, dir, store := partialFixture(t)
+	server, full, dir := partialFixture(t)
 	a := filepath.Join(dir, "a.md")
-	before, ok := tracked(t, store, a)
+	before, ok := tracked(t, server, a)
 	require.True(t, ok)
 
 	writeFile(t, dir, "a.md", markdownWithTitle("Page a")+"\nChanged.\n")
-	partial := full
-	partial.Files = a
-	partial.Tracking.Partial = true
-	require.NoError(t, Run(context.Background(), partial))
+	require.NoError(t, Run(context.Background(), partialOf(full, dir, "a.md")))
 
-	after, ok := tracked(t, store, a)
+	after, ok := tracked(t, server, a)
 	require.True(t, ok)
 	assert.Equal(t, before.Glob, after.Glob, "the entry stays under the owning run's pattern")
 	assert.NotEqual(t, before.Hash, after.Hash, "the entry still records what was published")
@@ -89,7 +122,7 @@ func TestPartialRunLeavesEntriesUnderTheirPattern(t *testing.T) {
 	owner.Tracking.OnOrphan = report.OnOrphanDelete
 	require.NoError(t, Run(context.Background(), owner))
 
-	_, ok = tracked(t, store, a)
+	_, ok = tracked(t, server, a)
 	assert.False(t, ok, "the owning run found the deleted file and dealt with its page")
 }
 
@@ -97,55 +130,89 @@ func TestPartialRunLeavesEntriesUnderTheirPattern(t *testing.T) {
 // has no pattern to keep, so it takes the partial run's until the owning run
 // publishes it.
 func TestPartialRunRecordsANewFileUnderItsOwnPattern(t *testing.T) {
-	full, dir, store := partialFixture(t)
+	server, full, dir := partialFixture(t)
 	d := writeFile(t, dir, "d.md", markdownWithTitle("Page d"))
 
-	partial := full
-	partial.Files = d
-	partial.Tracking.Partial = true
-	require.NoError(t, Run(context.Background(), partial))
+	require.NoError(t, Run(context.Background(), partialOf(full, dir, "d.md")))
 
-	entry, ok := tracked(t, store, d)
+	entry, ok := tracked(t, server, d)
 	require.True(t, ok)
 	assert.Equal(t, manifest.Key(d), entry.Glob)
 
 	require.NoError(t, Run(context.Background(), full))
 
-	entry, ok = tracked(t, store, d)
+	entry, ok = tracked(t, server, d)
 	require.True(t, ok)
 	assert.Equal(t, manifest.Key(full.Files), entry.Glob)
 }
 
-func TestPartialRefusals(t *testing.T) {
-	for name, tc := range map[string]struct {
-		tracking TrackingConfig
-		want     string
-	}{
-		"without --track-pages": {
-			tracking: TrackingConfig{Partial: true},
-			want:     "--partial requires --track-pages",
-		},
-		"with --on-orphan delete": {
-			tracking: TrackingConfig{TrackPages: true, Partial: true, OnOrphan: report.OnOrphanDelete},
-			want:     "--partial cannot be used with --on-orphan delete",
-		},
-		"with --on-orphan archive": {
-			tracking: TrackingConfig{TrackPages: true, Partial: true, OnOrphan: report.OnOrphanArchive},
-			want:     "--partial cannot be used with --on-orphan archive",
-		},
-	} {
-		t.Run(name, func(t *testing.T) {
-			server, _ := docsSpace(t)
-			dir := t.TempDir()
-			writeFile(t, dir, "a.md", markdownWithTitle("Page a"))
+// TestPartialRunFollowsAMove: a file moved with its title unchanged, given to a
+// partial run under both names, hands its entry to the new path. Without
+// --partial the old entry belongs to another pattern, so the run warns that two
+// files claim the page, keeps both, and the new path starts under the partial
+// pattern.
+func TestPartialRunFollowsAMove(t *testing.T) {
+	server, full, dir := partialFixture(t)
+	b := filepath.Join(dir, "b.md")
+	before, ok := tracked(t, server, b)
+	require.True(t, ok)
 
-			config := trackingConfig(server, filepath.Join(dir, "*.md"))
-			config.Tracking = tc.tracking
+	moved := filepath.Join(dir, "moved.md")
+	require.NoError(t, os.Rename(b, moved))
 
-			err := Run(context.Background(), config)
-			require.Error(t, err)
-			assert.Contains(t, err.Error(), tc.want)
-			assert.Zero(t, countPagesTitled(t, server, "Page a"), "refused before publishing")
-		})
-	}
+	logged := captureLog(t, func() {
+		require.NoError(t, Run(context.Background(), partialOf(full, dir, "{b,moved}.md")))
+	})
+	assert.NotContains(t, logged, "both publish to page")
+
+	_, ok = tracked(t, server, b)
+	assert.False(t, ok, "the old path handed its entry over")
+	after, ok := tracked(t, server, moved)
+	require.True(t, ok)
+	assert.Equal(t, before.PageID, after.PageID)
+	assert.Equal(t, before.Glob, after.Glob, "the new path takes the old one's pattern")
+}
+
+// TestPartialRunFollowsARename: a file renamed along with its title is found
+// by its content, as in a full run, and an edit made in Confluence survives
+// it under --no-overwrite.
+func TestPartialRunFollowsARename(t *testing.T) {
+	server, _ := docsSpace(t)
+	dir := t.TempDir()
+	writeFile(t, dir, "old-name.md", markdownTitledFromFilename())
+	writeFile(t, dir, "other.md", markdownTitledFromFilename()+"\nOther.\n")
+
+	full := filenameTitleConfig(server, filepath.Join(dir, "*.md"))
+	full.Tracking.NoOverwrite = true
+	require.NoError(t, Run(context.Background(), full))
+
+	id := pageIDTitled(t, server, "Old Name")
+	server.EditPage(id, "<p>Written by a person.</p>")
+	require.NoError(t, os.Rename(
+		filepath.Join(dir, "old-name.md"), filepath.Join(dir, "new-name.md")))
+
+	renamed := runReported(t, partialOf(full, dir, "{old-name,new-name}.md"))
+	assert.Equal(t, report.StatusSkipped, renamed.Status)
+	assert.Contains(t, renamed.Reason, "edited in Confluence")
+	assert.Equal(t, "<p>Written by a person.</p>", server.Page(id).Body)
+	assert.Zero(t, countPagesTitled(t, server, "New Name"), "no second page")
+
+	entry, ok := tracked(t, server, filepath.Join(dir, "new-name.md"))
+	require.True(t, ok)
+	assert.Equal(t, id, entry.PageID)
+	assert.Equal(t, manifest.Key(full.Files), entry.Glob)
+}
+
+func TestPartialRequiresTrackPages(t *testing.T) {
+	server, _ := docsSpace(t)
+	dir := t.TempDir()
+	writeFile(t, dir, "a.md", markdownWithTitle("Page a"))
+
+	config := trackingConfig(server, filepath.Join(dir, "*.md"))
+	config.Tracking = TrackingConfig{Partial: true}
+
+	err := Run(context.Background(), config)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "--partial requires --track-pages")
+	assert.Zero(t, countPagesTitled(t, server, "Page a"), "refused before publishing")
 }

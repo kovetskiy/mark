@@ -328,10 +328,11 @@ type TrackingConfig struct {
 	OrphanUnder    string
 
 	// Partial says Files matches only some of the files of the pattern that
-	// publishes them, such as the files a change touched, so a tracked file
-	// missing from the run is not a deleted one. Orphans are neither reported
-	// nor forgotten, and a page the run records keeps the pattern its entry
-	// was recorded under. Refused with an OnOrphan that removes pages.
+	// publishes them, such as the files a change touched. Orphans and renamed
+	// files are then looked for among the tracked paths Files matches, not
+	// among those its pattern recorded, so a tracked file Files does not name
+	// is left alone; and a page the run records keeps the pattern its entry,
+	// or the entry of the file it was renamed from, was recorded under.
 	Partial bool
 
 	// NoOverwrite leaves alone a page edited in Confluence since mark last
@@ -615,21 +616,9 @@ func Run(ctx context.Context, config Config) (err error) {
 		)
 	}
 
-	if config.Tracking.Partial {
-		if !config.Tracking.TrackPages {
-			return errors.New("--partial requires --track-pages: " +
-				"it is about the page manifest, which only --track-pages keeps")
-		}
-
-		// The two ask opposite things of the run's files: that their absence
-		// means nothing, and that it means a page to remove.
-		if onOrphan != report.OnOrphanReport {
-			return fmt.Errorf(
-				"--partial cannot be used with --on-orphan %s: "+
-					"a partial run leaves out files on purpose, so none of them is gone",
-				onOrphan,
-			)
-		}
+	if config.Tracking.Partial && !config.Tracking.TrackPages {
+		return errors.New("--partial requires --track-pages: " +
+			"it is about the page manifest, which only --track-pages keeps")
 	}
 
 	if config.Tracking.NoOverwrite && !config.Tracking.TrackPages {
@@ -1052,12 +1041,8 @@ func Run(ctx context.Context, config Config) (err error) {
 	}
 
 	if tracker != nil {
-		// A partial run leaves files out on purpose, and reporting one would
-		// also forget it.
-		if !config.Tracking.Partial {
-			if err := handleOrphans(ctx, tracker, api, config, onOrphan, failed.any(), results); err != nil {
-				return err
-			}
+		if err := handleOrphans(ctx, tracker, api, config, onOrphan, failed.any(), results); err != nil {
+			return err
 		}
 
 		// Under the same detached context as the save on the way out, and for
