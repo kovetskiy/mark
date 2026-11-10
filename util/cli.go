@@ -345,10 +345,11 @@ func RunPublish(ctx context.Context, cmd *cli.Command) error {
 				PreserveComments: cmd.Bool("preserve-comments"),
 			},
 			Links: mark.LinkConfig{
-				CheckLinks:         cmd.StringSlice("check-links"),
-				CheckLinksWarnOnly: cmd.Bool("check-links-warn-only"),
-				StagedRoot:         cmd.String("links-staged-root"),
-				SourceRoot:         cmd.String("links-source-root"),
+				CheckLinks:          cmd.StringSlice("check-links"),
+				CheckLinksWarnOnly:  cmd.Bool("check-links-warn-only"),
+				StagedRoot:          cmd.String("links-staged-root"),
+				SourceRoot:          cmd.String("links-source-root"),
+				SourceRootCheckOnly: cmd.Bool("links-source-root-check-only"),
 			},
 			Rendering: mark.RenderingConfig{
 				DropH1:           cmd.Bool("drop-h1"),

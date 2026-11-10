@@ -311,6 +311,7 @@ outright rather than warned about, because the belief comes from silence:
 * `--check-links-warn-only` without `--check-links`, or with one that names no
   kind of link
 * `--links-staged-root` without `--links-source-root`, or the other way round
+* `--links-source-root-check-only` without `--links-source-root`
 
 A combination that merely does nothing -- `--track-pages` alongside a page ID,
 where the mapping cannot apply -- is a warning.

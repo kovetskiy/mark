@@ -21,6 +21,7 @@ import (
 	"github.com/kovetskiy/mark/v17/header"
 	"github.com/kovetskiy/mark/v17/imageformat"
 	"github.com/kovetskiy/mark/v17/includes"
+	"github.com/kovetskiy/mark/v17/internal/fspath"
 	"github.com/kovetskiy/mark/v17/internal/mdsource"
 	"github.com/kovetskiy/mark/v17/internal/rendercheck"
 	"github.com/kovetskiy/mark/v17/manifest"
@@ -158,6 +159,14 @@ type LinkConfig struct {
 	// working directory.
 	StagedRoot string
 	SourceRoot string
+
+	// SourceRootCheckOnly looks under SourceRoot for the check alone: a link
+	// to a file found only there passes the internal check and is left as
+	// written, rather than rewritten to a page read from a file that is not
+	// what publishes -- one without the headers a build would give it, or
+	// titled from its name otherwise than the build titles it. Requires
+	// SourceRoot.
+	SourceRootCheckOnly bool
 }
 
 // LinkConfigError is a LinkConfig, alone or with the rest of the
@@ -214,6 +223,14 @@ func (l LinkConfig) validate(checks page.LinkChecks) error {
 			Reason: fmt.Sprintf("requires %s (%s): one says where documents are read, "+
 				"the other where their links were written, and neither means anything alone",
 				unset.field, unset.flag),
+		}
+	}
+
+	if l.SourceRootCheckOnly && l.SourceRoot == "" {
+		return &LinkConfigError{
+			Field: "Links.SourceRootCheckOnly", Flag: "--links-source-root-check-only",
+			Reason: "requires Links.SourceRoot (--links-source-root): " +
+				"it says how the source tree is used, and without one there is none",
 		}
 	}
 
@@ -276,9 +293,9 @@ func (l LinkConfig) sourceDir(dir string) (string, bool) {
 
 // relativeUnder is path relative to root, and false when path is not under
 // it. Compared absolute, so that either may be given relative to the working
-// directory, and failing that with symlinks resolved, so that a root reached
-// through one (every path under macOS's /tmp) still contains what its target
-// does.
+// directory, and failing that with symlinks resolved as deep as each path
+// exists, so that a root reached through one (every path under macOS's /tmp)
+// still contains what its target does.
 func relativeUnder(root, path string) (string, bool) {
 	under := func(root, path string) (string, bool) {
 		root, rootErr := filepath.Abs(root)
@@ -299,13 +316,7 @@ func relativeUnder(root, path string) (string, bool) {
 		return rel, true
 	}
 
-	resolvedRoot, rootErr := filepath.EvalSymlinks(root)
-	resolvedPath, pathErr := filepath.EvalSymlinks(path)
-	if rootErr != nil || pathErr != nil {
-		return "", false
-	}
-
-	return under(resolvedRoot, resolvedPath)
+	return under(fspath.ResolveDeepest(root), fspath.ResolveDeepest(path))
 }
 
 // TrackingConfig is the page manifest --track-pages keeps, and what is done
@@ -1864,7 +1875,12 @@ func (r *publishRun) linkResolver(doc *document) (*page.LinkResolver, error) {
 			sourceDirs = append(sourceDirs, mapped)
 		}
 	}
-	searchDirs = append(searchDirs, sourceDirs...)
+	var checkOnlyDirs []string
+	if config.Links.SourceRootCheckOnly {
+		checkOnlyDirs = sourceDirs
+	} else {
+		searchDirs = append(searchDirs, sourceDirs...)
+	}
 
 	resolver := page.NewLinkResolver(
 		r.api,
@@ -1881,6 +1897,7 @@ func (r *publishRun) linkResolver(doc *document) (*page.LinkResolver, error) {
 		r.checker,
 		searchDirs,
 	)
+	resolver.CheckOnlyDirs = checkOnlyDirs
 	resolver.SourceFile = file
 	resolver.Deferrals = r.deferrals
 	resolver.Warnings = doc.warnings

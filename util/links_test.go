@@ -73,3 +73,52 @@ func TestLinksRootFlagRefusal(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "Links.StagedRoot (--links-staged-root) requires Links.SourceRoot (--links-source-root)")
 }
+
+// TestLinksSourceRootCheckOnlyFlag: the check-only switch reaches the run from
+// the command line, the environment and the configuration file, and a link to
+// a source file without headers then passes and is left as written.
+func TestLinksSourceRootCheckOnlyFlag(t *testing.T) {
+	source, staged := t.TempDir(), t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(source, "guide.md"), []byte("No headers.\n"), 0o600))
+	document := filepath.Join(staged, "intro.md")
+	require.NoError(t, os.WriteFile(document,
+		[]byte("<!-- Space: DOCS -->\n<!-- Title: Intro -->\n\nSee [the guide](./guide.md).\n"), 0o600))
+
+	for _, tc := range []struct {
+		name   string
+		env    map[string]string
+		config string
+		args   []string
+		fails  bool
+	}{
+		{name: "without it", fails: true},
+		{name: "flag", args: []string{"--links-source-root-check-only"}},
+		{name: "environment", env: map[string]string{"MARK_LINKS_SOURCE_ROOT_CHECK_ONLY": "true"}},
+		{name: "configuration file", config: "links-source-root-check-only = true\n"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			noDefaultConfig(t)
+			for key, value := range tc.env {
+				t.Setenv(key, value)
+			}
+
+			server := confluencetest.New(t)
+			home := server.AddPage("DOCS", "Home", "page", "")
+			server.SetHomepage("DOCS", home.ID)
+
+			config := writeConfig(t, t.TempDir(), "mark.toml", tc.config)
+			args := []string{"-c", config, "--color", "never", "-u", "user", "-p", "token", "publish",
+				"-b", server.URL, "--compile-only", "--check-links", "internal", "--files", document,
+				"--links-staged-root", staged, "--links-source-root", source}
+
+			out, _, err := runMark(t, append(args, tc.args...)...)
+			if tc.fails {
+				require.ErrorContains(t, err, "it has no title")
+				return
+			}
+
+			require.NoError(t, err)
+			assert.Contains(t, out, `href="./guide.md"`)
+		})
+	}
+}

@@ -352,6 +352,12 @@ func publishFlags(config *configFile) []cli.Flag {
 			Sources:   cli.NewValueSourceChain(cli.EnvVar("MARK_LINKS_SOURCE_ROOT"), config.value("links-source-root")),
 		},
 		&cli.BoolFlag{
+			Name:    "links-source-root-check-only",
+			Value:   false,
+			Usage:   "look under --links-source-root only to check a link, not to rewrite it: a link to a file found only there passes --check-links internal and is left as written, rather than pointed at a page read from a file the build has yet to give its headers. Requires --links-source-root.",
+			Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_LINKS_SOURCE_ROOT_CHECK_ONLY"), config.value("links-source-root-check-only")),
+		},
+		&cli.BoolFlag{
 			Name:    "no-overwrite",
 			Value:   false,
 			Usage:   "Leave alone any page that has been edited in Confluence since mark last published it, instead of overwriting the edit. Requires --track-pages, which is where the last published version is remembered.",

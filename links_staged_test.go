@@ -139,6 +139,9 @@ func TestLinkConfigIsRefusedUpFront(t *testing.T) {
 		"a source root that is missing": {
 			LinkConfig{StagedRoot: dir, SourceRoot: filepath.Join(dir, "missing")}, "Links.SourceRoot", "--links-source-root",
 		},
+		"check-only without a source root": {
+			LinkConfig{SourceRootCheckOnly: true}, "Links.SourceRootCheckOnly", "--links-source-root-check-only",
+		},
 		"a staged root that is a file": {
 			LinkConfig{StagedRoot: notADir, SourceRoot: dir}, "Links.StagedRoot", "--links-staged-root",
 		},
@@ -288,4 +291,107 @@ func TestRunRefusesADocumentOutsideTheStagedRootUpFront(t *testing.T) {
 	require.ErrorAs(t, err, &linkErr)
 	assert.Contains(t, err.Error(), outside)
 	assert.Empty(t, pageIDTitled(t, server, "Doc"), "nothing is published")
+}
+
+// TestASourceFileWithoutHeaders: a link that finds its file only in the source
+// tree, where the file has none of the headers a build gives it. Read for its
+// page, it is either never published, or -- titled from its name -- taken for
+// whatever page bears that title. SourceRootCheckOnly checks it is there and
+// leaves the link alone.
+func TestASourceFileWithoutHeaders(t *testing.T) {
+	for _, tc := range []struct {
+		name         string
+		checks       []string
+		fromFilename bool
+		checkOnly    bool
+		fails        string
+		rewritten    bool
+	}{
+		{name: "checked, it is never published", checks: []string{"internal"}, fails: "it has no title"},
+		{name: "unchecked, it is left as written"},
+		{name: "titled from its name, it is taken for that page", fromFilename: true, rewritten: true},
+		{name: "check-only passes and leaves it", checks: []string{"internal"}, checkOnly: true},
+		{name: "check-only does not guess from its name", checks: []string{"internal"}, fromFilename: true, checkOnly: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			staged, source, document := stagedTree(t)
+			writeFile(t, filepath.Join(source, "team"), "guide.md", "No headers here.\n")
+
+			server, api, _, config := publisherFixture(t, "")
+			server.AddPage("DOCS", "Guide", "page", "")
+			config.Page.TitleFromFilename = tc.fromFilename
+			config.Links = LinkConfig{
+				CheckLinks: tc.checks, StagedRoot: staged, SourceRoot: source, SourceRootCheckOnly: tc.checkOnly,
+			}
+
+			target, err := publishOne(context.Background(), document, api, config.PublishConfig)
+			if tc.fails != "" {
+				require.ErrorContains(t, err, tc.fails)
+				return
+			}
+
+			require.NoError(t, err)
+			body := server.Page(target.ID).Body
+			if tc.rewritten {
+				assert.Contains(t, body, "/x/")
+			} else {
+				assert.Contains(t, body, `href="./guide.md"`)
+			}
+		})
+	}
+}
+
+// TestCheckOnlyStillChecks: under SourceRootCheckOnly a link to a file in
+// neither tree still fails, and one to a staged file is still rewritten.
+func TestCheckOnlyStillChecks(t *testing.T) {
+	staged, source, _ := stagedTree(t)
+	writeAt(t, staged, "team/staged.md", "<!-- Space: DOCS -->\n<!-- Title: Staged -->\n\nStaged.\n")
+	document := writeFile(t, filepath.Join(staged, "team"), "links.md",
+		"<!-- Space: DOCS -->\n<!-- Title: Links -->\n\n[a](./staged.md) [b](./nowhere.md)\n")
+
+	server, api, _, config := publisherFixture(t, "")
+	server.AddPage("DOCS", "Staged", "page", "")
+	config.Links = LinkConfig{
+		CheckLinks: []string{"internal"}, StagedRoot: staged, SourceRoot: source, SourceRootCheckOnly: true,
+	}
+
+	_, err := publishOne(context.Background(), document, api, config.PublishConfig)
+	require.ErrorContains(t, err, "./nowhere.md")
+	assert.NotContains(t, err.Error(), "./staged.md")
+}
+
+// TestADocumentReachedThroughASymlink: a document named through a symlink is
+// inside the staged root its target is under.
+func TestADocumentReachedThroughASymlink(t *testing.T) {
+	staged, source, _ := stagedTree(t)
+	link := filepath.Join(t.TempDir(), "stage")
+	if err := os.Symlink(staged, link); err != nil {
+		t.Skipf("no symlinks here: %v", err)
+	}
+
+	server, api, _, config := publisherFixture(t, "")
+	server.AddPage("DOCS", "Guide", "page", "")
+	config.Links = LinkConfig{CheckLinks: []string{"internal"}, StagedRoot: staged, SourceRoot: source}
+
+	target, err := publishOne(context.Background(), filepath.Join(link, "team", "doc.md"), api, config.PublishConfig)
+	require.NoError(t, err)
+	assert.Contains(t, server.Page(target.ID).Body, "/x/")
+}
+
+// TestRelativeUnderAPathThatDoesNotExist: symlinks are resolved as deep as a
+// path exists, so a directory not made yet under a symlinked root is still
+// inside it.
+func TestRelativeUnderAPathThatDoesNotExist(t *testing.T) {
+	root := t.TempDir()
+	link := filepath.Join(t.TempDir(), "root")
+	if err := os.Symlink(root, link); err != nil {
+		t.Skipf("no symlinks here: %v", err)
+	}
+
+	rel, ok := relativeUnder(root, filepath.Join(link, "not", "yet"))
+	require.True(t, ok)
+	assert.Equal(t, filepath.Join("not", "yet"), rel)
+
+	_, ok = relativeUnder(root, filepath.Join(t.TempDir(), "elsewhere"))
+	assert.False(t, ok)
 }
