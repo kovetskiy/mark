@@ -224,8 +224,8 @@ func (r *Report) AddError(message string) {
 }
 
 // SetSources sets the Source of each page and orphan recorded so far to what
-// source returns for its File, which stays as it is. An empty result sets no
-// source. A nil source changes nothing.
+// source returns for its File, which stays as it is. A result that is empty or
+// the File itself sets no source. A nil source changes nothing.
 func (r *Report) SetSources(source func(file string) string) {
 	if r == nil || source == nil {
 		return
@@ -235,12 +235,22 @@ func (r *Report) SetSources(source func(file string) string) {
 	defer r.mu.Unlock()
 
 	for i := range r.Pages {
-		r.Pages[i].Source = source(r.Pages[i].File)
+		r.Pages[i].Source = sourceOf(r.Pages[i].File, source)
 	}
 
 	for i := range r.Orphans {
-		r.Orphans[i].Source = source(r.Orphans[i].File)
+		r.Orphans[i].Source = sourceOf(r.Orphans[i].File, source)
 	}
+}
+
+// sourceOf is what source names for file, or empty when that is file itself,
+// so that Source is set only on a document made from another file.
+func sourceOf(file string, source func(file string) string) string {
+	if named := source(file); named != file {
+		return named
+	}
+
+	return ""
 }
 
 // annotated is the file a github annotation is made against: the source, when

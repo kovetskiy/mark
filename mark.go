@@ -189,7 +189,8 @@ type ReportConfig struct {
 	// the github report annotates it, so the annotation lands on a file in
 	// the pull request. An orphan's path is its manifest key: slash-separated,
 	// relative to the working directory for a file under it and absolute for
-	// one outside it. An empty result means the document is its own source.
+	// one outside it. An empty result, or file itself, means the document is
+	// its own source. It is not called for the url format, which names no files.
 	SourcePath func(file string) string
 }
 

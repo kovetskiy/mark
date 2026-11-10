@@ -1,6 +1,7 @@
 package report
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -209,9 +210,6 @@ func TestSetSourcesAnnotatesTheSource(t *testing.T) {
 	r.AddPage(Page{File: "build/b.md", Status: StatusFailed, Reason: "also broken"})
 	r.AddOrphan(Orphan{File: "build/gone.md", Title: "Gone", Action: OnOrphanReport})
 
-	r.SetSources(nil)
-	require.Empty(t, r.Pages[0].Source, "a nil source changes nothing")
-
 	r.SetSources(func(file string) string {
 		if file == "build/b.md" {
 			return ""
@@ -219,6 +217,7 @@ func TestSetSourcesAnnotatesTheSource(t *testing.T) {
 
 		return strings.Replace(file, "build/", "src/", 1)
 	})
+	r.SetSources(nil)
 
 	var out strings.Builder
 	require.NoError(t, r.Write(&out, FormatGitHub))
@@ -238,7 +237,7 @@ func TestJSONKeepsTheFileBesideItsSource(t *testing.T) {
 	r.AddPage(Page{File: "build/b.md", Status: StatusPublished})
 	r.SetSources(func(file string) string {
 		if file == "build/b.md" {
-			return ""
+			return file
 		}
 
 		return "src/a.md.tmpl"
@@ -247,8 +246,11 @@ func TestJSONKeepsTheFileBesideItsSource(t *testing.T) {
 	var out strings.Builder
 	require.NoError(t, r.Write(&out, FormatJSON))
 
-	assert.Contains(t, out.String(), `"file": "build/a.md",
-      "source": "src/a.md.tmpl",`)
-	assert.Equal(t, 1, strings.Count(out.String(), `"source"`), "a page with no source has no source field")
+	var parsed Report
+	require.NoError(t, json.Unmarshal([]byte(out.String()), &parsed))
+	require.Len(t, parsed.Pages, 2)
+	assert.Equal(t, "build/a.md", parsed.Pages[0].File)
+	assert.Equal(t, "src/a.md.tmpl", parsed.Pages[0].Source)
+	assert.Equal(t, 1, strings.Count(out.String(), `"source"`), "a page that is its own source has no source field")
 	assert.Equal(t, StatusPublished, r.StatusOf("build/a.md"), "pages are still found by the file mark read")
 }
