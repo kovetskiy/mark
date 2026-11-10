@@ -149,19 +149,23 @@ The restrictions a document declares are compared: a page whose restrictions
 would change is `would-update`.
 
 `warnings` lists what was wrong with a document that did not stop it
-publishing, and `warningDetails` says the same with each warning's `kind` and
-the `file` it is about:
+publishing, and `warningDetails` says the same with each warning's `kind`, the
+`file` it is about and, where it is about one, the `line`:
 
 ```json
 {
   "file": "docs/guide.md",
   "status": "published",
-  "warnings": ["unused attachment: logo.png"],
+  "warnings": ["front matter key \"colour\" is not read by mark and was ignored"],
   "warningDetails": [
-    {"kind": "attachment", "file": "docs/guide.md", "message": "unused attachment: logo.png"}
+    {"kind": "unknown-key", "file": "docs/guide.md", "line": 4, "message": "front matter key \"colour\" is not read by mark and was ignored"}
   ]
 }
 ```
+
+A line is given for a front matter key, a value one cannot hold (the key's
+line), and a header below the opening comments. A document that fails keeps
+what was found before it did.
 
 A `kind` is one of:
 
@@ -181,8 +185,10 @@ A `kind` is one of:
 | `missing-page` | a page the manifest recorded that no longer exists |
 
 Each is also logged, and listed once even when a document is published twice in
-a run. `github` annotates it where the document's other annotations go: against
-the source a library caller names with `ReportConfig.SourcePath`, if any.
+a run. `github` annotates it against its file and line. When a library caller
+names the file's source with `ReportConfig.SourcePath`, the warning gives it as
+`source` and is annotated against it, without the line, which belongs to the
+file mark read.
 
 `orphans` lists the [tracked pages whose source file is
 gone](page-tree.md#removing-pages-whose-files-are-gone), under `--track-pages`, with the

@@ -636,9 +636,7 @@ func Run(ctx context.Context, config Config) (err error) {
 	pub.tracker = tracker
 	pub.ancestryTracker = ancestryTracker
 	pub.deferrals = deferrals
-	if deferrals != nil {
-		pub.warnings = map[string]*report.Warnings{}
-	}
+	pub.warnings = map[string]*report.Warnings{}
 	pub.results = results
 	pub.hierarchy = hierarchy
 	pub.noOverwrite = config.Tracking.NoOverwrite
@@ -656,10 +654,9 @@ func Run(ctx context.Context, config Config) (err error) {
 
 	// fail records that file failed with err, and returns what the run stops
 	// with, or nil when it goes on to the next file.
+	// Both passes share pub's warnings, so its failedPage serves either.
 	fail := func(file string, err error) error {
-		results.AddPage(report.Page{
-			File: file, Status: report.StatusFailed, Reason: err.Error(),
-		})
+		results.AddPage(pub.failedPage(file, err))
 
 		fileErr := &FileError{
 			File: file, Source: report.SourceOf(file, sourcePath), Err: err,
@@ -1251,9 +1248,10 @@ type publishRun struct {
 	// pageFile is the file published to Page.PageID, once there is one.
 	pageFile string
 
-	// warnings holds each document's warnings when it may be published twice,
-	// so that the second pass's report keeps what only the first found: a
-	// comment it dropped, a page it replaced. Nil starts each read afresh.
+	// warnings holds each document's warnings for the run's report: a second
+	// pass keeps what only the first found, such as a comment it dropped, and
+	// a document that fails is reported with what was found before it did.
+	// Nil, as a Publisher has it, starts each read afresh.
 	warnings map[string]*report.Warnings
 }
 
@@ -1495,11 +1493,26 @@ func (r *publishRun) readDocument(file string) (*document, error) {
 // addPage reports what became of doc, with its warnings both as the messages
 // Page.Warnings holds and in full.
 func (r *publishRun) addPage(doc *document, page report.Page) {
-	page.WarningDetails = doc.warnings.List()
+	r.results.AddPage(withWarnings(page, doc.warnings))
+}
+
+// failedPage is the report of a file that failed with err, with what was
+// found wrong with it before it did.
+func (r *publishRun) failedPage(file string, err error) report.Page {
+	return withWarnings(report.Page{
+		File: file, Status: report.StatusFailed, Reason: err.Error(),
+	}, r.warnings[file])
+}
+
+// withWarnings is page with warnings both as the messages Page.Warnings
+// holds and in full.
+func withWarnings(page report.Page, warnings *report.Warnings) report.Page {
+	page.WarningDetails = warnings.List()
 	for _, warning := range page.WarningDetails {
 		page.Warnings = append(page.Warnings, warning.Message)
 	}
-	r.results.AddPage(page)
+
+	return page
 }
 
 // leaveUnsynchronized reports, and returns true for, a document that has

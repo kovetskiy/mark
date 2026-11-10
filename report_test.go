@@ -1137,3 +1137,25 @@ func TestReportCarriesAWarningOnceOverTwoPasses(t *testing.T) {
 
 	t.Fatalf("a-doc.md is not in the report: %s", out)
 }
+
+// TestAFailedDocumentKeepsItsWarnings: what was found wrong with a document
+// before it failed is reported with the failure, not lost with it.
+func TestAFailedDocumentKeepsItsWarnings(t *testing.T) {
+	out, err := runWithFormat(t, "json", map[string]string{
+		// Lines 1-2 are outHeader; the attachment fails the compile, after
+		// the headers have been read.
+		"bad.md": outHeader + "<!-- Title: Bad -->\n<!-- Attachment: missing.png -->\n\nText.\n\n<!-- Label: late -->\n",
+	})
+	require.Error(t, err)
+
+	var got report.Report
+	require.NoError(t, json.Unmarshal([]byte(out), &got))
+	require.Len(t, got.Pages, 1)
+
+	page := got.Pages[0]
+	assert.Equal(t, report.StatusFailed, page.Status)
+	require.Len(t, page.WarningDetails, 1, "%+v", page)
+	assert.Equal(t, report.WarningStrandedHeader, page.WarningDetails[0].Kind)
+	assert.Equal(t, 8, page.WarningDetails[0].Line)
+	assert.Equal(t, []string{page.WarningDetails[0].Message}, page.Warnings)
+}

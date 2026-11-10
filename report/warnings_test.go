@@ -97,28 +97,68 @@ func TestJSONKeepsWarningsAsStrings(t *testing.T) {
 	}, got.Pages[0].WarningDetails)
 }
 
-// TestGitHubAnnotatesAWarningAgainstTheSource: a warning about the document is
-// annotated where its status is, against the source it was made from; one
-// about another file stays against that file.
+// TestGitHubAnnotatesAWarningAgainstTheSource: a warning is annotated against
+// the source of the file it is about -- the document's, or another file's --
+// and against that file itself when it has no source.
 func TestGitHubAnnotatesAWarningAgainstTheSource(t *testing.T) {
 	r := New()
 	r.AddPage(Page{
 		File: "build/a.md", Status: StatusUnchanged,
-		Warnings: []string{"about the document", "about a fragment"},
+		Warnings: []string{"about the document", "about a fragment", "about a shared file"},
 		WarningDetails: []Warning{
 			{Kind: WarningUnknownKey, File: "build/a.md", Message: "about the document"},
-			{Kind: WarningUnknownKey, File: "build/frag.md", Message: "about a fragment"},
+			{Kind: WarningInclude, File: "build/frag.md", Message: "about a fragment"},
+			{Kind: WarningInclude, File: "shared/b.md", Message: "about a shared file"},
 		},
 	})
-	r.SetSources(func(file string) string { return "src/a.md.tmpl" })
+	r.SetSources(func(file string) string {
+		if !strings.HasPrefix(file, "build/") {
+			return ""
+		}
+
+		return "src/" + strings.TrimPrefix(file, "build/") + ".tmpl"
+	})
 
 	var out strings.Builder
 	require.NoError(t, r.Write(&out, FormatGitHub))
 
 	assert.Equal(t,
 		"::warning file=src/a.md.tmpl::about the document\n"+
-			"::warning file=build/frag.md::about a fragment\n",
+			"::warning file=src/frag.md.tmpl::about a fragment\n"+
+			"::warning file=shared/b.md::about a shared file\n",
 		out.String())
+	assert.Equal(t, "src/frag.md.tmpl", r.Pages[0].WarningDetails[1].Source)
+}
+
+// TestGitHubAnnotatesTheLineOfAWarning: a warning about one line is annotated
+// at it, unless it goes to a source, where that line means nothing.
+func TestGitHubAnnotatesTheLineOfAWarning(t *testing.T) {
+	r := New()
+	w := NewWarnings("docs/a.md")
+	w.AddAt(4, WarningUnknownKey, "front matter key %q is not read by mark and was ignored", "colour")
+	w.Add(WarningAttachment, "unused attachment: %s", "logo.png")
+	r.AddPage(Page{File: "docs/a.md", Status: StatusUnchanged, WarningDetails: w.List()})
+
+	r.AddPage(Page{File: "build/b.md", Status: StatusUnchanged, WarningDetails: []Warning{
+		{Kind: WarningStrandedHeader, File: "build/b.md", Line: 9, Message: "stranded"},
+	}})
+	r.SetSources(func(file string) string {
+		if file == "build/b.md" {
+			return "src/b.md.tmpl"
+		}
+
+		return ""
+	})
+
+	var out strings.Builder
+	require.NoError(t, r.Write(&out, FormatGitHub))
+
+	assert.Equal(t,
+		"::warning file=docs/a.md,line=4::front matter key \"colour\" is not read by mark and was ignored\n"+
+			"::warning file=docs/a.md::unused attachment: logo.png\n"+
+			"::warning file=src/b.md.tmpl::stranded\n",
+		out.String())
+	assert.Equal(t, 4, r.Pages[0].WarningDetails[0].Line, "the json report keeps the line")
 }
 
 // TestGitHubLeavesOutTheWarningsOfAnUnsynchronizedDocument: a document skipped
