@@ -336,6 +336,9 @@ type Store struct {
 	// its entry is recorded under in place of runGlob; "" is none.
 	documentScopes map[string]string
 
+	// scopes holds every non-empty scope in documentScopes.
+	scopes map[string]bool
+
 	// warningsFor gives the collector of the document a key names; see
 	// SetWarningsFor.
 	warningsFor func(key string) *report.Warnings
@@ -590,6 +593,7 @@ func (s *Store) SetRunFiles(glob string, paths []string) {
 	s.runGlob = Key(glob)
 	s.runFiles = make(map[string]bool, len(paths))
 	s.documentScopes = nil
+	s.scopes = nil
 	for _, path := range paths {
 		s.runFiles[Key(path)] = true
 	}
@@ -645,6 +649,13 @@ func (s *Store) SetRunDocuments(scope string, paths []string) {
 		s.documentScopes = make(map[string]string, len(paths))
 	}
 
+	if scope != "" {
+		if s.scopes == nil {
+			s.scopes = map[string]bool{}
+		}
+		s.scopes[scope] = true
+	}
+
 	for _, path := range paths {
 		key := Key(path)
 		s.runFiles[key] = true
@@ -666,17 +677,7 @@ func (s *Store) scopeOf(path string) string {
 // isRunScope reports whether glob is the scope of some of this run's
 // documents. Called with s.mu held.
 func (s *Store) isRunScope(glob string) bool {
-	if glob == "" {
-		return false
-	}
-
-	for _, scope := range s.documentScopes {
-		if scope == glob {
-			return true
-		}
-	}
-
-	return false
+	return s.scopes[glob]
 }
 
 // sameScope reports whether entry belongs where path does: under the scope
