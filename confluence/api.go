@@ -1949,7 +1949,7 @@ func (api *API) searchUsers(ctx context.Context, name string) ([]User, error) {
 		}
 	}
 
-	query := url.Values{"cql": {fmt.Sprintf("user.fullname~%q", name)}}
+	query := url.Values{"cql": {"user.fullname~" + QuoteCQL(name)}}
 
 	// Try the new path first
 	_, err := api.v1.do(ctx, nil, http.MethodGet, []string{"search", "user"}, query, nil, &result)
@@ -2258,14 +2258,9 @@ func (api *API) CreateFolder(ctx context.Context, spaceID, title string, parentI
 }
 
 // folderCQL is the CQL search for the folders with a title in a space, which
-// FindFolder and searchFolders both send. The title is a quoted CQL string,
-// so a backslash or a double quote in it is escaped -- the backslash first,
-// or the escape of the quote would be escaped again.
+// FindFolder and searchFolders both send.
 func folderCQL(spaceKey, title string) string {
-	escaped := strings.ReplaceAll(title, `\`, `\\`)
-	escaped = strings.ReplaceAll(escaped, `"`, `\"`)
-
-	return fmt.Sprintf(`type=folder AND title="%s" AND space="%s"`, escaped, spaceKey)
+	return "type=folder AND title=" + QuoteCQL(title) + " AND space=" + QuoteCQL(spaceKey)
 }
 
 // searchHit is one result of a CQL search.
