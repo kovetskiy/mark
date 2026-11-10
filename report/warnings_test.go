@@ -20,6 +20,15 @@ func TestWarningsRecordKindAndFile(t *testing.T) {
 	}, w.List())
 }
 
+func TestWarningsRecordEachOnce(t *testing.T) {
+	w := NewWarnings("docs/a.md")
+	w.Add(WarningMissingPage, "page %s no longer exists", "1")
+	w.Add(WarningMissingPage, "page %s no longer exists", "1")
+	w.Add(WarningMetadata, "page %s no longer exists", "1")
+
+	assert.Len(t, w.List(), 2)
+}
+
 func TestNilWarningsOnlyLog(t *testing.T) {
 	var w *Warnings
 	w.Add(WarningMetadata, "logged, not kept")
@@ -67,7 +76,7 @@ func TestJSONKeepsWarningsAsStrings(t *testing.T) {
 	r := New()
 	r.AddPage(Page{
 		File: "docs/a.md", Status: StatusPublished,
-		Warnings: w.Messages(), WarningDetails: w.List(),
+		Warnings: []string{"unused attachment: logo.png"}, WarningDetails: w.List(),
 	})
 
 	var out strings.Builder

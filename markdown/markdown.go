@@ -395,6 +395,10 @@ func expandIncludes(
 // opts; left nil, compiling fails at the first mermaid diagram, or d2 diagram
 // or formula published as PNG.
 func CompileMarkdown(ctx context.Context, markdown []byte, stdlib *stdlib.Lib, path string, opts Options) (string, []attachment.Attachment, error) {
+	if opts.Warnings == nil {
+		opts.Warnings = report.NewWarnings(path)
+	}
+
 	tmpl, err := pageTemplates(stdlib)
 	if err != nil {
 		return "", nil, err
@@ -428,7 +432,7 @@ func CompileMarkdown(ctx context.Context, markdown []byte, stdlib *stdlib.Lib, p
 	}
 
 	htmlOutput, replaced := sanitizeXMLChars(htmlOutput)
-	warnIllegalXMLChars(path, markdown, replaced, opts.Warnings)
+	warnIllegalXMLChars(markdown, replaced, opts.Warnings)
 
 	return htmlOutput, append(macroAttachments, ghAlertsExtension.Attachments...), nil
 }

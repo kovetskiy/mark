@@ -156,9 +156,9 @@ func (h *Header) compile(ctx context.Context, rendered string, cfg markdown.Opti
 	cfg = compileConfig(cfg)
 
 	// The configuration is part of the key because Render is handed each
-	// document's. compileConfig has cleared its functions, and the browser and
-	// engine are left out because they draw what the rest decides, so the key
-	// prints only values.
+	// document's. compileConfig has cleared its functions and warnings, and
+	// the browser and engine are left out because they draw what the rest
+	// decides, so the key prints only values.
 	keyed := cfg
 	keyed.Browser, keyed.Mermaid = nil, nil
 	key := fmt.Sprintf("%#v\x00%s", keyed, rendered)
@@ -178,12 +178,14 @@ func (h *Header) compile(ctx context.Context, rendered string, cfg markdown.Opti
 }
 
 // compileConfig adapts a document's configuration to the header, which is not
-// the document: its first H1 is not the one to drop, and its relative links do
-// not name the document's neighbours.
+// the document: its first H1 is not the one to drop, its relative links do
+// not name the document's neighbours, and what is wrong with it is said once,
+// when it compiles, rather than against every document that carries it.
 func compileConfig(cfg markdown.Options) markdown.Options {
 	cfg.DropH1 = false
 	cfg.ResolveLink = nil
 	cfg.ResolveAttachment = nil
+	cfg.Warnings = nil
 
 	return cfg
 }

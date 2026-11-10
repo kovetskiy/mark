@@ -1110,3 +1110,30 @@ func TestReportCarriesStructuredWarnings(t *testing.T) {
 	assert.Contains(t, page.WarningDetails[0].Message, "Label header is below the document's opening comments")
 	assert.Equal(t, []string{page.WarningDetails[0].Message}, page.Warnings)
 }
+
+// TestReportCarriesAWarningOnceOverTwoPasses: a document published again once
+// the page it links to exists keeps its warnings from both passes, each once.
+func TestReportCarriesAWarningOnceOverTwoPasses(t *testing.T) {
+	out, err := runWithFormat(t, "json", map[string]string{
+		"a-doc.md": outHeader + "<!-- Title: A -->\n\nSee [B](./b-doc.md).\n\n<!-- Label: late -->\n",
+		"b-doc.md": outHeader + "<!-- Title: B -->\n\nB.\n",
+	})
+	require.NoError(t, err)
+
+	var got report.Report
+	require.NoError(t, json.Unmarshal([]byte(out), &got))
+
+	for _, page := range got.Pages {
+		if !strings.HasSuffix(page.File, "a-doc.md") {
+			continue
+		}
+
+		require.Len(t, page.WarningDetails, 1)
+		assert.Equal(t, report.WarningMetadata, page.WarningDetails[0].Kind)
+		assert.Equal(t, []string{page.WarningDetails[0].Message}, page.Warnings)
+
+		return
+	}
+
+	t.Fatalf("a-doc.md is not in the report: %s", out)
+}

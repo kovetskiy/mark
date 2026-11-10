@@ -163,12 +163,11 @@ func (r *publishRun) leaveDrifted(ctx context.Context, doc *document, dest *dest
 
 	log.Warn().Msgf("page %q was %s; leaving it alone", target.Title, drift)
 
-	r.results.AddPage(report.Page{
+	r.addPage(doc, report.Page{
 		File: file, Status: report.StatusSkipped,
 		Reason: drift,
 		Space:  spaceOf(meta), Title: target.Title,
 		PageID: target.ID, URL: r.api.BaseURL() + target.Links.Full,
-		Warnings: doc.warnings.Messages(), WarningDetails: doc.warnings.List(),
 	})
 
 	// Recorded, so the page still counts as seen and is not mistaken

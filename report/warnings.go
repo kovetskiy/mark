@@ -67,44 +67,31 @@ func NewWarnings(file string) *Warnings {
 	return &Warnings{file: file}
 }
 
-// Add logs a warning and records it against the document.
+// Add logs a warning and records it against the document. One already
+// recorded is only logged, so that a document published twice in a run is
+// not reported with each of its warnings twice.
 func (w *Warnings) Add(kind WarningKind, format string, args ...any) {
-	message := fmt.Sprintf(format, args...)
+	warning := Warning{Kind: kind, Message: fmt.Sprintf(format, args...)}
+	if w != nil {
+		warning.File = w.file
+	}
+
+	if warning.File != "" {
+		log.Warn().Msgf("%s: %s", warning.File, warning.Message)
+	} else {
+		log.Warn().Msg(warning.Message)
+	}
 
 	if w == nil {
-		log.Warn().Msg(message)
-
 		return
 	}
 
-	if w.file != "" {
-		log.Warn().Msgf("%s: %s", w.file, message)
-	} else {
-		log.Warn().Msg(message)
-	}
-
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
-	w.list = append(w.list, Warning{Kind: kind, File: w.file, Message: message})
-}
-
-// Messages returns the message of each warning added so far, which is what
-// Page.Warnings holds.
-func (w *Warnings) Messages() []string {
-	if w == nil {
-		return nil
+	if !slices.Contains(w.list, warning) {
+		w.list = append(w.list, warning)
 	}
-
-	w.mu.Lock()
-	defer w.mu.Unlock()
-
-	var messages []string
-	for _, warning := range w.list {
-		messages = append(messages, warning.Message)
-	}
-
-	return messages
 }
 
 // List returns the warnings added so far, in the order they were added.

@@ -81,7 +81,8 @@ type Options struct {
 
 	// Warnings collects what was wrong with the document but did not stop it
 	// compiling: a macro attachment not uploaded, a Column-Widths comment not
-	// applied, characters XML cannot carry. Nil only logs them.
+	// applied, characters XML cannot carry. Nil only logs them, against the
+	// document's path.
 	Warnings *report.Warnings
 }
 

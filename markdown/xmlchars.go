@@ -16,15 +16,11 @@ func sanitizeXMLChars(body string) (string, int) {
 // through the stdlib escaping, which is why the source is looked at as well.
 // Replacing them silently would leave a U+FFFD on the page with nothing to say
 // where it came from.
-func warnIllegalXMLChars(path string, source []byte, replaced int, warnings *report.Warnings) {
+func warnIllegalXMLChars(source []byte, replaced int, warnings *report.Warnings) {
 	if replaced == 0 {
 		if _, n := stdlib.ReplaceIllegalXMLChars(string(source)); n == 0 {
 			return
 		}
-	}
-
-	if warnings == nil {
-		warnings = report.NewWarnings(path)
 	}
 
 	warnings.Add(report.WarningInvalidCharacters,
