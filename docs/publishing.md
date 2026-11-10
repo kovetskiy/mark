@@ -298,7 +298,7 @@ MARK_PRESERVE_COMMENTS=true mark publish -f docs/page.md
 
 1. Before uploading, `mark` fetches the current page body and all inline comment markers from the Confluence API.
 2. For each existing `<ac:inline-comment-marker>` tag it records the content wrapped by that marker plus a short context window immediately before the opening tag and immediately after the closing tag in the old body (not around the raw selection text, so the context is stable even when the marker wraps additional inline markup such as `<strong>`).
-3. It searches the text of the new body (not its tags, attribute values, macro parameters or code blocks) for the same selected text and picks the occurrence whose surrounding context best matches the original (using Levenshtein distance), so the marker lands in the right place even if nearby text has shifted.
+3. It searches the text of the new body (not its tags, attribute values, macro parameters, task statuses or code blocks) for the same selected text and picks the occurrence whose surrounding context best matches the original (using Levenshtein distance), so the marker lands in the right place even if nearby text has shifted.
 4. The updated body—with all markers re-embedded—is then uploaded as normal.
 
 **Limitations:**

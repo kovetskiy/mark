@@ -107,34 +107,43 @@ type textSpan struct {
 	end   int
 }
 
+// settingElements hold text that is a setting rather than page text: a macro's
+// parameter, and a task's id and status. A marker inside one corrupts it.
+var settingElements = map[string]bool{
+	"ac:parameter":   true,
+	"ac:task-id":     true,
+	"ac:task-uuid":   true,
+	"ac:task-status": true,
+}
+
 // textSpans returns the runs of body a reader sees as page text: everything
 // outside tags, comments, CDATA sections and processing instructions, and
-// outside ac:parameter elements, whose text is a macro's setting. A marker
-// placed anywhere else would break the markup or show up as literal text.
+// outside settingElements. A marker placed anywhere else would break the
+// markup or show up as literal text.
 func textSpans(body string) []textSpan {
 	var spans []textSpan
-	inParameter := 0
+	inSetting := 0
 	textStart := 0
 	for i := 0; i < len(body); {
 		if body[i] != '<' {
 			i++
 			continue
 		}
-		if inParameter == 0 && i > textStart {
+		if inSetting == 0 && i > textStart {
 			spans = append(spans, textSpan{start: textStart, end: i})
 		}
 		end := markupEnd(body, i)
 		switch name, closing, selfClosing := tagName(body[i:end]); {
-		case name != "ac:parameter" || selfClosing:
+		case !settingElements[name] || selfClosing:
 		case closing:
-			inParameter = max(inParameter-1, 0)
+			inSetting = max(inSetting-1, 0)
 		default:
-			inParameter++
+			inSetting++
 		}
 		i = end
 		textStart = end
 	}
-	if inParameter == 0 && len(body) > textStart {
+	if inSetting == 0 && len(body) > textStart {
 		spans = append(spans, textSpan{start: textStart, end: len(body)})
 	}
 	return spans
