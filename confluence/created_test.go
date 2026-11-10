@@ -41,3 +41,27 @@ func TestCreatedVersionFollowsLaterWrites(t *testing.T) {
 	_, ok = api.CreatedVersion(existing.ID)
 	assert.False(t, ok, "a page this API did not create")
 }
+
+// TestCreatedVersionDropsAPageEditedInBetween: a write that starts from a
+// version somebody else wrote leaves the page no longer mark's own, whether
+// the write is an update or a move.
+func TestCreatedVersionDropsAPageEditedInBetween(t *testing.T) {
+	ctx := context.Background()
+	api, server := newDataCenterAPIWithoutMoveAction(t)
+	parent := server.AddPage("DOCS", "Parent", "page", "")
+
+	updated, err := api.CreatePage(ctx, "DOCS", confluence.ContentPage, nil, "Updated", "")
+	require.NoError(t, err)
+	server.EditPage(updated.ID, "<p>edited in Confluence</p>")
+	require.NoError(t, api.UpdatePage(ctx, updated, "<p>written</p>", confluence.UpdateOptions{}))
+	_, ok := api.CreatedVersion(updated.ID)
+	assert.False(t, ok, "updated over an edit")
+
+	moved, err := api.CreatePage(ctx, "DOCS", confluence.ContentPage, nil, "Moved", "")
+	require.NoError(t, err)
+	server.EditPage(moved.ID, "<p>edited in Confluence</p>")
+	require.NoError(t, api.MoveContentAppend(ctx, moved.ID, parent.ID))
+	require.Equal(t, parent.ID, server.Page(moved.ID).ParentID)
+	_, ok = api.CreatedVersion(moved.ID)
+	assert.False(t, ok, "moved over an edit")
+}

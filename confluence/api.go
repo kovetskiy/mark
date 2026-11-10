@@ -263,12 +263,6 @@ func (api *API) invalidatePage(space, title string, pageType ContentType) {
 // time, author and message the entry had describe the version before, so they
 // are dropped rather than handed out as the new one's.
 func (api *API) updateCachedPageVersion(id string, newVersion int64) {
-	api.createdMutex.Lock()
-	if _, ok := api.created[id]; ok {
-		api.created[id] = newVersion
-	}
-	api.createdMutex.Unlock()
-
 	api.lazyInit()
 	api.pageCacheMutex.Lock()
 	defer api.pageCacheMutex.Unlock()
@@ -1541,6 +1535,7 @@ func (api *API) UpdatePage(ctx context.Context, page *PageInfo, content string, 
 		return err
 	}
 
+	api.noteCreatedWrite(page.ID, nextPageVersion-1, nextPageVersion)
 	page.Version.Number = nextPageVersion
 	api.updateCachedPageVersion(page.ID, nextPageVersion)
 
@@ -2975,6 +2970,7 @@ func (api *API) placedAt(
 	if after.Version.Number != before.Version.Number {
 		api.updateCachedPageVersion(contentID, after.Version.Number)
 		api.noteReparent(contentID, before.Version.Number, after.Version.Number)
+		api.noteCreatedWrite(contentID, before.Version.Number, after.Version.Number)
 	}
 
 	if position == "append" {
@@ -3128,6 +3124,7 @@ func (api *API) reparentContent(ctx context.Context, contentID, parentID string)
 
 	api.updateCachedPageVersion(page.ID, page.Version.Number+1)
 	api.noteReparent(page.ID, page.Version.Number, page.Version.Number+1)
+	api.noteCreatedWrite(page.ID, page.Version.Number, page.Version.Number+1)
 
 	return nil
 }
@@ -3152,6 +3149,24 @@ func (api *API) noteReparent(pageID string, from, to int64) {
 		from = earlier.from
 	}
 	api.reparented[pageID] = reparentedVersions{from: from, to: to}
+}
+
+// noteCreatedWrite moves the version remembered for a page this API created to
+// the one a write of its own took it to, when the write started from that
+// version. A write that started from any other started from somebody else's,
+// and the page is no longer known to hold only what mark wrote.
+func (api *API) noteCreatedWrite(pageID string, from, to int64) {
+	api.createdMutex.Lock()
+	defer api.createdMutex.Unlock()
+
+	version, ok := api.created[pageID]
+	switch {
+	case !ok:
+	case version == from:
+		api.created[pageID] = to
+	default:
+		delete(api.created, pageID)
+	}
 }
 
 // CreatedVersion reports, for a page this API created, the version its last
