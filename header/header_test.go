@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/kovetskiy/mark/v17/markdown"
+	"github.com/kovetskiy/mark/v17/report"
 	"github.com/kovetskiy/mark/v17/stdlib"
 
 	"github.com/stretchr/testify/assert"
@@ -183,10 +184,12 @@ func TestMarkdownHeaderCompilesOncePerText(t *testing.T) {
 	header, err := Load(t.Context(), fixed, newStdlib(t), markdown.Options{})
 	require.NoError(t, err)
 
-	first, _, err := header.Render(t.Context(), "a.md", "A", "SPACE", markdown.Options{})
+	// Each document brings its own warnings, which must not tell the
+	// compiles apart.
+	first, _, err := header.Render(t.Context(), "a.md", "A", "SPACE", markdown.Options{Warnings: report.NewWarnings("a.md")})
 	require.NoError(t, err)
 
-	second, _, err := header.Render(t.Context(), "b.md", "B", "SPACE", markdown.Options{})
+	second, _, err := header.Render(t.Context(), "b.md", "B", "SPACE", markdown.Options{Warnings: report.NewWarnings("b.md")})
 	require.NoError(t, err)
 
 	assert.Equal(t, first, second)

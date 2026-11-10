@@ -173,7 +173,6 @@ func TestColumnWidthsWarningNamesFileNotLine(t *testing.T) {
 			_, logs := compileLogged(t, src, "docs/page.md")
 
 			assert.Contains(t, logs, `docs/page.md: Column-Widths`)
-			assert.Contains(t, logs, "Column-Widths")
 			assert.NotContains(t, logs, "line")
 		})
 	}

@@ -636,6 +636,9 @@ func Run(ctx context.Context, config Config) (err error) {
 	pub.tracker = tracker
 	pub.ancestryTracker = ancestryTracker
 	pub.deferrals = deferrals
+	if deferrals != nil {
+		pub.warnings = map[string]*report.Warnings{}
+	}
 	pub.results = results
 	pub.hierarchy = hierarchy
 	pub.noOverwrite = config.Tracking.NoOverwrite
@@ -1247,6 +1250,11 @@ type publishRun struct {
 
 	// pageFile is the file published to Page.PageID, once there is one.
 	pageFile string
+
+	// warnings holds each document's warnings when it may be published twice,
+	// so that the second pass's report keeps what only the first found: a
+	// comment it dropped, a page it replaced. Nil starts each read afresh.
+	warnings map[string]*report.Warnings
 }
 
 // runUsers is the "user" template func's lookup for a run's templates and
@@ -1408,11 +1416,10 @@ func (r *publishRun) processFile(ctx context.Context, file string) (*confluence.
 		status = report.StatusUnchanged
 	}
 	target := dest.page
-	r.results.AddPage(report.Page{
+	r.addPage(doc, report.Page{
 		File: doc.file, Status: status,
 		Space: spaceOf(doc.meta), Title: target.Title,
 		PageID: target.ID, URL: r.api.BaseURL() + target.Links.Full,
-		Warnings: doc.warnings.Messages(), WarningDetails: doc.warnings.List(),
 	})
 
 	return target, placement, nil
@@ -1451,7 +1458,13 @@ func (r *publishRun) readDocument(file string) (*document, error) {
 	// moves with the remote would not survive the round trip it exists for.
 	sourceHash := fingerprint.SHA1(string(source))
 
-	warnings := report.NewWarnings(file)
+	warnings := r.warnings[file]
+	if warnings == nil {
+		warnings = report.NewWarnings(file)
+		if r.warnings != nil {
+			r.warnings[file] = warnings
+		}
+	}
 
 	meta, markdown, err := documentMeta(r.config, file, markdown, r.hierarchy, warnings)
 	if err != nil {
@@ -1479,6 +1492,16 @@ func (r *publishRun) readDocument(file string) (*document, error) {
 	}, nil
 }
 
+// addPage reports what became of doc, with its warnings both as the messages
+// Page.Warnings holds and in full.
+func (r *publishRun) addPage(doc *document, page report.Page) {
+	page.WarningDetails = doc.warnings.List()
+	for _, warning := range page.WarningDetails {
+		page.Warnings = append(page.Warnings, warning.Message)
+	}
+	r.results.AddPage(page)
+}
+
 // leaveUnsynchronized reports, and returns true for, a document that has
 // opted out of being published.
 func (r *publishRun) leaveUnsynchronized(ctx context.Context, doc *document) (bool, error) {
@@ -1488,11 +1511,10 @@ func (r *publishRun) leaveUnsynchronized(ctx context.Context, doc *document) (bo
 	}
 
 	log.Info().Msgf("%s is not synchronized; leaving it alone", file)
-	r.results.AddPage(report.Page{
+	r.addPage(doc, report.Page{
 		File: file, Status: report.StatusSkipped,
 		Reason: report.ReasonNotSynchronized,
 		Space:  spaceOf(meta), Title: titleOf(meta),
-		Warnings: doc.warnings.Messages(), WarningDetails: doc.warnings.List(),
 	})
 
 	// Looked up purely to mark the path as seen. A page somebody stopped
@@ -1696,11 +1718,10 @@ func (r *publishRun) preview(ctx context.Context, doc *document) error {
 	previewed := found.page
 	r.claimPage(file)
 
-	cfg, err := config.Rendering.documentConfig(r.res, meta, linksUnder(ctx, doc.resolver))
+	cfg, err := config.Rendering.documentConfig(ctx, r.res, doc)
 	if err != nil {
 		return err
 	}
-	cfg.Warnings = doc.warnings
 
 	// Only a dry run asked to tell changed pages from unchanged ones.
 	compare := config.Mode.DryRun && !config.Mode.CompileOnly && config.Update.ChangesOnly
@@ -1776,11 +1797,10 @@ func (r *publishRun) preview(ctx context.Context, doc *document) error {
 		if meta != nil {
 			title = meta.Title
 		}
-		r.results.AddPage(report.Page{
+		r.addPage(doc, report.Page{
 			File: file, Status: status, Reason: reason,
 			Space: spaceOf(meta), Title: title,
 			PageID: target.ID, URL: url,
-			Warnings: doc.warnings.Messages(), WarningDetails: doc.warnings.List(),
 		})
 	}
 
@@ -2012,8 +2032,8 @@ func (r *publishRun) tightenRestrictions(ctx context.Context, doc *document, des
 }
 
 // compile uploads the document's attachments, compiles it, and returns the
-// body to send, wrapped in its layout, with the broken links the run was told
-// to warn about rather than fail on.
+// body to send, wrapped in its layout. The broken links the run was told to
+// warn about rather than fail on go to the document's warnings.
 func (r *publishRun) compile(ctx context.Context, doc *document, target *confluence.PageInfo) (string, error) {
 	api, meta, file := r.api, doc.meta, doc.file
 
@@ -2032,11 +2052,10 @@ func (r *publishRun) compile(ctx context.Context, doc *document, target *conflue
 		return "", fmt.Errorf("unable to locate attachments: %w", err)
 	}
 
-	cfg, err := r.config.Rendering.documentConfig(r.res, meta, linksUnder(ctx, doc.resolver))
+	cfg, err := r.config.Rendering.documentConfig(ctx, r.res, doc)
 	if err != nil {
 		return "", err
 	}
-	cfg.Warnings = doc.warnings
 
 	// With --page-id the file's metadata is discarded, so the page itself and
 	// --space are what the header can name.
@@ -2367,8 +2386,10 @@ func renderHeader(
 }
 
 // documentConfig is the compile configuration for one document: the run's,
-// with what its metadata and link resolution add.
-func (c RenderingConfig) documentConfig(res *resources, meta *metadata.Meta, resolveLink func(target, text string) (string, error)) (markdown.Options, error) {
+// with what its metadata, link resolution and warnings add.
+func (c RenderingConfig) documentConfig(ctx context.Context, res *resources, doc *document) (markdown.Options, error) {
+	meta := doc.meta
+
 	if c.DropH1 {
 		log.Info().Msg("the leading H1 heading will be excluded from the Confluence output")
 	}
@@ -2381,7 +2402,8 @@ func (c RenderingConfig) documentConfig(res *resources, meta *metadata.Meta, res
 	cfg := c.markdownOptions(res)
 	cfg.DropH1 = c.DropH1
 	cfg.ImageAlign = imageAlign
-	cfg.ResolveLink = resolveLink
+	cfg.ResolveLink = linksUnder(ctx, doc.resolver)
+	cfg.Warnings = doc.warnings
 
 	return cfg, nil
 }

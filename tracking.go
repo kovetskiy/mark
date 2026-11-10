@@ -115,8 +115,8 @@ func resolveTrackedPage(
 			)
 		}
 		warnings.Add(report.WarningMissingPage,
-			"it was published to page %s, which no longer exists; a new page will be created",
-			entry.PageID,
+			"page %s, recorded for %s, no longer exists; a new page will be created",
+			entry.PageID, file,
 		)
 		return nil, nil
 	}

@@ -164,12 +164,13 @@ the `file` it is about:
 ```
 
 A `kind` is one of `unresolved-link` (under `--check-links-warn-only`),
-`metadata` (a front matter key mark does not read, or a header below the opening
-comments), `attachment` (a file not uploaded, or uploaded and never used),
-`invalid-characters`, `column-widths`, `inline-comment` (a comment
-`--preserve-comments` could not keep) and `missing-page` (a page the manifest
-recorded that no longer exists). Each is also logged; `github` annotates it
-against its file.
+`metadata` (a front matter key mark does not read, a header below the opening
+comments, or metadata set aside for `--page-id`), `attachment` (a file not
+uploaded, or uploaded and never used), `invalid-characters`, `column-widths`,
+`inline-comment` (a comment `--preserve-comments` could not keep) and
+`missing-page` (a page the manifest recorded that no longer exists). Each is
+also logged, and listed once even when a document is published twice in a run;
+`github` annotates it against its file.
 
 `orphans` lists the [tracked pages whose source file is
 gone](page-tree.md#removing-pages-whose-files-are-gone), under `--track-pages`, with the
