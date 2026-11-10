@@ -10,6 +10,7 @@ import (
 	"text/template"
 	"text/template/parse"
 
+	"github.com/kovetskiy/mark/v17/attachment"
 	"github.com/kovetskiy/mark/v17/includes"
 	"github.com/kovetskiy/mark/v17/internal/mdsource"
 	"github.com/rs/zerolog/log"
@@ -390,6 +391,18 @@ func ExtractMacros(
 	contents []byte,
 	templates *template.Template,
 ) ([]Macro, []byte, error) {
+	return ExtractMacrosIn(attachment.Root{}, base, includePath, contents, templates)
+}
+
+// ExtractMacrosIn is ExtractMacros for a document whose directory, base, is
+// in root: a macro's Template file is read as includes.LoadTemplateIn reads it.
+func ExtractMacrosIn(
+	root attachment.Root,
+	base string,
+	includePath string,
+	contents []byte,
+	templates *template.Template,
+) ([]Macro, []byte, error) {
 	var extracted []Macro
 	remaining := contents
 
@@ -471,7 +484,7 @@ func ExtractMacros(
 
 			m.defined = definedTrees(templates, before)
 		} else {
-			m.Template, err = includes.LoadTemplate(base, includePath, dir.Template, "{{", "}}", templates)
+			m.Template, err = includes.LoadTemplateIn(root, base, includePath, dir.Template, "{{", "}}", templates)
 			if err != nil {
 				return nil, contents, fmt.Errorf("unable to load template: %w", err)
 			}

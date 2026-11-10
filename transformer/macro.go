@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"text/template"
 
+	"github.com/kovetskiy/mark/v17/attachment"
 	"github.com/kovetskiy/mark/v17/macro"
 	"github.com/rs/zerolog/log"
 	"github.com/yuin/goldmark/v2/ast"
@@ -18,8 +19,10 @@ type MacroTransformer struct {
 	FilePath    string
 	BaseDir     string
 	IncludePath string
-	Templates   *template.Template
-	Err         error
+	// Root is where BaseDir is; the zero Root is the disk.
+	Root      attachment.Root
+	Templates *template.Template
+	Err       error
 }
 
 // NewMacroTransformer creates a new MacroTransformer instance.
@@ -106,7 +109,7 @@ func (t *MacroTransformer) TransformWithModified(doc *ast.Document, reader text.
 	var extractedMacros []macro.Macro
 
 	for _, target := range targets {
-		macros, _, err := macro.ExtractMacros(t.BaseDir, t.IncludePath, target.fullRawContent, t.Templates)
+		macros, _, err := macro.ExtractMacrosIn(t.Root, t.BaseDir, t.IncludePath, target.fullRawContent, t.Templates)
 		if err != nil {
 			t.Err = err
 			log.Error().

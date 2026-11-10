@@ -3,7 +3,7 @@ package includes
 import (
 	"bytes"
 	"fmt"
-	"os"
+	"path"
 	"path/filepath"
 	"strings"
 	"text/template"
@@ -128,26 +128,84 @@ func ParseIncludeDirective(raw []byte) (*IncludeDirective, error) {
 	return dir, nil
 }
 
+// place is a file or directory an include is read from: on the local disk,
+// where name is an OS path, or in a document's fs.FS, where it is the path
+// inside it. --include-path is always on disk, so one document's includes may
+// come from both.
+type place struct {
+	root attachment.Root
+	name string
+}
+
+func disk(name string) place { return place{name: name} }
+
+func (p place) inFS() bool { return p.root.FS() != nil }
+
+// join is the place rel names from p.
+func (p place) join(rel string) place {
+	if p.inFS() {
+		return place{root: p.root, name: path.Join(filepath.ToSlash(p.name), filepath.ToSlash(rel))}
+	}
+
+	return disk(filepath.Join(p.name, rel))
+}
+
+func (p place) dir() place {
+	if p.inFS() {
+		return place{root: p.root, name: path.Dir(p.name)}
+	}
+
+	return disk(filepath.Dir(p.name))
+}
+
+// key makes p the name of exactly one file, as absolute does on disk; a path
+// inside an fs.FS is one already.
+func (p place) key() place {
+	if p.inFS() {
+		return p
+	}
+
+	return disk(absolute(p.name))
+}
+
+// cacheKey is what p is known by among the templates and the include stack.
+// One in an fs.FS is marked, so that it cannot be taken for a path on disk.
+func (p place) cacheKey() string {
+	if p.inFS() {
+		return "fs:" + p.name
+	}
+
+	return p.name
+}
+
+func (p place) exists() bool {
+	_, err := p.root.Stat(p.name)
+
+	return err == nil
+}
+
+func (p place) String() string { return p.name }
+
 // resolveTemplatePath names the file a directive refers to.
 //
 // The document's own directory first, then --include-path, which is the order
 // the read used to try them in. A name that matches nothing resolves against
 // the document's directory anyway, so the failure to read it names the place
 // the author would look first.
-func resolveTemplatePath(base, includePath, path string) string {
-	candidate := filepath.Join(base, path)
-	if _, err := os.Stat(candidate); err == nil {
-		return absolute(candidate)
+func resolveTemplatePath(base place, includePath, path string) place {
+	candidate := base.join(path)
+	if candidate.exists() {
+		return candidate.key()
 	}
 
 	if includePath != "" {
-		fallback := filepath.Join(includePath, path)
-		if _, err := os.Stat(fallback); err == nil {
-			return absolute(fallback)
+		fallback := disk(filepath.Join(includePath, path))
+		if fallback.exists() {
+			return fallback.key()
 		}
 	}
 
-	return absolute(candidate)
+	return candidate.key()
 }
 
 // resolveNestedTemplatePath names the file a directive inside an included
@@ -160,16 +218,16 @@ func resolveTemplatePath(base, includePath, path string) string {
 // should have to rewrite, so that is still tried when nothing is beside the
 // fragment. A name that matches nothing resolves beside the fragment, so the
 // failure to read it names the place the author would look first.
-func resolveNestedTemplatePath(base, from, includePath, path string, warnings *report.Warnings) string {
-	candidate := absolute(filepath.Join(from, path))
+func resolveNestedTemplatePath(base, from place, includePath, path string, warnings *report.Warnings) place {
+	candidate := from.join(path).key()
 	rootRelative := resolveTemplatePath(base, includePath, path)
 
-	_, rootErr := os.Stat(rootRelative)
+	rootFound := rootRelative.exists()
 
-	if _, err := os.Stat(candidate); err == nil {
+	if candidate.exists() {
 		// Only worth saying when the old rule would have picked a different
 		// file: that is the one case where what a page publishes has changed.
-		if rootErr == nil && rootRelative != candidate {
+		if rootFound && rootRelative.cacheKey() != candidate.cacheKey() {
 			warnings.Add(report.WarningInclude,
 				"include %q resolves beside the fragment that names it, to %s rather than %s; "+
 					"write the path from the fragment's directory to include the other one",
@@ -180,7 +238,7 @@ func resolveNestedTemplatePath(base, from, includePath, path string, warnings *r
 		return candidate
 	}
 
-	if rootErr == nil {
+	if rootFound {
 		log.Debug().Msgf(
 			"include %q is not beside the fragment in %s, using %s found relative to the document",
 			path, from, rootRelative,
@@ -198,23 +256,41 @@ func resolveNestedTemplatePath(base, from, includePath, path string, warnings *r
 // run at the root of a repository is the repository -- and --include-path
 // besides. That directory is a permitted root because the operator chose it and
 // the document did not: it is the one place a document is invited to reach that
-// is not its own.
-func allowedTemplatePath(base, includePath, resolved string) error {
-	err := attachment.CheckReadable(base, resolved)
-	if err == nil {
+// is not its own. A document read from an fs.FS may include what is inside it,
+// and from disk only what --include-path allows.
+func allowedTemplatePath(base place, includePath string, resolved place) error {
+	if resolved.inFS() {
+		if resolved.root.CheckReadable(".", resolved.name) != nil {
+			return fmt.Errorf(
+				"%w: %s is outside the document's file system, so it is not this document's to include",
+				attachment.ErrOutsideProject, resolved,
+			)
+		}
+
 		return nil
 	}
 
-	if includePath != "" && attachment.CheckReadable(includePath, resolved) == nil {
+	if !base.inFS() && attachment.CheckReadable(base.name, resolved.name) == nil {
+		return nil
+	}
+
+	if includePath != "" && attachment.CheckReadable(includePath, resolved.name) == nil {
 		return nil
 	}
 
 	// Reported in the words of what was asked for. The check is the one
 	// attachments use and says so in its own message, which names an attachment
 	// nobody wrote: what this document wrote was an include.
-	where := fmt.Sprintf("%q", base)
+	if base.inFS() {
+		return fmt.Errorf(
+			"%w: %s is on disk outside --include-path %q, so it is not this document's to include",
+			attachment.ErrOutsideProject, resolved, includePath,
+		)
+	}
+
+	where := fmt.Sprintf("%q", base.name)
 	if includePath != "" {
-		where = fmt.Sprintf("%q, %q", base, includePath)
+		where = fmt.Sprintf("%q, %q", base.name, includePath)
 	}
 
 	return fmt.Errorf(
@@ -243,15 +319,31 @@ func LoadTemplate(
 	right string,
 	templates *template.Template,
 ) (*template.Template, error) {
+	return LoadTemplateIn(attachment.Root{}, base, includePath, path, left, right, templates)
+}
+
+// LoadTemplateIn is LoadTemplate for a document whose directory, base, is in
+// root: a fragment beside it is read from there, and one under includePath
+// from disk.
+func LoadTemplateIn(
+	root attachment.Root,
+	base string,
+	includePath string,
+	path string,
+	left string,
+	right string,
+	templates *template.Template,
+) (*template.Template, error) {
 	// Which file this is, decided before the cache is consulted rather than
 	// after. One template set is shared by every document in a run, so keying
 	// on the name a directive wrote made "partial.md" beside one document the
 	// same entry as "partial.md" beside another: the first one read was then
 	// served to every document that asked for that name, publishing one page's
 	// fragment onto another's, silently and with no error anywhere.
-	resolved := resolveTemplatePath(base, includePath, path)
+	from := place{root: root, name: base}
+	resolved := resolveTemplatePath(from, includePath, path)
 
-	loaded, _, err := loadTemplate(base, includePath, resolved, path, left, right, templates)
+	loaded, _, err := loadTemplate(from, includePath, resolved, path, left, right, templates)
 
 	return loaded, err
 }
@@ -259,9 +351,9 @@ func LoadTemplate(
 // loadTemplate loads what a directive named, already resolved to a file, and
 // reports whether it was that file rather than a stdlib template of the name.
 func loadTemplate(
-	base string,
+	base place,
 	includePath string,
-	resolved string,
+	resolved place,
 	path string,
 	left string,
 	right string,
@@ -280,9 +372,9 @@ func loadTemplate(
 	// The delimiters are part of what makes the parse, so they belong in the
 	// key too. Without them a file included twice with different Delims: reused
 	// the first parse and silently discarded the second set.
-	cacheName := resolved
+	cacheName := resolved.cacheKey()
 	if left != "" || right != "" {
-		cacheName = resolved + "\x00" + left + "\x00" + right
+		cacheName = cacheName + "\x00" + left + "\x00" + right
 	}
 
 	if template := templates.Lookup(cacheName); template != nil {
@@ -297,7 +389,7 @@ func loadTemplate(
 		return nil, false, err
 	}
 
-	body, err := os.ReadFile(resolved)
+	body, err := resolved.root.ReadFile(resolved.name)
 	if err != nil {
 		return nil, false, fmt.Errorf("unable to read template file %q: %w", path, err)
 	}
@@ -430,15 +522,32 @@ func ProcessIncludesWithWarnings(
 	stack []string,
 	warnings *report.Warnings,
 ) (*template.Template, []byte, bool, error) {
+	return ProcessIncludesIn(attachment.Root{}, base, includePath, contents, templates, stack, warnings)
+}
+
+// ProcessIncludesIn is ProcessIncludesWithWarnings for a document whose
+// directory, base, is in root: what it includes is read from there, held to
+// root's boundary, or from includePath on disk.
+func ProcessIncludesIn(
+	root attachment.Root,
+	base string,
+	includePath string,
+	contents []byte,
+	templates *template.Template,
+	stack []string,
+	warnings *report.Warnings,
+) (*template.Template, []byte, bool, error) {
+	from := place{root: root, name: base}
+
 	frames := make([]includeFrame, 0, len(stack))
 	for _, name := range stack {
 		frames = append(frames, includeFrame{
 			name: name,
-			file: resolveTemplatePath(base, includePath, name),
+			file: resolveTemplatePath(from, includePath, name).cacheKey(),
 		})
 	}
 
-	return processIncludes(base, base, includePath, contents, templates, frames, warnings)
+	return processIncludes(from, from, includePath, contents, templates, frames, warnings)
 }
 
 // includeFrame is one include being expanded: the name the directive wrote,
@@ -455,8 +564,8 @@ type includeFrame struct {
 // check is held to however deep the nesting, so a fragment cannot widen what a
 // document may read by including something from further out.
 func processIncludes(
-	base string,
-	from string,
+	base place,
+	from place,
 	includePath string,
 	contents []byte,
 	templates *template.Template,
@@ -521,13 +630,13 @@ func processIncludes(
 		// directory; one inside an included fragment names it from the
 		// fragment's, with the document's still tried after it.
 		resolved := resolveTemplatePath(base, includePath, dir.Template)
-		if from != base {
+		if from.cacheKey() != base.cacheKey() {
 			resolved = resolveNestedTemplatePath(base, from, includePath, dir.Template, warnings)
 		}
 
 		// Detect circular include loops
 		for _, frame := range stack {
-			if frame.file == resolved {
+			if frame.file == resolved.cacheKey() {
 				return templates, contents, false, fmt.Errorf("circular include detected: %s -> %s", names(), dir.Template)
 			}
 		}
@@ -548,7 +657,7 @@ func processIncludes(
 		// stdlib template lives nowhere, so its output is read from here.
 		nested := from
 		if isFile {
-			nested = filepath.Dir(resolved)
+			nested = resolved.dir()
 		}
 
 		var buffer bytes.Buffer
@@ -566,7 +675,7 @@ func processIncludes(
 		// would otherwise share -- and overwrite -- the same backing array.
 		newStack := make([]includeFrame, 0, len(stack)+1)
 		newStack = append(newStack, stack...)
-		newStack = append(newStack, includeFrame{name: dir.Template, file: resolved})
+		newStack = append(newStack, includeFrame{name: dir.Template, file: resolved.cacheKey()})
 
 		subTemplates, subBytes, _, subErr := processIncludes(base, nested, includePath, expanded, templates, newStack, warnings)
 		if subErr != nil {
