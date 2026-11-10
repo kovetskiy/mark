@@ -128,20 +128,20 @@ func handleOrphans(
 				continue
 			}
 
-			// The same, for each pattern or document scope on its own: pages
-			// one of them published elsewhere in the space say nothing about
-			// the other's. A partial run that removes acts only on paths and
-			// keys it names, not on anything's absence, so it is not held back.
+			// The same, for the run's files and each document scope on its
+			// own: pages one of them published elsewhere in the space say
+			// nothing about the other's. A partial run's document orphans are
+			// keys it named, not keys found absent, so they are not held back.
 			acting := make([]page.Orphan, 0, len(candidates))
 			publishedUnder := map[string]int{}
 			for _, candidate := range candidates {
-				if config.Tracking.Partial {
+				glob := globOf[candidate.Path]
+				if config.Tracking.Partial && manifest.IsDocumentScope(glob) {
 					acting = append(acting, candidate)
 
 					continue
 				}
 
-				glob := globOf[candidate.Path]
 				published, counted := publishedUnder[glob]
 				if !counted {
 					published = tracker.PublishedUnder(space, glob)

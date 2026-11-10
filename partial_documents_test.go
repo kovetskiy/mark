@@ -200,6 +200,10 @@ func TestDocumentKeysNeedPartialAndAScope(t *testing.T) {
 		err := Run(context.Background(), config)
 		require.ErrorContains(t, err, "DocumentKeys requires Tracking.Partial and a DocumentScope", name)
 	}
+
+	// Removals alone publish nothing, so no space is looked in.
+	removalsOnly := partialDocumentsOf(full, []string{"b.md"})
+	require.ErrorContains(t, Run(context.Background(), removalsOnly), "finds no space to look for them in")
 	assert.False(t, server.Page(mustFind(t, server, "Record b")).Trashed)
 }
 

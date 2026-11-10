@@ -95,7 +95,9 @@ type Config struct {
 	// OnOrphan acts on it, or the previous Key of a document the run
 	// publishes, whose page then follows it. A key of Documents may be named
 	// too. It needs DocumentScope and Tracking.Partial: a run without
-	// Partial already covers every key of its scope.
+	// Partial already covers every key of its scope. A run finds a scope's
+	// pages only in the spaces it publishes to, so DocumentKeys with nothing
+	// to publish is refused, or under CI only warned about.
 	DocumentKeys []string
 
 	Connection ConnectionConfig
