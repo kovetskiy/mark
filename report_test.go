@@ -911,8 +911,10 @@ func TestSourcePathNamesTheSource(t *testing.T) {
 	err := Run(context.Background(), config)
 	require.Error(t, err)
 
-	assert.Equal(t, []string{filepath.Join(dir, "bad.md")}, seen,
-		"the mapper is given the path mark read")
+	require.NotEmpty(t, seen)
+	for _, file := range seen {
+		assert.Equal(t, filepath.Join(dir, "bad.md"), file, "the mapper is given the path mark read")
+	}
 	assert.Contains(t, out.String(), "::error file=templates/bad.md.tmpl::")
 }
 
@@ -1044,4 +1046,52 @@ func TestPublisherReturnsAFileError(t *testing.T) {
 	assert.Equal(t, file, fileErr.File)
 	assert.Equal(t, fileErr.Err.Error(), err.Error())
 	require.ErrorIs(t, err, confluence.ErrForbidden)
+}
+
+// TestAFileErrorNamesItsSource: a failed file's error carries the source
+// SourcePath names for it, as the report does, whatever the output format; a
+// file that is its own source has none.
+func TestAFileErrorNamesItsSource(t *testing.T) {
+	for _, continueOnError := range []bool{true, false} {
+		t.Run(map[bool]string{true: "continue", false: "stop"}[continueOnError], func(t *testing.T) {
+			server := outputServer(t)
+			dir := t.TempDir()
+			writeFile(t, dir, "generated.md", outHeader+"<!-- Title: Generated -->\n\n<!-- ac:ignore -->\nunclosed\n")
+			writeFile(t, dir, "plain.md", outHeader+"<!-- Title: Plain -->\n\n<!-- ac:ignore -->\nunclosed\n")
+
+			config := publishConfig(server.URL, filepath.Join(dir, "*.md"))
+			config.ContinueOnError = continueOnError
+			config.Report.SourcePath = func(file string) string {
+				if filepath.Base(file) == "generated.md" {
+					return "templates/generated.md.tmpl"
+				}
+
+				return file
+			}
+
+			err := Run(context.Background(), config)
+
+			var fileErrs []*FileError
+			var failed *FilesFailedError
+			if errors.As(err, &failed) {
+				fileErrs = failed.Errors
+			} else {
+				var fileErr *FileError
+				require.ErrorAs(t, err, &fileErr)
+				fileErrs = []*FileError{fileErr}
+			}
+
+			sources := map[string]string{}
+			for _, fileErr := range fileErrs {
+				sources[filepath.Base(fileErr.File)] = fileErr.Source
+			}
+
+			// Files are processed in glob order: generated.md first.
+			assert.Equal(t, "templates/generated.md.tmpl", sources["generated.md"])
+			if continueOnError {
+				assert.Contains(t, sources, "plain.md")
+				assert.Empty(t, sources["plain.md"], "a file that is its own source has none")
+			}
+		})
+	}
 }

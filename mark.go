@@ -195,7 +195,10 @@ type ReportConfig struct {
 	// the pull request. An orphan's path is its manifest key: slash-separated,
 	// relative to the working directory for a file under it and absolute for
 	// one outside it. An empty result, or file itself, means the document is
-	// its own source. It is not called for the url format, which names no files.
+	// its own source. A file that fails is given its source in the
+	// *FileError Run returns, whatever the format; otherwise it is not called
+	// for the url format, which names no files. It may be asked about one file
+	// more than once.
 	SourcePath func(file string) string
 }
 
@@ -652,7 +655,9 @@ func Run(ctx context.Context, config Config) (err error) {
 			File: file, Status: report.StatusFailed, Reason: err.Error(),
 		})
 
-		fileErr := &FileError{File: file, Err: err}
+		fileErr := &FileError{
+			File: file, Source: report.SourceOf(file, config.Report.SourcePath), Err: err,
+		}
 		if stepPast(ctx, config.ContinueOnError, file, err) {
 			failed.Errors = append(failed.Errors, fileErr)
 
@@ -823,8 +828,13 @@ func Run(ctx context.Context, config Config) (err error) {
 // unchanged: the file is in File, and the run's log and report name it beside
 // the message.
 type FileError struct {
+	// File is the path mark read the document from.
 	File string
-	Err  error
+	// Source is the file the document was made from, as
+	// ReportConfig.SourcePath names it for the report; empty when it is its
+	// own source, and always from a Publisher, which has no SourcePath.
+	Source string
+	Err    error
 }
 
 func (e *FileError) Error() string { return e.Err.Error() }
