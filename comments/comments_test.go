@@ -434,6 +434,16 @@ func TestMergeComments_SelectionOnlyInMarkup(t *testing.T) {
 			selection: "Setup",
 		},
 		{
+			name:      "default parameter",
+			body:      `<ac:structured-macro ac:name="excerpt-include"><ac:default-parameter>Release Notes</ac:default-parameter></ac:structured-macro>`,
+			selection: "Release Notes",
+		},
+		{
+			name:      "placeholder",
+			body:      `<ac:layout><ac:layout-section ac:type="single"><ac:layout-cell><ac:placeholder>Add notes here</ac:placeholder></ac:layout-cell></ac:layout-section></ac:layout>`,
+			selection: "notes",
+		},
+		{
 			name:      "task status",
 			body:      "<ac:task-list>\n<ac:task>\n<ac:task-id>1</ac:task-id>\n<ac:task-status>incomplete</ac:task-status>\n<ac:task-body>a</ac:task-body>\n</ac:task>\n</ac:task-list>",
 			selection: "complete",
