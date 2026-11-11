@@ -253,6 +253,15 @@ func requestError(operation string, err error) error {
 		return fmt.Errorf("unable to %s: %w", operation, err)
 	}
 
+	var login *loginPageError
+	if errors.As(err, &login) && login.credentialsRefused() {
+		return fmt.Errorf(
+			"unable to %s: %w; Confluence did not accept the credentials: check the token or password, "+
+				"or log in once in a browser if Confluence asks for a CAPTCHA",
+			operation, err,
+		)
+	}
+
 	if errors.Is(err, ErrLoginPage) {
 		return fmt.Errorf(
 			"unable to %s: %w; SSO or a proxy in front of Confluence is the usual cause, "+
