@@ -182,13 +182,13 @@ func (h *Header) compile(ctx context.Context, rendered string, cfg markdown.Opti
 // not name the document's neighbours, and what is wrong with it is said once,
 // when it compiles, rather than against every document that carries it. It
 // is a file on disk, so it reads its own files from there, whatever root the
-// document reads from.
+// document reads from, held to the same Boundary around its own directory.
 func compileConfig(cfg markdown.Options) markdown.Options {
 	cfg.DropH1 = false
 	cfg.ResolveLink = nil
 	cfg.ResolveAttachment = nil
 	cfg.Warnings = nil
-	cfg.Root = attachment.Root{}
+	cfg.Root = attachment.Root{}.WithBoundary(cfg.Root.Boundary())
 
 	return cfg
 }

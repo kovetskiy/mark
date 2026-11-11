@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	mark "github.com/kovetskiy/mark/v17"
+	"github.com/kovetskiy/mark/v17/attachment"
 	"github.com/kovetskiy/mark/v17/export"
 	"github.com/kovetskiy/mark/v17/mermaid"
 	"github.com/kovetskiy/mark/v17/metadata"
@@ -401,6 +402,7 @@ func RunPublish(ctx context.Context, cmd *cli.Command) (err error) {
 				Features:         EnabledFeatures(cmd),
 				ImageAlign:       cmd.String("image-align"),
 				AttachReferenced: cmd.Bool("attach-referenced"),
+				AttachmentRoot:   attachment.Boundary(cmd.String("attachment-root")),
 				IncludePath:      cmd.String("include-path"),
 				PageHeader:       cmd.String("page-header"),
 			},
