@@ -4,6 +4,7 @@ package mark
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"maps"
 	"slices"
@@ -67,6 +68,8 @@ func handleOrphans(
 		// reported by every partial run naming it and dealt with by none.
 		keep := make(map[string]bool, len(orphans))
 		globOf := make(map[string]string, len(orphans))
+		// The candidates in another space, with why they are left alone.
+		elsewhere := map[string]string{}
 		for _, orphan := range orphans {
 			keep[orphan.Path] = config.Tracking.Partial && action == report.OnOrphanReport &&
 				orphan.Entry.Glob != globpattern.Escape(orphan.Path)
@@ -76,7 +79,23 @@ func handleOrphans(
 				Title:  orphan.Entry.Title,
 			}
 
-			inScope, err := page.InScope(ctx, api, scopeID, candidate)
+			var inScope bool
+			if action == report.OnOrphanReport {
+				inScope, err = page.InScope(ctx, api, scopeID, candidate)
+			} else {
+				var located *confluence.PageInfo
+				located, err = locateOrphan(ctx, api, candidate.PageID, scopeID != "")
+				if err != nil {
+					return err
+				}
+				if located != nil && !pageInSpace(located, space) {
+					elsewhere[candidate.Path] = fmt.Sprintf(
+						"it is in %s, not space %q, whose page manifest records it", pageSpace(located), space,
+					)
+				}
+
+				inScope, err = page.InScopeOf(ctx, api, scopeID, candidate, located)
+			}
 			if err != nil {
 				return err
 			}
@@ -168,8 +187,26 @@ func handleOrphans(
 				}
 			}
 
+			// A manifest speaks for its own space's pages alone, however one of
+			// its entries came to name a page elsewhere. The entry is kept, so
+			// that each run reports the page again until somebody corrects it.
+			ours := make([]page.Orphan, 0, len(acting))
+			for _, candidate := range acting {
+				reason, ok := elsewhere[candidate.Path]
+				if !ok {
+					ours = append(ours, candidate)
+
+					continue
+				}
+
+				log.Warn().Msgf("page %q (%s) is left alone: %s", candidate.Title, candidate.PageID, reason)
+				if !config.Mode.readOnly() {
+					reportKept(results, candidate, reason)
+				}
+			}
+
 			var kept map[string]string
-			handled, kept, err = page.HandleOrphansKeeping(ctx, api, action, acting, config.Mode.readOnly())
+			handled, kept, err = page.HandleOrphansKeeping(ctx, api, action, ours, config.Mode.readOnly())
 			if err != nil {
 				return err
 			}
@@ -237,6 +274,27 @@ func warnGoneKeys(config Config, space string, paths []string, globOf map[string
 			space, len(gone[glob]), glob, strings.Join(gone[glob], ", "),
 		)
 	}
+}
+
+// locateOrphan reads the page of an orphan --on-orphan is to remove, with its
+// space, and with its ancestors when a scope is to be checked: one read for
+// both questions. A page already gone is nil, for HandleOrphansKeeping to find
+// gone.
+func locateOrphan(ctx context.Context, api *confluence.API, pageID string, scoped bool) (*confluence.PageInfo, error) {
+	expand := "space"
+	if scoped {
+		expand = "ancestors,space"
+	}
+
+	pg, err := api.GetPageByIDExpanded(ctx, pageID, expand)
+	if errors.Is(err, confluence.ErrNotFound) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("unable to read page %s: %w", pageID, err)
+	}
+
+	return pg, nil
 }
 
 // reportKept records an orphan --on-orphan asked to remove that was left where

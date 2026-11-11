@@ -94,7 +94,7 @@ func resolveTrackedPage(
 		return nil, nil
 	}
 
-	pg, err := api.GetPageByID(ctx, entry.PageID)
+	pg, inSpace, err := recordedPage(ctx, api, meta.Space, entry.PageID)
 	if err != nil {
 		// Only a page that is genuinely gone may fall through to being created
 		// again. Treating every failure that way would mean a network blip
@@ -108,6 +108,13 @@ func resolveTrackedPage(
 		warnings.Add(report.WarningMissingPage,
 			"page %s, recorded for this document, no longer exists; a new page will be created",
 			entry.PageID,
+		)
+		return nil, nil
+	}
+	if !inSpace {
+		warnings.Add(report.WarningOtherSpace,
+			"page %s, recorded for this document, is in %s, not space %q; publishing by title as if it had not been recorded",
+			entry.PageID, pageSpace(pg), meta.Space,
 		)
 		return nil, nil
 	}
@@ -209,7 +216,7 @@ func refreshStaleParents(
 			}
 		}
 
-		renamed, err := api.GetPageByID(ctx, pageID)
+		renamed, inSpace, err := recordedPage(ctx, api, meta.Space, pageID)
 		if err != nil {
 			// Only a recorded page that is genuinely gone may be passed over.
 			// Anything else is a failure to read, and carrying on with the old
@@ -227,7 +234,15 @@ func refreshStaleParents(
 
 			continue
 		}
-		if renamed == nil || renamed.Title == title {
+		if !inSpace {
+			warnings.Add(report.WarningOtherSpace,
+				"parent %q was recorded as page %s, which is in %s, not space %q; leaving the title as written",
+				title, pageID, pageSpace(renamed), meta.Space,
+			)
+
+			continue
+		}
+		if renamed.Title == title {
 			continue
 		}
 
@@ -246,6 +261,36 @@ func refreshStaleParents(
 	}
 
 	return nil
+}
+
+// recordedPage reads a page an entry of space's manifest names, and whether it
+// is in that space. A manifest is kept per space and speaks for that space's
+// pages alone: one of its entries naming a page elsewhere -- moved there by
+// hand, or written into the manifest from another -- is not its page, and
+// following it would update, move or remove a page outside the space the run
+// publishes to. The space comes with the read, at no extra request on v1.
+func recordedPage(ctx context.Context, api *confluence.API, space, pageID string) (*confluence.PageInfo, bool, error) {
+	pg, err := api.GetPageByIDExpanded(ctx, pageID, "ancestors,version,space")
+	if err != nil {
+		return nil, false, err
+	}
+
+	return pg, pageInSpace(pg, space), nil
+}
+
+// pageInSpace reports whether a page read with its space expanded is in space.
+// A page whose space could not be read is not taken to be in it.
+func pageInSpace(pg *confluence.PageInfo, space string) bool {
+	return pg.Space.Key != "" && strings.EqualFold(pg.Space.Key, space)
+}
+
+// pageSpace names the space a page is in, for a message.
+func pageSpace(pg *confluence.PageInfo) string {
+	if pg.Space.Key == "" {
+		return "a space mark could not read"
+	}
+
+	return fmt.Sprintf("space %q", pg.Space.Key)
 }
 
 // trackedPageOfDeclaredTitle returns the page recorded for the one document of
@@ -308,7 +353,7 @@ func resolveRenamedFile(
 		return nil, nil
 	}
 
-	pg, err := api.GetPageByID(ctx, entry.PageID)
+	pg, inSpace, err := recordedPage(ctx, api, meta.Space, entry.PageID)
 	if err != nil {
 		if !errors.Is(err, confluence.ErrNotFound) {
 			return nil, fmt.Errorf(
@@ -321,6 +366,14 @@ func resolveRenamedFile(
 			"%s, which this document was renamed from, was published to page %s, which no longer exists",
 			previous, entry.PageID)
 		return nil, tracker.Forget(ctx, meta.Space, previous)
+	}
+	if !inSpace {
+		// Not followed, and the entry is kept: with its file gone it is an
+		// orphan, which --on-orphan leaves alone and reports for this reason.
+		warnings.Add(report.WarningOtherSpace,
+			"%s, which this document was renamed from, was published to page %s, which is in %s, not space %q; publishing by title instead",
+			previous, entry.PageID, pageSpace(pg), meta.Space)
+		return nil, nil
 	}
 
 	log.Info().Msgf(

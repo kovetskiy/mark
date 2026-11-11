@@ -179,6 +179,13 @@ the file says. That is deliberate -- the repository is the source of truth, as i
 already is for titles and content -- but it is worth knowing before turning this
 on over a space people edit directly.
 
+A manifest is kept per space, and its entries stand for pages and folders in
+that space alone. An entry naming one in another space -- a page moved there by
+hand, or a manifest copied from another space or edited -- is not followed: that
+page or folder is not updated, retitled, moved, archived or deleted, and the
+document is published by its title as though nothing had been recorded for it.
+The run warns about it with the `other-space` kind.
+
 ### What it never does
 
 Mark does not delete pages, and tracking does not change that. It reports source
@@ -446,6 +453,9 @@ where the mapping cannot apply -- is a warning.
   process is indistinguishable from one that was deleted.
 * A run that **published nothing** removes nothing, so a failed checkout cannot
   empty a space.
+* A page in **another space** than the manifest that records it is left alone
+  and reported. Its entry is kept, so each run reports it again until the entry
+  is corrected or the page is back in the space.
 * A document that opted out with `Synchronized: false` still counts as present.
 * `--dry-run` reports what would go and touches nothing.
 
