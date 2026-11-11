@@ -665,9 +665,12 @@ func (e *loginPageError) Is(target error) bool { return target == ErrLoginPage }
 const seraphRefusal = "X-Seraph-LoginReason: "
 
 // credentialsRefused says whether Seraph turned the credentials away, rather
-// than something in front of Confluence answering for it.
+// than something in front of Confluence answering for it. AUTHORISATION_FAILED
+// is not that: Seraph knew the user and refused them the page, and OUT is a
+// session that was logged out.
 func (e *loginPageError) credentialsRefused() bool {
-	return strings.HasPrefix(e.evidence, seraphRefusal)
+	reason, ok := strings.CutPrefix(e.evidence, seraphRefusal)
+	return ok && (reason == "AUTHENTICATED_FAILED" || reason == "AUTHENTICATION_DENIED")
 }
 
 // loginEvidence says why a 2xx answer to req is a login page rather than
@@ -697,6 +700,10 @@ func loginEvidence(req *http.Request, resp *http.Response, mediaType string, dow
 	}
 
 	if redirectedToLogin(req, resp) {
+		if reason := refusalOnTheWay(resp); reason != "" {
+			return seraphRefusal + reason, true
+		}
+
 		return "redirected to /login.action", true
 	}
 
@@ -735,8 +742,16 @@ func loginEvidence(req *http.Request, resp *http.Response, mediaType string, dow
 // login form. An attachment can itself be named login.action, and a proxy or
 // a presigned URL may move it without renaming it, so for a request of a path
 // that ends there no redirect says anything.
+//
+// A chain that went through /login.action and came back to what was asked for
+// ended on it: Seraph logged the request in and sent it on.
 func redirectedToLogin(req *http.Request, resp *http.Response) bool {
 	if isLoginAction(req.URL.Path) {
+		return false
+	}
+
+	if final := resp.Request; final != nil && final.URL != nil &&
+		strings.EqualFold(final.URL.Hostname(), req.URL.Hostname()) && final.URL.Path == req.URL.Path {
 		return false
 	}
 
@@ -751,6 +766,23 @@ func redirectedToLogin(req *http.Request, resp *http.Response) bool {
 	}
 
 	return false
+}
+
+// refusalOnTheWay is the X-Seraph-LoginReason, other than OK, of resp or of
+// a redirect that led to it, or "": Seraph names the refusal on the answer that
+// sends a request to /login.action, not always on the login page itself.
+func refusalOnTheWay(resp *http.Response) string {
+	for answer := resp; answer != nil; {
+		if reason := answer.Header.Get("X-Seraph-LoginReason"); reason != "" && reason != "OK" {
+			return reason
+		}
+		if answer.Request == nil {
+			break
+		}
+		answer = answer.Request.Response
+	}
+
+	return ""
 }
 
 // isLoginAction says whether a path is Seraph's /login.action, with or

@@ -244,6 +244,13 @@ func TestRequestErrorBlamesRefusedCredentials(t *testing.T) {
 		requested: "https://confluence.example.org/rest/api/content/1", evidence: "redirected to /login.action", strong: true,
 	})
 	assert.Contains(t, redirected.Error(), "SSO")
+
+	// Seraph knew the user and refused them the page: the credentials are fine.
+	unauthorised := requestError("read page 1", &loginPageError{
+		requested: "https://confluence.example.org/rest/api/content/1", evidence: seraphRefusal + "AUTHORISATION_FAILED", strong: true,
+	})
+	require.ErrorIs(t, unauthorised, ErrLoginPage)
+	assert.NotContains(t, unauthorised.Error(), "did not accept the credentials")
 }
 
 // TestClientRecognisesARedirectToTheLoginPage: Seraph sends a request it does

@@ -328,6 +328,53 @@ func TestDownloadAttachmentThroughTheLoginPage(t *testing.T) {
 	assert.Empty(t, got.Bytes())
 }
 
+// TestDownloadAttachmentBackFromTheLoginPage: Seraph may send a download to
+// /login.action, log it in there and send it back with a session; the
+// attachment it then answers with is the download.
+func TestDownloadAttachmentBackFromTheLoginPage(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/login.action" {
+			http.SetCookie(w, &http.Cookie{Name: "JSESSIONID", Value: "s", Path: "/"})
+			http.Redirect(w, r, r.URL.Query().Get("os_destination"), http.StatusFound)
+			return
+		}
+		if _, err := r.Cookie("JSESSIONID"); err != nil {
+			http.Redirect(w, r, "/login.action?os_destination="+r.URL.Path, http.StatusFound)
+			return
+		}
+		w.Header().Set("Content-Type", "image/png")
+		_, _ = w.Write([]byte("attachment"))
+	}))
+	t.Cleanup(server.Close)
+
+	var got bytes.Buffer
+	require.NoError(t, NewAPI(server.URL, Options{Username: "user", Password: "token"}).
+		DownloadAttachment(context.Background(), "1", downloadInfo("1", "a.png"), &got))
+	assert.Equal(t, "attachment", got.String())
+}
+
+// TestDownloadAttachmentRefusedOnTheWayToTheLoginPage: Seraph names a refusal
+// on the redirect to /login.action, and the login page itself may not repeat
+// it; the error blames the credentials all the same.
+func TestDownloadAttachmentRefusedOnTheWayToTheLoginPage(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/login.action" {
+			w.Header().Set("Content-Type", "text/html")
+			_, _ = w.Write([]byte("<html>Log in</html>"))
+			return
+		}
+		w.Header().Set("X-Seraph-LoginReason", "AUTHENTICATED_FAILED")
+		http.Redirect(w, r, "/login.action?os_destination=x", http.StatusFound)
+	}))
+	t.Cleanup(server.Close)
+
+	err := NewAPI(server.URL, Options{Username: "user", Password: "token"}).
+		DownloadAttachment(context.Background(), "1", downloadInfo("1", "a.png"), io.Discard)
+	require.ErrorIs(t, err, ErrLoginPage)
+	assert.Contains(t, err.Error(), "X-Seraph-LoginReason: AUTHENTICATED_FAILED")
+	assert.Contains(t, err.Error(), "did not accept the credentials")
+}
+
 func TestDownloadAttachmentStatusBeforeAuthentication(t *testing.T) {
 	server := confluencetest.New(t)
 	server.SetFailHeaders(http.Header{"Content-Type": {"text/html"}, "X-Seraph-LoginReason": {"AUTHENTICATED_FAILED"}})
