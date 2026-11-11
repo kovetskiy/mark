@@ -97,7 +97,8 @@ With the document on standard output there is no file of its name, and an
 attachment called `README.md` keeps that name. An export usually goes into a
 git working tree, so an attachment is never written under a name git keeps
 for itself in any directory -- `.git`, `.gitattributes`, `.gitignore` and
-`.gitmodules`, in any case and with any trailing dots or spaces -- and gets
+`.gitmodules`, in any case, with any trailing dots or spaces, or with the
+invisible characters HFS+ ignores -- and gets
 a number instead, as `.git-2`; published back, it is uploaded under that name.
 Page titles never come out as such names, since a page's directory or
 concept name has only letters, digits and dashes. An attachment the page refers to

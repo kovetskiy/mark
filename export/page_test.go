@@ -90,7 +90,8 @@ func TestAbsurdExtensionIsCapped(t *testing.T) {
 
 // An attachment is never written under a name git reads as its own in a
 // working tree, in any case, or with the trailing dots and spaces Windows
-// drops; other names that start with a dot keep theirs.
+// drops or the invisible characters HFS+ ignores; other names that start with
+// a dot keep theirs.
 func TestLocalNamesKeepClearOfGit(t *testing.T) {
 	for filename, want := range map[string]string{
 		".git":           ".git-2",
@@ -100,6 +101,9 @@ func TestLocalNamesKeepClearOfGit(t *testing.T) {
 		".gitattributes": ".gitattributes-2",
 		".gitmodules":    ".gitmodules-2",
 		".gitignore":     ".gitignore-2",
+		".gitmoduleſ":    ".gitmoduleſ-2",
+		".gi\u200ct":     ".gi\u200ct-2",
+		".git\ufeff":     ".git\ufeff-2",
 		".env":           ".env",
 		".github":        ".github",
 		"git":            "git",
@@ -110,4 +114,14 @@ func TestLocalNamesKeepClearOfGit(t *testing.T) {
 	okf := newLocalNames()
 	okf.okf = true
 	assert.Equal(t, ".git-2", okf.of(".git"))
+}
+
+// Names a filesystem takes as one file are numbered; names that only full
+// case folding would equate are not.
+func TestLocalNamesOfOneFile(t *testing.T) {
+	names := newLocalNames()
+	assert.Equal(t, "café.png", names.of("café.png"))
+	assert.Equal(t, "cafe\u0301-2.png", names.of("cafe\u0301.png"), "one file on macOS")
+	assert.Equal(t, "Strasse.png", names.of("Strasse.png"))
+	assert.Equal(t, "Straße.png", names.of("Straße.png"), "two files everywhere")
 }
