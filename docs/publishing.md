@@ -167,8 +167,8 @@ A run that publishes nothing and compares nothing still lists each document it
 got through, so that its warnings can be read: `compiled` under
 `--compile-only`, and `would-publish` under `--dry-run` without
 `--changes-only`. Such a page has the `space` and `title` its headers give, and
-a `pageId` and `url` only when a dry run found the page it would publish to; a
-compile looks for none. `github` annotates its warnings and writes no notice
+a `pageId` and `url` only when `--dry-run`, given with `--compile-only` or not,
+found the page it would publish to; a compile alone looks for none. `github` annotates its warnings and writes no notice
 for the status itself, as for `unchanged`, so a pull request gate needs no
 Confluence credentials:
 
