@@ -268,29 +268,61 @@ func refreshStaleParents(
 // pages alone: one of its entries naming a page elsewhere -- moved there by
 // hand, or written into the manifest from another -- is not its page, and
 // following it would update, move or remove a page outside the space the run
-// publishes to. The space comes with the read, at no extra request on v1.
+// publishes to. A page whose space cannot be told is an error rather than one
+// elsewhere: passed over, a retitled page would be published a second time.
 func recordedPage(ctx context.Context, api *confluence.API, space, pageID string) (*confluence.PageInfo, bool, error) {
 	pg, err := api.GetPageByIDExpanded(ctx, pageID, "ancestors,version,space")
 	if err != nil {
 		return nil, false, err
 	}
 
-	return pg, pageInSpace(pg, space), nil
+	inSpace, known, err := pageInSpace(ctx, api, pg, space)
+	if err != nil {
+		return nil, false, err
+	}
+	if !known {
+		return nil, false, fmt.Errorf("unable to tell which space page %s is in", pageID)
+	}
+
+	return pg, inSpace, nil
 }
 
-// pageInSpace reports whether a page read with its space expanded is in space.
-// A page whose space could not be read is not taken to be in it.
-func pageInSpace(pg *confluence.PageInfo, space string) bool {
-	return pg.Space.Key != "" && strings.EqualFold(pg.Space.Key, space)
+// pageInSpace reports whether a page read with its space expanded is in space,
+// and whether that could be told at all. v1 names the space by key; v2 by id,
+// with the key only when the space itself could be read, so the id decides
+// when the key is missing.
+func pageInSpace(
+	ctx context.Context, api *confluence.API, pg *confluence.PageInfo, space string,
+) (inSpace, known bool, err error) {
+	switch {
+	case pg.Space.Key != "":
+		return strings.EqualFold(pg.Space.Key, space), true, nil
+	case pg.SpaceID != "":
+		id, err := api.GetSpaceID(ctx, space)
+		if errors.Is(err, confluence.ErrNotFound) {
+			// Not the page being gone, which callers take ErrNotFound for.
+			return false, false, nil
+		}
+		if err != nil {
+			return false, false, fmt.Errorf("unable to read space %s: %w", space, err)
+		}
+
+		return pg.SpaceID == id, true, nil
+	default:
+		return false, false, nil
+	}
 }
 
 // pageSpace names the space a page is in, for a message.
 func pageSpace(pg *confluence.PageInfo) string {
-	if pg.Space.Key == "" {
+	switch {
+	case pg.Space.Key != "":
+		return fmt.Sprintf("space %q", pg.Space.Key)
+	case pg.SpaceID != "":
+		return "space " + pg.SpaceID
+	default:
 		return "a space mark could not read"
 	}
-
-	return fmt.Sprintf("space %q", pg.Space.Key)
 }
 
 // trackedPageOfDeclaredTitle returns the page recorded for the one document of
@@ -368,12 +400,14 @@ func resolveRenamedFile(
 		return nil, tracker.Forget(ctx, meta.Space, previous)
 	}
 	if !inSpace {
-		// Not followed, and the entry is kept: with its file gone it is an
-		// orphan, which --on-orphan leaves alone and reports for this reason.
+		// Not followed, and dropped like an entry whose page is gone: the
+		// document is published afresh and recorded under its new path with
+		// the same content, and two entries sharing it would stop the next
+		// rename being followed.
 		warnings.Add(report.WarningOtherSpace,
 			"%s, which this document was renamed from, was published to page %s, which is in %s, not space %q; publishing by title instead",
 			previous, entry.PageID, pageSpace(pg), meta.Space)
-		return nil, nil
+		return nil, tracker.Forget(ctx, meta.Space, previous)
 	}
 
 	log.Info().Msgf(

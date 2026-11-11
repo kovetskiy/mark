@@ -68,8 +68,10 @@ func handleOrphans(
 		// reported by every partial run naming it and dealt with by none.
 		keep := make(map[string]bool, len(orphans))
 		globOf := make(map[string]string, len(orphans))
-		// The candidates in another space, with why they are left alone.
+		// The candidates in another space, with why they are left alone. Their
+		// space is read only when something may be removed from this one.
 		elsewhere := map[string]string{}
+		removing := action != report.OnOrphanReport && tracker.Published(space) > 0
 		for _, orphan := range orphans {
 			keep[orphan.Path] = config.Tracking.Partial && action == report.OnOrphanReport &&
 				orphan.Entry.Glob != globpattern.Escape(orphan.Path)
@@ -80,7 +82,7 @@ func handleOrphans(
 			}
 
 			var inScope bool
-			if action == report.OnOrphanReport {
+			if !removing {
 				inScope, err = page.InScope(ctx, api, scopeID, candidate)
 			} else {
 				var located *confluence.PageInfo
@@ -88,13 +90,21 @@ func handleOrphans(
 				if err != nil {
 					return err
 				}
-				if located != nil && !pageInSpace(located, space) {
-					elsewhere[candidate.Path] = fmt.Sprintf(
-						"it is in %s, not space %q, whose page manifest records it", pageSpace(located), space,
-					)
+				if located != nil {
+					var inSpace bool
+					// A page whose space cannot be told is left alone too.
+					inSpace, _, err = pageInSpace(ctx, api, located, space)
+					if err != nil {
+						return err
+					}
+					if !inSpace {
+						elsewhere[candidate.Path] = fmt.Sprintf(
+							"it is in %s, not space %q, whose page manifest records it", pageSpace(located), space,
+						)
+					}
 				}
 
-				inScope, err = page.InScopeOf(ctx, api, scopeID, candidate, located)
+				inScope, err = page.InScopeOf(ctx, api, scopeID, located)
 			}
 			if err != nil {
 				return err
@@ -200,9 +210,6 @@ func handleOrphans(
 				}
 
 				log.Warn().Msgf("page %q (%s) is left alone: %s", candidate.Title, candidate.PageID, reason)
-				if !config.Mode.readOnly() {
-					reportKept(results, candidate, reason)
-				}
 			}
 
 			var kept map[string]string
@@ -210,9 +217,13 @@ func handleOrphans(
 			if err != nil {
 				return err
 			}
+			if kept == nil {
+				kept = make(map[string]string, len(elsewhere))
+			}
+			maps.Copy(kept, elsewhere)
 
 			if !config.Mode.readOnly() {
-				for _, candidate := range candidates {
+				for _, candidate := range acting {
 					if reason, ok := kept[candidate.Path]; ok {
 						reportKept(results, candidate, reason)
 					}
