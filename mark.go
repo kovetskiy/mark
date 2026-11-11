@@ -1134,7 +1134,6 @@ func Run(ctx context.Context, config Config) (err error) {
 	}
 	if tracker != nil && config.Tracking.RenameSimilarity > 0 && config.DocumentScope != "" && len(documents) > 0 {
 		pub.similar = newSimilarRenames(config.Tracking.RenameSimilarity)
-		pub.titles.texts = true
 	}
 
 	// Pages that asked for a position among their siblings, collected as they

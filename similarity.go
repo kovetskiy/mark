@@ -230,7 +230,7 @@ func (r *publishRun) runTexts(ctx context.Context, space string) ([]runText, map
 			continue
 		}
 
-		doc := runText{key: manifest.Key(in.key), text: ahead.text}
+		doc := runText{key: manifest.Key(in.key), text: r.titles.textOf(in)}
 		if meta.Space == space {
 			pageID, found, err := r.ownPage(ctx, doc.key, ahead.sourceHash, meta)
 			if err != nil {
