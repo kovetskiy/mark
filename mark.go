@@ -903,8 +903,8 @@ func Run(ctx context.Context, config Config) (err error) {
 
 	// A document the staged root does not contain is refused before any is
 	// published, rather than part way through the run.
-	for _, file := range files {
-		if _, err := config.Links.checkStaged(file); err != nil {
+	for _, in := range inputs {
+		if _, err := config.Links.checkStaged(in.file); err != nil {
 			return err
 		}
 	}
