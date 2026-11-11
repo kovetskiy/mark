@@ -1422,3 +1422,96 @@ func TestExportBodyOpeningWithARule(t *testing.T) {
 	assert.True(t, strings.HasPrefix(result.Markdown, "***\n"), result.Markdown)
 	assert.Contains(t, result.Markdown, "\n---\n", "only the opening rule is spelled otherwise")
 }
+
+// TestExportTreeKeepsClearOfGit: an export usually goes into a git working
+// tree, so neither an attachment nor a page is written under a name git reads
+// as its own there, the documents link to the names written, and exporting
+// again writes the same files.
+func TestExportTreeKeepsClearOfGit(t *testing.T) {
+	for _, format := range []export.Format{export.FormatMark, export.FormatOKF} {
+		t.Run(string(format), func(t *testing.T) {
+			server := confluencetest.New(t)
+			server.AddSpace("DOCS")
+			home := server.AddPage("DOCS", "Home", "page", "")
+			server.SetHomepage("DOCS", home.ID)
+			guide := server.AddPage("DOCS", "Guide", "page", home.ID)
+			dotGit := server.AddPage("DOCS", ".git", "page", guide.ID)
+			inner := server.AddPage("DOCS", "Inner", "page", dotGit.ID)
+
+			attach := func(id string, names ...string) {
+				body := ""
+				for _, name := range names {
+					body += `<p><ac:link><ri:attachment ri:filename="` + name + `"/></ac:link></p>`
+					server.AddAttachmentData(id, name, []byte("outside"))
+				}
+				server.EditPage(id, body)
+			}
+			attach(guide.ID, ".git", ".gitattributes")
+			attach(dotGit.ID, ".GIT", ".gitmodules")
+			attach(inner.ID, ".gitignore")
+
+			out := filepath.Join(t.TempDir(), "guide")
+			files := func() map[string]string {
+				t.Helper()
+				found := map[string]string{}
+				require.NoError(t, filepath.WalkDir(out, func(path string, d os.DirEntry, err error) error {
+					if err != nil {
+						return err
+					}
+					switch strings.ToLower(d.Name()) {
+					case ".git", ".gitattributes", ".gitmodules", ".gitignore":
+						t.Errorf("%s is a name git keeps for itself", path)
+					}
+					if !d.IsDir() {
+						data, err := os.ReadFile(path)
+						require.NoError(t, err)
+						rel, err := filepath.Rel(out, path)
+						require.NoError(t, err)
+						found[filepath.ToSlash(rel)] = string(data)
+					}
+					return nil
+				}))
+				return found
+			}
+
+			run := func(overwrite bool) {
+				t.Helper()
+				_, err := ExportTree(context.Background(), ExportConfig{
+					Connection: ConnectionConfig{BaseURL: server.URL, Username: "user", Password: "token"},
+					PageID:     guide.ID, Output: out, Format: format, Overwrite: overwrite,
+				}, export.TreeOptions{})
+				require.NoError(t, err)
+			}
+
+			run(false)
+			first := files()
+
+			var guideDoc, gitDoc, innerDoc, guideFiles, gitFiles, innerFiles string
+			if format == export.FormatOKF {
+				guideDoc, gitDoc, innerDoc = "guide.md", "guide/git.md", "guide/git/inner.md"
+				guideFiles = "references/attachments/" + guide.ID + "/"
+				gitFiles = "references/attachments/" + dotGit.ID + "/"
+				innerFiles = "references/attachments/" + inner.ID + "/"
+			} else {
+				guideDoc, gitDoc, innerDoc = "index.md", "git/index.md", "git/inner/index.md"
+				guideFiles, gitFiles, innerFiles = "", "git/", "git/inner/"
+			}
+			for doc, attachments := range map[string][]string{
+				guideDoc: {guideFiles + ".git-2", guideFiles + ".gitattributes-2"},
+				gitDoc:   {gitFiles + ".GIT-2", gitFiles + ".gitmodules-2"},
+				innerDoc: {innerFiles + ".gitignore-2"},
+			} {
+				require.Contains(t, first, doc)
+				for _, attachment := range attachments {
+					assert.Equal(t, "outside", first[attachment], attachment)
+					link, err := filepath.Rel(filepath.Dir(filepath.FromSlash(doc)), filepath.FromSlash(attachment))
+					require.NoError(t, err)
+					assert.Contains(t, first[doc], "("+filepath.ToSlash(link)+")", "%s links to %s", doc, attachment)
+				}
+			}
+
+			run(true)
+			assert.Equal(t, first, files(), "exporting again writes the same files")
+		})
+	}
+}

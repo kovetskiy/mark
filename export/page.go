@@ -739,22 +739,40 @@ func localName(filename string) string {
 }
 
 // localNames gives every attachment a file of its own. Names that flatten to
-// the same local name, or differ only in case and so share a file on macOS and
-// Windows, are told apart by a number before the extension. A name longer
-// than a file name may be is cut before its extension.
+// the same local name, or differ only in case or by trailing dots and spaces
+// and so share a file on macOS or Windows, are told apart by a number before
+// the extension. A name longer than a file name may be is cut before its
+// extension.
 type localNames struct {
 	byName map[string]string
 	taken  map[string]bool
 	okf    bool
 }
 
+// gitNames are the names git reads, in any directory of a working tree, as
+// its own rather than as files it tracks: the repository itself, and the
+// files that set attributes, what is ignored and the submodules. An export
+// usually goes into a working tree, so an attachment is never written under
+// one of them.
+var gitNames = []string{".git", ".gitattributes", ".gitignore", ".gitmodules"}
+
 func newLocalNames() *localNames {
-	return &localNames{byName: map[string]string{}, taken: map[string]bool{}}
+	l := &localNames{byName: map[string]string{}, taken: map[string]bool{}}
+	for _, name := range gitNames {
+		l.reserve(name)
+	}
+	return l
 }
 
 // reserve keeps a name from every attachment.
 func (l *localNames) reserve(name string) {
-	l.taken[strings.ToLower(name)] = true
+	l.taken[fileKey(name)] = true
+}
+
+// fileKey is what two names that are one file have in common: macOS and
+// Windows ignore case, and Windows drops trailing dots and spaces.
+func fileKey(name string) string {
+	return strings.ToLower(strings.TrimRight(name, ". "))
 }
 
 func (l *localNames) of(filename string) string {
@@ -768,6 +786,10 @@ func (l *localNames) of(filename string) string {
 	}
 	extension := filepath.Ext(name)
 	stem := strings.TrimSuffix(name, extension)
+	// A name that starts with its only dot, as .gitignore, has no extension.
+	if stem == "" {
+		stem, extension = name, ""
+	}
 	// A name cut short is marked with a hash of the whole one, so that names
 	// sharing a long prefix keep files of their own whatever their order.
 	mark := ""
@@ -775,12 +797,12 @@ func (l *localNames) of(filename string) string {
 		mark = "-" + nameHash(filename)
 		name = fitName(stem, mark, extension)
 	}
-	for i := 2; l.taken[strings.ToLower(name)]; i++ {
+	for i := 2; l.taken[fileKey(name)]; i++ {
 		name = fitName(stem, fmt.Sprintf("%s-%d", mark, i), extension)
 	}
 
 	l.byName[filename] = name
-	l.taken[strings.ToLower(name)] = true
+	l.taken[fileKey(name)] = true
 
 	return name
 }

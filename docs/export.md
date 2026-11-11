@@ -94,7 +94,13 @@ are told apart by a number, as `a_b-2.png`, and so is one named like the
 document itself, when `--output` names a file in the same directory: a
 `README.md` attachment written beside `-o README.md` becomes `README-2.md`.
 With the document on standard output there is no file of its name, and an
-attachment called `README.md` keeps that name. An attachment the page refers to
+attachment called `README.md` keeps that name. An export usually goes into a
+git working tree, so an attachment is never written under a name git keeps
+for itself in any directory -- `.git`, `.gitattributes`, `.gitignore` and
+`.gitmodules`, in any case and with any trailing dots or spaces -- and gets
+a number instead, as `.git-2`; published back, it is uploaded under that name.
+Page titles never come out as such names, since a page's directory or
+concept name has only letters, digits and dashes. An attachment the page refers to
 but no longer has is reported, and left out of the `Attachment` headers;
 with `--no-attachments` there is no telling, so every one is declared.
 

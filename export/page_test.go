@@ -87,3 +87,27 @@ func TestAbsurdExtensionIsCapped(t *testing.T) {
 	assertFits(t, name)
 	assert.True(t, strings.HasPrefix(name, "a.b"), "%q", name)
 }
+
+// An attachment is never written under a name git reads as its own in a
+// working tree, in any case, or with the trailing dots and spaces Windows
+// drops; other names that start with a dot keep theirs.
+func TestLocalNamesKeepClearOfGit(t *testing.T) {
+	for filename, want := range map[string]string{
+		".git":           ".git-2",
+		".GIT":           ".GIT-2",
+		".Git.":          ".Git-2.",
+		".git ":          ".git -2",
+		".gitattributes": ".gitattributes-2",
+		".gitmodules":    ".gitmodules-2",
+		".gitignore":     ".gitignore-2",
+		".env":           ".env",
+		".github":        ".github",
+		"git":            "git",
+	} {
+		assert.Equal(t, want, newLocalNames().of(filename), "%q", filename)
+	}
+
+	okf := newLocalNames()
+	okf.okf = true
+	assert.Equal(t, ".git-2", okf.of(".git"))
+}
