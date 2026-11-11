@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"syscall"
 
 	"github.com/kovetskiy/mark/v17/attachment"
 	"github.com/kovetskiy/mark/v17/fingerprint"
@@ -154,8 +155,9 @@ func IndexTitleReader(read func(file string) ([]byte, error), titleFromH1, front
 // others already use for naming a directory.
 func directoryTitleFromPagesFile(root attachment.Root, directory string) (string, error) {
 	source, err := root.ReadFile(filepath.Join(directory, ".pages"))
-	if errors.Is(err, fs.ErrNotExist) {
-		// Absence is the ordinary case.
+	// Absence is the ordinary case. A directory of a Document's Path need
+	// not exist in its FS, so one that is a file there has none either.
+	if errors.Is(err, fs.ErrNotExist) || errors.Is(err, syscall.ENOTDIR) {
 		return "", nil
 	}
 	if err != nil {
