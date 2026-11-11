@@ -226,3 +226,30 @@ func TestDocumentDirectoryKeyIsNotAFilePath(t *testing.T) {
 		manifest.DocumentDirectoryKey("a/b", "c"),
 		"a scope and a directory are told apart")
 }
+
+// TestResolveRenamedForSeesTheEntriesAsTheyAre: renames are looked for by
+// fingerprint among the entries as the run leaves them, not as they were
+// read: one forgotten since is no candidate, and a second with the same
+// content makes the match ambiguous.
+func TestResolveRenamedForSeesTheEntriesAsTheyAre(t *testing.T) {
+	ctx := t.Context()
+	server := confluencetest.New(t)
+	server.AddSpace("DOCS")
+
+	first := storeFor(server, "", "gen", nil, []string{"a.md", "b.md"})
+	require.NoError(t, first.Record(ctx, "DOCS", "a.md", "1", "A", "same"))
+	require.NoError(t, first.Record(ctx, "DOCS", "b.md", "2", "B", "same"))
+	require.NoError(t, first.Save(ctx))
+
+	both := storeFor(server, "", "gen", nil, []string{"new.md"})
+	_, _, ok, err := both.ResolveRenamedFor(ctx, "DOCS", "new.md", "same")
+	require.NoError(t, err)
+	assert.False(t, ok, "two gone keys with the content are ambiguous")
+
+	require.NoError(t, both.Forget(ctx, "DOCS", "a.md"))
+	path, entry, ok, err := both.ResolveRenamedFor(ctx, "DOCS", "new.md", "same")
+	require.NoError(t, err)
+	require.True(t, ok, "with one forgotten, the other is the rename")
+	assert.Equal(t, "b.md", path)
+	assert.Equal(t, "2", entry.PageID)
+}

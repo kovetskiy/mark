@@ -264,3 +264,51 @@ func TestRootWithIncludePathReadsItFromDisk(t *testing.T) {
 	require.NoError(t, err, "on disk the include path holds nothing back")
 	assert.Equal(t, "secret", string(data))
 }
+
+// countingFS counts what is asked of a file system reporting links.
+type countingFS struct {
+	fstest.MapFS
+	opens, lstats int
+}
+
+func (c *countingFS) Open(name string) (fs.File, error) {
+	c.opens++
+	return c.MapFS.Open(name)
+}
+
+func (c *countingFS) Lstat(name string) (fs.FileInfo, error) {
+	c.lstats++
+	return c.MapFS.Lstat(name)
+}
+
+// TestFSRootChecksWithoutOpening: holding a name to the FS resolves its
+// links and opens nothing, so a checked read opens the file once.
+func TestFSRootChecksWithoutOpening(t *testing.T) {
+	fsys := &countingFS{MapFS: linkedMap()}
+	root := FSRoot(fsys)
+
+	require.NoError(t, root.CheckReadable("docs", "a.png"))
+	assert.Zero(t, fsys.opens, "the check opens nothing")
+
+	data, err := root.ReadFile("docs/a.png")
+	require.NoError(t, err)
+	assert.Equal(t, "a", string(data))
+	assert.Equal(t, 1, fsys.opens)
+
+	require.ErrorIs(t, root.CheckReadable("docs", "up.png"), ErrOutsideProject)
+	assert.Equal(t, 1, fsys.opens, "a link out is refused without opening it")
+}
+
+// BenchmarkIncludePathStatMissing is a link lookup asking a document's Root
+// about names under --include-path that are not there, as most are.
+func BenchmarkIncludePathStatMissing(b *testing.B) {
+	include := b.TempDir()
+	root := FSRoot(fstest.MapFS{}).WithIncludePath(include)
+	name := filepath.Join(include, "deeper", "still", "missing.md")
+
+	for b.Loop() {
+		if _, err := root.Stat(name); err == nil {
+			b.Fatal("found")
+		}
+	}
+}

@@ -10,7 +10,6 @@ import (
 	"strings"
 
 	"github.com/kovetskiy/mark/v17/confluence"
-	"github.com/kovetskiy/mark/v17/fingerprint"
 	"github.com/kovetskiy/mark/v17/manifest"
 	"github.com/kovetskiy/mark/v17/metadata"
 	"github.com/kovetskiy/mark/v17/page"
@@ -266,12 +265,8 @@ func trackedPageOfDeclaredTitle(
 		return "", "", err
 	}
 	if !found {
-		source, _, _, err := in.read()
-		if err != nil {
-			return "", "", nil //nolint:nilerr // indexed as readable; its own turn reports this
-		}
-
-		_, entry, found, err = tracker.ResolveRenamedFor(ctx, space, in.key, fingerprint.SHA1(string(source)))
+		// Indexed, so read ahead already.
+		_, entry, found, err = tracker.ResolveRenamedFor(ctx, space, in.key, titles.readAhead(in).sourceHash)
 		if err != nil || !found {
 			return "", "", err
 		}
