@@ -126,11 +126,11 @@ is read from where the directory's documents are:
   `attachment.ErrOutsideProject`. A `.pages` file on disk at the same path is
   not read.
 * **From each document's `FS` in turn** when documents from several `FS`s lie
-  in the directory or below it: the `title:` of the first `.pages` file found,
-  in the order `Documents` gives them, names the directory, so it may sit in
-  any one of them. Where more than one has a title, give the document whose
-  `FS` holds the one meant first. A `.pages` file one of them refuses to read
-  fails the run, whichever it is.
+  in the directory or below it, in the order `Documents` gives them: the first
+  `.pages` file with a `title:` names the directory, so it may sit in any one
+  of them, and one without a title is passed over. Where more than one has a
+  title, give the document whose `FS` holds the one meant first. A `.pages`
+  file one of them refuses to read before a title is found fails the run.
 
 A run of documents alone has no `--files` pattern to take the root from, so it
 needs `ParentsFromPathRoot`, and is refused before publishing without it:

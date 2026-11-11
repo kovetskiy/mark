@@ -390,6 +390,13 @@ func TestPagesFileFromAnyDocumentsFS(t *testing.T) {
 			[]Document{document("Setup", fstest.MapFS{}), document("Deploy", pages("From The Second"))},
 			"From The Second",
 		},
+		"the first FS's has no title": {
+			[]Document{
+				document("Setup", fstest.MapFS{"docs/guides/.pages": {Data: []byte("nav:\n  - setup.md\n")}}),
+				document("Deploy", pages("From The Second")),
+			},
+			"From The Second",
+		},
 		"both have one": {
 			[]Document{document("Setup", pages("From The First")), document("Deploy", pages("From The Second"))},
 			"From The First",
