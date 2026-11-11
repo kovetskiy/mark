@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"testing"
@@ -416,6 +417,108 @@ func TestDocumentCannotReadOutsideItsFS(t *testing.T) {
 			assert.Equal(t, "guides/doc.md", fileErr.File)
 		})
 	}
+}
+
+// linkedAssets is an os.DirFS over a directory holding real files and
+// symbolic links to one beside them and to secrets outside the directory,
+// or skips the test where links cannot be made.
+func linkedAssets(t *testing.T) fs.FS {
+	t.Helper()
+
+	outside := t.TempDir()
+	for name, data := range map[string][]byte{
+		"secret.png": onePixelPNG(),
+		"secret.txt": []byte("secret"),
+		"secret.md":  []byte("<!-- Space: DOCS -->\n<!-- Title: Secret Title -->\n\nSecret include.\n"),
+	} {
+		require.NoError(t, os.WriteFile(filepath.Join(outside, name), data, 0o600))
+	}
+
+	dir := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "real"), 0o750))
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "guides", "files"), 0o750))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "real", "logo.png"), onePixelPNG(), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "real", "frag.md"), []byte("Linked fragment.\n"), 0o600))
+
+	links := map[string]string{
+		"guides/logo.png":      "../real/logo.png",
+		"guides/frag.md":       "../real/frag.md",
+		"guides/secret.png":    filepath.Join(outside, "secret.png"),
+		"guides/secret.txt":    filepath.Join(outside, "secret.txt"),
+		"guides/secret.md":     filepath.Join(outside, "secret.md"),
+		"guides/files/out.txt": filepath.Join(outside, "secret.txt"),
+		"guides/up.md":         "../../" + filepath.Base(outside) + "/secret.md",
+	}
+	for name, target := range links {
+		if err := os.Symlink(target, filepath.Join(dir, filepath.FromSlash(name))); err != nil {
+			t.Skipf("cannot create a symbolic link here: %v", err)
+		}
+	}
+
+	return os.DirFS(dir)
+}
+
+// TestDocumentInDirFSFollowsLinksInsideIt: a link inside an os.DirFS is
+// followed for an image and an include.
+func TestDocumentInDirFSFollowsLinksInsideIt(t *testing.T) {
+	server, _ := docsSpace(t)
+
+	config := documentsConfig(server, Document{
+		Path: "guides/doc.md",
+		Content: []byte("<!-- Space: DOCS -->\n<!-- Parent: Parent -->\n<!-- Title: Linked -->\n\n" +
+			"![logo](logo.png)\n\n<!-- Include: frag.md -->\n"),
+		FS: linkedAssets(t),
+	})
+	require.NoError(t, Run(context.Background(), config))
+
+	id := mustFind(t, server, "Linked")
+	assert.Contains(t, server.Page(id).Body, "Linked fragment.")
+	require.Len(t, server.Attachments(id), 1)
+	assert.Equal(t, "logo.png", server.Attachments(id)[0].Filename)
+}
+
+// TestDocumentInDirFSCannotFollowALinkOut: os.DirFS follows a symbolic link
+// out of its directory, and a document's FS does not, for an image, an
+// attachment, a glob's match, an include and a link's target.
+func TestDocumentInDirFSCannotFollowALinkOut(t *testing.T) {
+	cases := map[string]string{
+		"an image":      "![x](secret.png)\n",
+		"an attachment": "<!-- Attachment: secret.txt -->\n\nBody.\n",
+		"a glob":        "<!-- Attachment: files/*.txt -->\n\nBody.\n",
+		"an include":    "<!-- Include: secret.md -->\n",
+		"a climb":       "<!-- Include: up.md -->\n",
+		"a macro":       "<!-- Macro: SECRET\n     Template: secret.md -->\n\nSECRET\n",
+	}
+
+	for name, body := range cases {
+		t.Run(name, func(t *testing.T) {
+			server, _ := docsSpace(t)
+
+			config := documentsConfig(server, Document{
+				Path:    "guides/doc.md",
+				Content: []byte("<!-- Space: DOCS -->\n<!-- Parent: Parent -->\n<!-- Title: Escapes -->\n\n" + body),
+				FS:      linkedAssets(t),
+			})
+
+			err := Run(context.Background(), config)
+			require.ErrorIs(t, err, attachment.ErrOutsideProject)
+		})
+	}
+
+	t.Run("a link's target", func(t *testing.T) {
+		server, _ := docsSpace(t)
+		server.AddPage("DOCS", "Secret Title", "page", "")
+
+		config := documentsConfig(server, Document{
+			Path:    "guides/doc.md",
+			Content: []byte("<!-- Space: DOCS -->\n<!-- Parent: Parent -->\n<!-- Title: Escapes -->\n\n[x](secret.md)\n"),
+			FS:      linkedAssets(t),
+		})
+
+		require.NoError(t, Run(context.Background(), config))
+		assert.NotContains(t, bodyOfPageTitled(t, server, "Escapes"), `href="/wiki/x/`,
+			"the link is not rewritten to the page the outside file names")
+	})
 }
 
 // TestDocumentIsReportedByPathAndSource: the report and a failure name the

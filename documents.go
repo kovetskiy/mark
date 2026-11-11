@@ -66,9 +66,11 @@ type Document struct {
 	// under RenderingConfig.IncludePath, which stay on disk. Nil is the local
 	// disk, around Path, under the rules a file is held to.
 	//
-	// Only names are held to the root: os.DirFS follows a symbolic link out
-	// of its directory, where the FS of an os.Root, from os.OpenRoot, does
-	// not. Use that for a directory whose contents you do not control.
+	// The root holds through symbolic links whenever the FS reports them as
+	// an fs.ReadLinkFS, as os.DirFS and fstest.MapFS do: a link is followed
+	// only to a relative target inside it (see attachment.FSRoot). The FS of
+	// an os.Root, from os.OpenRoot, also keeps out a link swapped in while
+	// the run reads.
 	//
 	// A d2 diagram in a document with an FS may not name a local file; d2
 	// reads those from disk itself.

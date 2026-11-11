@@ -8,6 +8,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"strings"
 )
 
 // Root is where the files a document names are read from, and the boundary
@@ -23,9 +24,14 @@ import (
 // attachment's absolute name is joined to the document's directory, and
 // CheckReadable refuses an absolute reference.
 //
-// The boundary is the names asked for: what the fs.FS does with them is its
-// own. os.DirFS follows a symbolic link out of its directory; the fs.FS of
-// an os.Root does not.
+// The boundary holds through symbolic links too, when the fs.FS can report
+// them as an fs.ReadLinkFS, as os.DirFS, the fs.FS of an os.Root and
+// fstest.MapFS can: every name is resolved one component at a time before it
+// is opened, read, statted or globbed, a link followed only to a relative
+// target that stays inside, and a chain of more than 40 links refused as a
+// loop. An fs.FS that cannot report links cannot hand one over through fs.FS
+// either, so it needs nothing more. A link swapped in between the check and
+// the read is only kept out by an os.Root, which resolves as it opens.
 //
 // A Root is an Opener, for ResolveLocalAttachment and
 // ResolveLocalAttachments, which then also glob and check containment in it.
@@ -35,12 +41,139 @@ type Root struct {
 
 // FSRoot is the Root reading from fsys; a nil fsys is the local disk.
 func FSRoot(fsys fs.FS) Root {
+	if links, ok := fsys.(fs.ReadLinkFS); ok {
+		return Root{fsys: linkedFS{links}}
+	}
+
 	return Root{fsys: fsys}
 }
 
-// FS is what r reads from, or nil for the local disk.
+// FS is what r reads from, or nil for the local disk: for an fs.FS that
+// reports symbolic links, one following them only inside it.
 func (r Root) FS() fs.FS {
 	return r.fsys
+}
+
+// maxLinks is how many symbolic links one name may pass through, as Linux
+// allows, before it is taken for a loop.
+const maxLinks = 40
+
+// linkedFS is an fs.FS holding the names it is asked for to its root through
+// the symbolic links in them.
+type linkedFS struct {
+	fsys fs.ReadLinkFS
+}
+
+// resolve is name, a valid path, with every symbolic link in it followed. A
+// link to an absolute path or above the root is ErrOutsideProject.
+func (l linkedFS) resolve(name string) (string, error) {
+	resolved := "."
+	rest := strings.Split(name, "/")
+	links := 0
+	for len(rest) > 0 {
+		part := rest[0]
+		rest = rest[1:]
+
+		switch part {
+		case ".", "":
+			continue
+		case "..":
+			// Only a link's target has these: name is a valid path.
+			if resolved == "." {
+				return "", errOutsideFS
+			}
+			resolved = path.Dir(resolved)
+
+			continue
+		}
+
+		next := path.Join(resolved, part)
+		info, err := l.fsys.Lstat(next)
+		if err != nil {
+			return "", err
+		}
+		if info.Mode()&fs.ModeSymlink == 0 {
+			resolved = next
+
+			continue
+		}
+
+		links++
+		if links > maxLinks {
+			return "", fmt.Errorf("%s: too many levels of symbolic links", next)
+		}
+
+		target, err := l.fsys.ReadLink(next)
+		if err != nil {
+			return "", err
+		}
+		target = filepath.ToSlash(target)
+		if target == "" || isAbs(target) || filepath.VolumeName(target) != "" {
+			return "", fmt.Errorf("%w: %s links to %s", errOutsideFS, next, target)
+		}
+
+		rest = append(strings.Split(target, "/"), rest...)
+	}
+
+	return resolved, nil
+}
+
+// errOutsideFS is a symbolic link out of an fs.FS.
+var errOutsideFS = fmt.Errorf("%w: a symbolic link leads out of the document's file system", ErrOutsideProject)
+
+// at is name resolved, or the error op fails with.
+func (l linkedFS) at(op, name string) (string, error) {
+	if !fs.ValidPath(name) {
+		return "", &fs.PathError{Op: op, Path: name, Err: fs.ErrInvalid}
+	}
+
+	resolved, err := l.resolve(name)
+	if err != nil {
+		var pathErr *fs.PathError
+		if errors.As(err, &pathErr) {
+			return "", &fs.PathError{Op: op, Path: name, Err: pathErr.Err}
+		}
+
+		return "", &fs.PathError{Op: op, Path: name, Err: err}
+	}
+
+	return resolved, nil
+}
+
+func (l linkedFS) Open(name string) (fs.File, error) {
+	resolved, err := l.at("open", name)
+	if err != nil {
+		return nil, err
+	}
+
+	return l.fsys.Open(resolved)
+}
+
+func (l linkedFS) Stat(name string) (fs.FileInfo, error) {
+	resolved, err := l.at("stat", name)
+	if err != nil {
+		return nil, err
+	}
+
+	return fs.Stat(l.fsys, resolved)
+}
+
+func (l linkedFS) ReadFile(name string) ([]byte, error) {
+	resolved, err := l.at("read", name)
+	if err != nil {
+		return nil, err
+	}
+
+	return fs.ReadFile(l.fsys, resolved)
+}
+
+func (l linkedFS) ReadDir(name string) ([]fs.DirEntry, error) {
+	resolved, err := l.at("readdir", name)
+	if err != nil {
+		return nil, err
+	}
+
+	return fs.ReadDir(l.fsys, resolved)
 }
 
 // errNotInFS is what a name that does not name a path inside the fs.FS
@@ -139,11 +272,19 @@ func (r Root) CheckReadable(base, reference string) error {
 // contain refuses a joined name that is not a path inside the fs.FS. named is
 // what the document wrote.
 func (r Root) contain(joined, named string) error {
-	if _, err := r.fsName(joined); err != nil {
+	inside, err := r.fsName(joined)
+	if err != nil {
 		return fmt.Errorf(
 			"%w: %q resolves to %s, which is outside the document's file system",
 			ErrOutsideProject, named, filepath.ToSlash(joined),
 		)
+	}
+
+	// A name not there yet is left to the read to report.
+	if linked, ok := r.fsys.(linkedFS); ok {
+		if _, err := linked.resolve(inside); errors.Is(err, ErrOutsideProject) {
+			return fmt.Errorf("%q: %w", named, err)
+		}
 	}
 
 	return nil
