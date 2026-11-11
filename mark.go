@@ -1070,16 +1070,18 @@ func Run(ctx context.Context, config Config) (err error) {
 			// to them unless the report has a writer of its own. A page left
 			// alone is not one this run put there, so it is not named among
 			// the URLs of the pages it did.
-			if status != report.StatusSkipped && !pub.reportShares {
-				if _, err := fmt.Fprintln(config.output(), url); err != nil {
-					return err
+			if status != report.StatusSkipped {
+				if !pub.reportShares {
+					if _, err := fmt.Fprintln(config.output(), url); err != nil {
+						return err
+					}
 				}
-			}
 
-			// In the url format the URLs are the report.
-			if status != report.StatusSkipped && urlsAreReport {
-				if _, err := fmt.Fprintln(config.Report.Output, url); err != nil {
-					return fmt.Errorf("unable to write the run report: %w", err)
+				// In the url format the URLs are the report.
+				if urlsAreReport {
+					if _, err := fmt.Fprintln(config.reportOutput(), url); err != nil {
+						return fmt.Errorf("unable to write the run report: %w", err)
+					}
 				}
 			}
 		}

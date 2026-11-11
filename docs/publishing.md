@@ -285,7 +285,9 @@ jq -r '.pages[] | "\(.status) \(.file)"' report.json
 
 The file is created, or emptied, as the run starts, so a report an earlier run
 left there is never read as this one's; a run that fails is reported in it as
-it would be on standard output. With the `url` format the file holds the same
+it would be on standard output. A run refused before it publishes anything,
+for its settings or because no file matched, writes no report there or on
+standard output, so it leaves the file empty: its exit status says why. With the `url` format the file holds the same
 addresses standard output does. `-` names standard output, as leaving the flag
 out does.
 
