@@ -332,7 +332,11 @@ func directoryRoots(inputs []input) map[string][]attachment.Root {
 		}
 	}
 
-	seen := map[string]map[any]bool{}
+	type dirFS struct {
+		dir string
+		fs  any
+	}
+	seen := map[dirFS]bool{}
 	for _, in := range inputs {
 		if !in.inFS() {
 			continue
@@ -343,13 +347,10 @@ func directoryRoots(inputs []input) map[string][]attachment.Root {
 			}
 			if in.fsID != nil {
 				// Every directory above was given this FS with this one.
-				if seen[dir][in.fsID] {
+				if seen[dirFS{dir, in.fsID}] {
 					break
 				}
-				if seen[dir] == nil {
-					seen[dir] = map[any]bool{}
-				}
-				seen[dir][in.fsID] = true
+				seen[dirFS{dir, in.fsID}] = true
 			}
 			roots[dir] = append(roots[dir], in.root)
 		}
@@ -376,9 +377,7 @@ func directoriesOf(file string) iter.Seq[string] {
 func fsIdentity(fsys fs.FS) any {
 	value := reflect.ValueOf(fsys)
 	switch {
-	case !value.IsValid():
-		return nil
-	case value.Kind() == reflect.Map || value.Kind() == reflect.Chan:
+	case value.Kind() == reflect.Map:
 		return struct {
 			kind    reflect.Type
 			address uintptr

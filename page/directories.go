@@ -105,14 +105,14 @@ func DirectoryTitleReader(read func(file string) ([]byte, error), titleFromH1, f
 // the local disk for the zero Root, or the fs.FS of documents a library caller
 // handed over from memory, held to its boundary as any read of it is. A
 // directory several fs.FSs lay out may keep its .pages file in any one of
-// them. With no roots, no .pages file is read, as with IndexTitleReader. A
-// .pages file a root refuses to read, such as one behind a symbolic link out
-// of its fs.FS, fails as an unreadable one on disk does, whichever root it is
-// in.
+// them. With no roots, no .pages file is read, and a directory is titled by
+// its own document alone, or named after itself. A .pages file a root refuses
+// to read, such as one behind a symbolic link out of its fs.FS, fails as an
+// unreadable one on disk does, in any root tried before a title is found.
 func DirectoryTitleReaderIn(
 	roots []attachment.Root, read func(file string) ([]byte, error), titleFromH1, frontmatter bool,
 ) TitleResolver {
-	index := IndexTitleReader(read, titleFromH1, frontmatter)
+	index := indexTitleReader(read, titleFromH1, frontmatter)
 
 	return func(directory, indexFile string) (string, error) {
 		title, err := index(directory, indexFile)
@@ -131,10 +131,9 @@ func DirectoryTitleReaderIn(
 	}
 }
 
-// IndexTitleReader is DirectoryTitleReader without the .pages file: a
-// directory is titled by its own document alone, or named after itself. It is
-// for a directory that has nowhere to read a .pages file from.
-func IndexTitleReader(read func(file string) ([]byte, error), titleFromH1, frontmatter bool) TitleResolver {
+// indexTitleReader gives the title a directory's own document names, the
+// first place DirectoryTitleReaderIn looks, or none.
+func indexTitleReader(read func(file string) ([]byte, error), titleFromH1, frontmatter bool) TitleResolver {
 	return func(_, indexFile string) (string, error) {
 		if indexFile == "" {
 			return "", nil
