@@ -26,16 +26,17 @@ type Boundary string
 // publishes one document per directory and wants none reaching into another's.
 const BoundaryDocument Boundary = "document"
 
-// IsDir reports whether b names a directory on disk rather than being the
-// default or BoundaryDocument.
-func (b Boundary) IsDir() bool {
+// NamesDirectory reports whether b names a directory on disk rather than
+// being the default or BoundaryDocument. It does not look at the disk:
+// Validate checks that the directory is there.
+func (b Boundary) NamesDirectory() bool {
 	return b != "" && b != BoundaryDocument
 }
 
 // Validate refuses a Boundary that names a directory which is not there, or is
 // not a directory. The zero value and BoundaryDocument are always valid.
 func (b Boundary) Validate() error {
-	if !b.IsDir() {
+	if !b.NamesDirectory() {
 		return nil
 	}
 
