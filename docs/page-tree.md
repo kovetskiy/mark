@@ -64,6 +64,8 @@ The root is everything in `--files` before the first wildcard, and
 by hand that none of the files lie under is refused, and a file outside it is
 reported and published without derived parents. A document that names its own
 `Parent` is left where it asks to be, and `--parents` still prefixes everything.
+A library caller's documents from memory are laid out by their paths with the
+files (see [Using mark from Go](library.md#parents-from-the-path)).
 
 ### One page per title
 

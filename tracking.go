@@ -354,11 +354,15 @@ func resolveRenamedFile(
 // title the document resolved it to, not by position: the ancestry check
 // accepts a page sitting deeper than its path says, under a page somebody put
 // there by hand, and a title names one page in a space.
+//
+// A directory only documents lie in is recorded under its key in
+// directoryKeys, in their scope; any other by its path.
 func recordDirectoryPages(
 	ctx context.Context,
 	tracker *manifest.Store,
 	target *confluence.PageInfo,
 	hierarchy *page.Hierarchy,
+	directoryKeys map[string]string,
 	file, space string,
 	parents []string,
 ) error {
@@ -386,9 +390,14 @@ func recordDirectoryPages(
 				continue
 			}
 
+			recorded := key
+			if documents, ok := directoryKeys[key]; ok {
+				recorded = documents
+			}
+
 			if err := tracker.Record(
 				ctx,
-				space, key, directory.ID, directory.Title, page.DirectoryHash(key),
+				space, recorded, directory.ID, directory.Title, page.DirectoryHash(recorded),
 			); err != nil {
 				return fmt.Errorf("unable to record directory page for %q: %w", key, err)
 			}
@@ -419,7 +428,7 @@ func (r *publishRun) recordPublished(ctx context.Context, doc *document, target 
 	}
 
 	if r.hierarchy != nil && !meta.DeclaredParents {
-		if err := recordDirectoryPages(ctx, r.tracker, target, r.hierarchy, file, meta.Space, meta.Parents); err != nil {
+		if err := recordDirectoryPages(ctx, r.tracker, target, r.hierarchy, r.directoryKeys, file, meta.Space, meta.Parents); err != nil {
 			return err
 		}
 	}
