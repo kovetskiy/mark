@@ -91,8 +91,8 @@ type PublishConfig struct {
 	Rendering RenderingConfig
 
 	// Output is where a compile-only or dry run prints the compiled body, and
-	// where Run writes its report and page URLs. If nil, output is discarded;
-	// the CLI sets this to os.Stdout.
+	// where Run writes its page URLs and, unless ReportConfig.Output is set,
+	// its report. If nil, output is discarded; the CLI sets this to os.Stdout.
 	Output io.Writer
 }
 
@@ -376,10 +376,24 @@ type RenderingConfig struct {
 	PageHeader string
 }
 
-// ReportConfig is what a run says about itself. It is written to
-// PublishConfig.Output.
+// ReportConfig is what a run says about itself. It is written to Output, or
+// to PublishConfig.Output when Output is nil.
 type ReportConfig struct {
 	OutputFormat report.Format
+
+	// Output, when set, is where Run writes its report, so that it can be read
+	// apart from what PublishConfig.Output carries. PublishConfig.Output then
+	// keeps the page URLs and the compiled bodies of a compile-only or dry
+	// run in every format, rather than giving them up to a json or github
+	// report that has to stay parseable. In the url format, whose report is
+	// the list of URLs, each URL is written to both. The report is written on
+	// the way out of every run that gets as far as publishing, whether or not
+	// it then fails. Run does not close it.
+	//
+	// Nil writes the report to PublishConfig.Output with everything else, as
+	// it always has. Setting it to PublishConfig.Output itself mixes the two
+	// streams again: give it a writer of its own.
+	Output io.Writer
 
 	// SourcePath, when set, names the file a document was made from, such as
 	// the template generated Markdown came from, given the path mark read it
@@ -401,6 +415,22 @@ func (c PublishConfig) output() io.Writer {
 		return c.Output
 	}
 	return io.Discard
+}
+
+// reportOutput is where Run writes its report.
+func (c Config) reportOutput() io.Writer {
+	if c.Report.Output != nil {
+		return c.Report.Output
+	}
+
+	return c.output()
+}
+
+// reportShares says whether the report goes to PublishConfig.Output along with
+// the URLs and the compiled bodies, and is in a format that has to stand alone
+// there to be parsed: so those give way to it.
+func (c Config) reportShares(format report.Format) bool {
+	return c.Report.Output == nil && format != report.FormatURL
 }
 
 // isScaleOrDefault is rendercheck.IsScale for a field whose zero value means
@@ -804,7 +834,7 @@ func Run(ctx context.Context, config Config) (err error) {
 			results.SetSources(sourcePath)
 		}
 
-		if writeErr := results.Write(config.output(), outputFormat); writeErr != nil {
+		if writeErr := results.Write(config.reportOutput(), outputFormat); writeErr != nil {
 			if err == nil {
 				err = fmt.Errorf("unable to write the run report: %w", writeErr)
 
@@ -964,7 +994,7 @@ func Run(ctx context.Context, config Config) (err error) {
 	pub.results = results
 	pub.hierarchy = hierarchy
 	pub.noOverwrite = config.Tracking.NoOverwrite
-	pub.outputFormat = outputFormat
+	pub.reportShares = config.reportShares(outputFormat)
 	// Read only once a parent is missing.
 	pub.titles = &runTitles{
 		config: config.PublishConfig, files: files, hierarchy: hierarchy,
@@ -1040,12 +1070,22 @@ func Run(ctx context.Context, config Config) (err error) {
 			}
 
 			// The other formats describe the whole run at the end, where a
-			// page published twice can be reported once. A page left alone is
-			// not one this run put there, so it is not named among the URLs of
-			// the pages it did.
-			if outputFormat == report.FormatURL && status != report.StatusSkipped {
-				if _, err := fmt.Fprintln(config.output(), url); err != nil {
-					return err
+			// page published twice can be reported once, and the URLs give way
+			// to them unless the report has a writer of its own. A page left
+			// alone is not one this run put there, so it is not named among
+			// the URLs of the pages it did.
+			if status != report.StatusSkipped {
+				if !config.reportShares(outputFormat) {
+					if _, err := fmt.Fprintln(config.output(), url); err != nil {
+						return err
+					}
+				}
+
+				// In the url format the URLs are the report.
+				if config.Report.Output != nil && outputFormat == report.FormatURL {
+					if _, err := fmt.Fprintln(config.Report.Output, url); err != nil {
+						return fmt.Errorf("unable to write the run report: %w", err)
+					}
 				}
 			}
 		}
@@ -1406,7 +1446,6 @@ func newPublishRun(
 		pageHeader:       pageHeader,
 		checker:          page.NewLinkChecker(checks),
 		globalProperties: globalProperties,
-		outputFormat:     report.FormatURL,
 	}, nil
 }
 
@@ -1633,9 +1672,9 @@ type publishRun struct {
 
 	// noOverwrite is Tracking.NoOverwrite, which needs tracker.
 	noOverwrite bool
-	// outputFormat is the run report's format, which decides whether a
-	// --changes-only dry run prints the bodies it compiles.
-	outputFormat report.Format
+	// reportShares is Config.reportShares: a --changes-only dry run then
+	// prints none of the bodies it compiles.
+	reportShares bool
 
 	// pageFile is the file published to Page.PageID, once there is one.
 	pageFile string
@@ -2250,9 +2289,9 @@ func (r *publishRun) preview(ctx context.Context, doc *document) error {
 
 	printHTML := status != report.StatusUnchanged && status != report.StatusSkipped
 	if compare {
-		// A json or github report goes to the same stream, for a CI step to
-		// parse; HTML written ahead of it would make it unparseable.
-		printHTML = printHTML && r.outputFormat == report.FormatURL
+		// A json or github report going to the same stream is for a CI step
+		// to parse; HTML written ahead of it would make it unparseable.
+		printHTML = printHTML && !r.reportShares
 	}
 
 	if printHTML {

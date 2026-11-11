@@ -149,8 +149,9 @@ would be moved under the parent its headers declare, when its labels differ
 from its `Label` headers, or when an attachment -- declared, embedded or
 rendered -- would be uploaded; the `reason` of a `would-update` names any of
 the last three. Only the pages that would change have their HTML printed, and
-only with the default `url` output format: with `json` or `github` the report
-is all that is written, so a CI step can parse it. A page `--no-overwrite`
+only with the default `url` output format or a [`--report-file`](#writing-the-report-to-a-file):
+with `json` or `github` on standard output the report is all that is written,
+so a CI step can parse it. A page `--no-overwrite`
 would leave alone is `skipped`, as it is on a real run, and is not printed
 either. A real run's report only tells a content update apart, so a page
 previewed as `would-update` only for a move, its labels or an attachment is
@@ -267,6 +268,39 @@ line of the diff.
 ```yaml
 - run: mark publish --output-format github --files "docs/**/*.md"
 ```
+
+### Writing the report to a file
+
+`--report-file PATH` writes the report to a file instead of standard output.
+Standard output then keeps what it prints without a report: the address of each
+page published, or the HTML of `--compile-only` and `--dry-run`, whatever the
+`--output-format`. So a CI step can read the report from the file and still
+show the pages in its log, and the HTML of a compile is never mixed with a
+report a script has to parse.
+
+```bash
+mark publish --output-format json --report-file report.json --files "docs/**/*.md"
+jq -r '.pages[] | "\(.status) \(.file)"' report.json
+```
+
+The file is created, or emptied, as the run starts, so a report an earlier run
+left there is never read as this one's; a run that fails is reported in it as
+it would be on standard output. With the `url` format the file holds the same
+addresses standard output does. `-` names standard output, as leaving the flag
+out does.
+
+GitHub reads workflow commands only from what a step prints, so the `github`
+format's annotations appear only once the file is printed, for example by a
+later step that runs even when publishing failed:
+
+```yaml
+- run: mark publish --output-format github --report-file mark-report.txt --files "docs/**/*.md"
+- if: always()
+  run: cat mark-report.txt
+```
+
+A library caller sets `ReportConfig.Output` to a writer of its own to the same
+effect; `PublishConfig.Output` then carries the URLs and compiled bodies.
 
 ## When Confluence is busy or unavailable
 

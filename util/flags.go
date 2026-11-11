@@ -135,7 +135,7 @@ func publishFlags(config *configFile) []cli.Flag {
 			Name:    "dry-run",
 			Aliases: []string{"n"},
 			Value:   false,
-			Usage:   "resolve page and ancestry, show resulting HTML and exit. With --changes-only, say which pages would change and show the HTML of only those, and none with --output-format json or github.",
+			Usage:   "resolve page and ancestry, show resulting HTML and exit. With --changes-only, say which pages would change and show the HTML of only those, and none with --output-format json or github unless --report-file is set.",
 			Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_DRY_RUN"), config.value("dry-run")),
 		},
 		&cli.BoolFlag{
@@ -303,6 +303,14 @@ func publishFlags(config *configFile) []cli.Flag {
 			Usage: "how to report what the run did: \"url\" prints the address of each published page (the default), \"json\" prints one object describing the whole run, \"github\" prints GitHub Actions workflow commands so that failures appear against the file that caused them.",
 			Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_OUTPUT_FORMAT"),
 				config.value("output-format")),
+		},
+		&cli.StringFlag{
+			Name:      "report-file",
+			Value:     "",
+			Usage:     "write the --output-format report to this file, created or emptied as the run starts, rather than to standard output, which then keeps the page URLs and the HTML of --compile-only and --dry-run in every format. \"-\" is standard output, as without the flag. GitHub reads the github format's annotations only from a step's standard output, so print the file in a later step for them to appear.",
+			TakesFile: true,
+			Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_REPORT_FILE"),
+				config.value("report-file")),
 		},
 		&cli.StringFlag{
 			Name:  "on-orphan",

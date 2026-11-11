@@ -270,7 +270,7 @@ the API is untestable.
   `build(deps):`. The release changelog excludes `docs:` and `test:`.
 - Errors wrap with `%w` and read bottom-up: `fmt.Errorf("unable to compile markdown: %w", err)`.
 - Logging is `zerolog` via the package-level `log`; user-facing results go to
-  `config.Report.output()`, never directly to `os.Stdout`.
+  `PublishConfig.output()`, and the run report to `Config.reportOutput()`, never directly to `os.Stdout`.
 - Suppress a linter only with a reason attached: `//nolint:gosec // G401: ...`.
   The two existing suppressions (SHA-1 as a content fingerprint, opt-in TLS skip) are
   the model.
