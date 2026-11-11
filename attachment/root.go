@@ -179,14 +179,10 @@ func (l linkedFS) resolve(name string) (string, error) {
 // errOutsideFS is a symbolic link out of an fs.FS.
 var errOutsideFS = fmt.Errorf("%w: a symbolic link leads out of the document's file system", ErrOutsideProject)
 
-// Open opens name with its links resolved. fs.Stat, fs.ReadFile and
-// fs.ReadDir come through it too, as linkedFS has nothing else.
+// Open opens name with its links resolved. fs.ReadFile and fs.ReadDir come
+// through it too.
 func (l linkedFS) Open(name string) (fs.File, error) {
-	if !fs.ValidPath(name) {
-		return nil, &fs.PathError{Op: "open", Path: name, Err: fs.ErrInvalid}
-	}
-
-	resolved, err := l.resolveOpen(name)
+	resolved, err := l.resolveFor("open", name)
 	if err != nil {
 		return nil, err
 	}
@@ -194,8 +190,23 @@ func (l linkedFS) Open(name string) (fs.File, error) {
 	return l.fsys.Open(resolved)
 }
 
-// resolveOpen is resolve failing as Open does.
-func (l linkedFS) resolveOpen(name string) (string, error) {
+// Stat describes name with its links resolved, without opening it.
+func (l linkedFS) Stat(name string) (fs.FileInfo, error) {
+	resolved, err := l.resolveFor("stat", name)
+	if err != nil {
+		return nil, err
+	}
+
+	// No link is left in resolved, so Lstat describes what it names.
+	return l.fsys.Lstat(resolved)
+}
+
+// resolveFor is resolve failing as op does.
+func (l linkedFS) resolveFor(op, name string) (string, error) {
+	if !fs.ValidPath(name) {
+		return "", &fs.PathError{Op: op, Path: name, Err: fs.ErrInvalid}
+	}
+
 	resolved, err := l.resolve(name)
 	if err != nil {
 		var pathErr *fs.PathError
@@ -203,7 +214,7 @@ func (l linkedFS) resolveOpen(name string) (string, error) {
 			err = pathErr.Err
 		}
 
-		return "", &fs.PathError{Op: "open", Path: name, Err: err}
+		return "", &fs.PathError{Op: op, Path: name, Err: err}
 	}
 
 	return resolved, nil
@@ -244,14 +255,21 @@ func (r Root) inside(op, name string) (string, error) {
 	return inside, nil
 }
 
-// Open implements Opener.
-func (r Root) Open(name string) (io.ReadCloser, error) {
+// checkDisk refuses a name r reads from disk that is not its to read: for a
+// Root reading from an fs.FS, one outside the include path through its
+// symbolic links. The local disk's own rules are its callers'.
+func (r Root) checkDisk(name string) error {
 	if r.fsys == nil {
-		return os.Open(name)
+		return nil
 	}
 
+	return CheckWithin(r.includePath, name)
+}
+
+// Open implements Opener.
+func (r Root) Open(name string) (io.ReadCloser, error) {
 	if r.OnDisk(name) {
-		if err := CheckWithin(r.includePath, name); err != nil {
+		if err := r.checkDisk(name); err != nil {
 			return nil, err
 		}
 
@@ -268,10 +286,6 @@ func (r Root) Open(name string) (io.ReadCloser, error) {
 
 // Stat describes the file name names.
 func (r Root) Stat(name string) (fs.FileInfo, error) {
-	if r.fsys == nil {
-		return os.Stat(name)
-	}
-
 	if r.OnDisk(name) {
 		// Statted first: most names a link lookup asks about are not there,
 		// and a missing one needs no links resolved to say so.
@@ -280,7 +294,7 @@ func (r Root) Stat(name string) (fs.FileInfo, error) {
 			return nil, err
 		}
 
-		if err := CheckWithin(r.includePath, name); err != nil {
+		if err := r.checkDisk(name); err != nil {
 			return nil, err
 		}
 
@@ -297,12 +311,8 @@ func (r Root) Stat(name string) (fs.FileInfo, error) {
 
 // ReadFile reads the file name names.
 func (r Root) ReadFile(name string) ([]byte, error) {
-	if r.fsys == nil {
-		return os.ReadFile(name)
-	}
-
 	if r.OnDisk(name) {
-		if err := CheckWithin(r.includePath, name); err != nil {
+		if err := r.checkDisk(name); err != nil {
 			return nil, err
 		}
 
@@ -351,14 +361,8 @@ func (r Root) contain(joined, named string) error {
 	}
 
 	// Only a link out of the FS is refused here; a name not there yet is
-	// left to the read to report. Resolving the links says so without
-	// opening the file, which the read does next.
-	if links, ok := r.fsys.(linkedFS); ok {
-		_, err = links.resolveOpen(inside)
-	} else {
-		_, err = fs.Stat(r.fsys, inside)
-	}
-	if errors.Is(err, ErrOutsideProject) {
+	// left to the read to report.
+	if _, err := fs.Stat(r.fsys, inside); errors.Is(err, ErrOutsideProject) {
 		return fmt.Errorf("%q: %w", named, err)
 	}
 
