@@ -307,7 +307,7 @@ func publishFlags(config *configFile) []cli.Flag {
 		&cli.StringFlag{
 			Name:      "report-file",
 			Value:     "",
-			Usage:     "write the --output-format report to this file, created or emptied as the run starts, rather than to standard output, which then keeps the page URLs and the HTML of --compile-only and --dry-run in every format. \"-\" is standard output, as without the flag. GitHub reads the github format's annotations only from a step's standard output, so print the file in a later step for them to appear.",
+			Usage:     "write the --output-format report to this file, created or emptied as the run starts, rather than to standard output, so that it is never mixed with the page URLs or the HTML of --compile-only and --dry-run, which stay on standard output in every format. \"-\" is standard output, as without the flag. GitHub reads the github format's annotations only from a step's standard output, so print the file in a later step for them to appear.",
 			TakesFile: true,
 			Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_REPORT_FILE"),
 				config.value("report-file")),
