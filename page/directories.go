@@ -6,11 +6,11 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"os"
 	"path/filepath"
 	"slices"
 	"strings"
 
+	"github.com/kovetskiy/mark/v17/attachment"
 	"github.com/kovetskiy/mark/v17/fingerprint"
 	"github.com/kovetskiy/mark/v17/metadata"
 	"go.yaml.in/yaml/v3"
@@ -96,6 +96,17 @@ func DirectoryHash(key string) string {
 // The filename is deliberately not consulted. It is "README" in every directory
 // that has one, which is a name for a file rather than for a page.
 func DirectoryTitleReader(read func(file string) ([]byte, error), titleFromH1, frontmatter bool) TitleResolver {
+	return DirectoryTitleReaderIn(attachment.Root{}, read, titleFromH1, frontmatter)
+}
+
+// DirectoryTitleReaderIn is DirectoryTitleReader reading the .pages file from
+// root: the local disk for the zero Root, or the fs.FS of documents a library
+// caller handed over from memory, held to its boundary as any read of it is. A
+// .pages file root refuses to read, such as one behind a symbolic link out of
+// its fs.FS, fails as an unreadable one on disk does.
+func DirectoryTitleReaderIn(
+	root attachment.Root, read func(file string) ([]byte, error), titleFromH1, frontmatter bool,
+) TitleResolver {
 	index := IndexTitleReader(read, titleFromH1, frontmatter)
 
 	return func(directory, indexFile string) (string, error) {
@@ -104,15 +115,13 @@ func DirectoryTitleReader(read func(file string) ([]byte, error), titleFromH1, f
 			return title, err
 		}
 
-		return directoryTitleFromPagesFile(directory)
+		return directoryTitleFromPagesFile(root, directory)
 	}
 }
 
 // IndexTitleReader is DirectoryTitleReader without the .pages file: a
 // directory is titled by its own document alone, or named after itself. It is
-// for a directory that is not on disk, such as one only documents a library
-// caller handed over from memory lie in, where a .pages file read from disk
-// would be some other directory's.
+// for a directory that has nowhere to read a .pages file from.
 func IndexTitleReader(read func(file string) ([]byte, error), titleFromH1, frontmatter bool) TitleResolver {
 	return func(_, indexFile string) (string, error) {
 		if indexFile == "" {
@@ -143,8 +152,8 @@ func IndexTitleReader(read func(file string) ([]byte, error), titleFromH1, front
 
 // directoryTitleFromPagesFile reads a .pages file, the convention MkDocs and
 // others already use for naming a directory.
-func directoryTitleFromPagesFile(directory string) (string, error) {
-	source, err := os.ReadFile(filepath.Join(directory, ".pages"))
+func directoryTitleFromPagesFile(root attachment.Root, directory string) (string, error) {
+	source, err := root.ReadFile(filepath.Join(directory, ".pages"))
 	if errors.Is(err, fs.ErrNotExist) {
 		// Absence is the ordinary case.
 		return "", nil

@@ -4,9 +4,12 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"io/fs"
+	"strings"
 	"testing"
 	"testing/fstest"
 
+	"github.com/kovetskiy/mark/v17/attachment"
 	"github.com/kovetskiy/mark/v17/confluence"
 	"github.com/kovetskiy/mark/v17/confluence/confluencetest"
 	"github.com/kovetskiy/mark/v17/manifest"
@@ -269,4 +272,126 @@ func TestIncludePathFragmentLinksToALaidOutFile(t *testing.T) {
 	require.NoError(t, err)
 	assert.Contains(t, bodyOfPageTitled(t, server, "Overview"), link,
 		"the fragment's link names the README's page")
+}
+
+// pagesLayout is a tree laid out twice by the tests below: as files on disk
+// and as documents in an fstest.MapFS. guides has a README with a title and a
+// .pages file, howto a README without one and a .pages file, and reference a
+// .pages file alone.
+var pagesLayout = map[string]string{
+	"docs/guides/.pages":      "title: Guides From Pages\n",
+	"docs/guides/README.md":   space + "<!-- Title: Handbook -->\n\nThe guides.\n",
+	"docs/guides/setup.md":    space + "<!-- Title: Setup -->\n\nSetup.\n",
+	"docs/howto/.pages":       "title: How To From Pages\n",
+	"docs/howto/README.md":    space + "\nHow to do things.\n",
+	"docs/howto/deploy.md":    space + "<!-- Title: Deploy -->\n\nDeploy.\n",
+	"docs/reference/.pages":   "title: API Reference\n",
+	"docs/reference/users.md": space + "<!-- Title: Users -->\n\nUsers.\n",
+}
+
+// pagesLayoutAncestries is where the layout's leaf pages end up.
+func pagesLayoutAncestries(t *testing.T, server *confluencetest.Server) map[string][]string {
+	t.Helper()
+
+	api := hierarchyAPI(server)
+	ancestries := map[string][]string{}
+	for _, title := range []string{"Setup", "Deploy", "Users"} {
+		ancestries[title] = ancestryOf(t, api, title)
+	}
+
+	return ancestries
+}
+
+// TestPagesFileInADocumentsFSTitlesItsDirectory: a .pages file is read from
+// the FS of the documents a directory holds, with the precedence it has on
+// disk: a README's own title first, then the .pages file, then the
+// directory's name. Laid out from files on disk and from documents in an FS,
+// the same tree gets the same parents.
+func TestPagesFileInADocumentsFSTitlesItsDirectory(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+
+	fsys := fstest.MapFS{}
+	var documents []Document
+	for name, content := range pagesLayout {
+		writeAt(t, dir, "disk/"+name, content)
+		if strings.HasSuffix(name, ".md") {
+			documents = append(documents, Document{Path: name, Content: []byte(content), FS: fsys})
+		} else {
+			fsys[name] = &fstest.MapFile{Data: []byte(content)}
+		}
+	}
+
+	diskServer := hierarchyServer(t)
+	diskConfig := trackingConfig(diskServer, "disk/docs/**/*.md")
+	diskConfig.ParentsFromPath = true
+	require.NoError(t, Run(context.Background(), diskConfig))
+
+	documentServer := hierarchyServer(t)
+	require.NoError(t, Run(context.Background(), documentHierarchyConfig(documentServer, "docs", documents...)))
+
+	want := map[string][]string{
+		"Setup":  {"Home", "Handbook"},
+		"Deploy": {"Home", "How To From Pages"},
+		"Users":  {"Home", "API Reference"},
+	}
+	assert.Equal(t, want, pagesLayoutAncestries(t, diskServer), "on disk")
+	assert.Equal(t, want, pagesLayoutAncestries(t, documentServer), "in an FS")
+	assert.Contains(t, bodyOfPageTitled(t, documentServer, "How To From Pages"), "How to do things.",
+		"a README without a title is its directory's page under the .pages title")
+}
+
+// TestPagesFileOnDiskBeatsADocumentsFS: a directory a file lies in is on
+// disk, and its .pages file is read there, not from the FS of a document
+// beside the file.
+func TestPagesFileOnDiskBeatsADocumentsFS(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	writeAt(t, dir, "docs/guides/.pages", "title: From Disk\n")
+	writeAt(t, dir, "docs/guides/setup.md", space+"<!-- Title: Setup -->\n\nSetup.\n")
+
+	server := hierarchyServer(t)
+	config := trackingConfig(server, "docs/**/*.md")
+	config.ParentsFromPath = true
+	config.DocumentScope = "generated"
+	config.Documents = []Document{{
+		Path:    "docs/guides/generated.md",
+		Content: []byte(space + "<!-- Title: Generated -->\n\nGenerated.\n"),
+		FS:      fstest.MapFS{"docs/guides/.pages": {Data: []byte("title: From The FS\n")}},
+	}}
+	require.NoError(t, Run(context.Background(), config))
+
+	api := hierarchyAPI(server)
+	assert.Equal(t, []string{"Home", "From Disk"}, ancestryOf(t, api, "Generated"))
+	assert.Equal(t, 0, countPagesTitled(t, server, "From The FS"))
+}
+
+// TestPagesFileLinkingOutOfADocumentsFSIsRefused: a .pages file is read as
+// any file of the FS is, so a symbolic link out of it, the file's own or a
+// directory's above it, is refused rather than followed or taken for absent.
+func TestPagesFileLinkingOutOfADocumentsFSIsRefused(t *testing.T) {
+	link := func(target string) *fstest.MapFile {
+		return &fstest.MapFile{Data: []byte(target), Mode: fs.ModeSymlink}
+	}
+
+	for name, fsys := range map[string]fstest.MapFS{
+		"a .pages above the root": {"docs/guides/.pages": link("../../../.pages")},
+		"an absolute .pages":      {"docs/guides/.pages": link("/etc/mark/.pages")},
+		"a directory linked out":  {"docs/guides": link("../../elsewhere")},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Chdir(t.TempDir())
+
+			server := hierarchyServer(t)
+			err := Run(context.Background(), documentHierarchyConfig(server, "docs", Document{
+				Path:    "docs/guides/setup.md",
+				Content: []byte(space + "<!-- Title: Setup -->\n\nSetup.\n"),
+				FS:      fsys,
+			}))
+			require.Error(t, err)
+			require.ErrorIs(t, err, attachment.ErrOutsideProject)
+			assert.Contains(t, err.Error(), ".pages")
+			assert.Equal(t, 0, countPagesTitled(t, server, "Setup"))
+		})
+	}
 }
