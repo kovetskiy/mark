@@ -375,9 +375,12 @@ func linkTitle(title string) string {
 		return ""
 	}
 
-	// "<\!" keeps "<!--" from being read as a directive.
-	return ` "` + strings.NewReplacer(`\`, `\\`, `"`, `\"`, "<!", `<\!`).Replace(title) + `"`
+	return ` "` + titleEscaper.Replace(title) + `"`
 }
+
+// titleEscaper escapes a link title; "<\!" keeps "<!--" from being read as a
+// directive.
+var titleEscaper = strings.NewReplacer(`\`, `\\`, `"`, `\"`, "<!", `<\!`)
 
 // pathDestination writes the path of a downloaded attachment as a link
 // destination, percent-encoding what a URL cannot hold as it is: mark decodes

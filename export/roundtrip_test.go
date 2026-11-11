@@ -98,11 +98,12 @@ func TestRoundTripTextLikeDirectives(t *testing.T) {
 		"ignore":           "<!-- ac:ignore -->\nMARKER\n<!-- ac:ignore end -->",
 	}
 
+	c := func(s string) string { return "<![CDATA[" + s + "]]>" }
+
 	for name, text := range directives {
 		t.Run(name, func(t *testing.T) {
 			x := escapeXMLText(text)
 			line := escapeXMLText(strings.ReplaceAll(text, "\n", " "))
-			c := func(s string) string { return "<![CDATA[" + s + "]]>" }
 
 			for context, storage := range map[string]string{
 				"paragraph":  "<p>" + x + "</p>",
