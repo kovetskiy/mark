@@ -213,3 +213,21 @@ func TestBoundaryValidate(t *testing.T) {
 
 	assert.ErrorContains(t, Boundary(filepath.Join(docs, "notes.pdf")).Validate(), "is not a directory")
 }
+
+// TestBoundaryDocumentThroughASymlinkedWorkingDirectory: run from a
+// repository reached through a symlink, a document named relative to it
+// reaches a file in its own directory by an absolute name too, as a d2
+// import may, under BoundaryDocument as under the default boundary.
+func TestBoundaryDocumentThroughASymlinkedWorkingDirectory(t *testing.T) {
+	_, docs, _ := boundaryProject(t)
+
+	link := filepath.Join(t.TempDir(), "link")
+	require.NoError(t, os.Symlink(filepath.Dir(docs), link))
+	t.Chdir(link)
+	t.Setenv("PWD", link)
+
+	absolute := filepath.Join(link, "docs", "notes.pdf")
+	for _, boundary := range []Boundary{"", BoundaryDocument} {
+		require.NoError(t, Root{}.WithBoundary(boundary).CheckReadable("docs", absolute), "boundary %q", boundary)
+	}
+}

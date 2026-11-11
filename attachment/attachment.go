@@ -350,11 +350,16 @@ func (b Boundary) checkPath(base, resolved, named string) error {
 		}
 
 		path, ok = within(roots, resolved)
-	case BoundaryDocument:
-		path, ok = within([]string{base}, resolved)
 	default:
+		// One directory alone has no working directory beside it to catch a
+		// relative base resolved apart from an absolute name.
+		dir := string(b)
+		if b == BoundaryDocument {
+			dir = base
+		}
+
 		var err error
-		if path, ok, err = withinDir(string(b), resolved); err != nil {
+		if path, ok, err = withinDir(dir, resolved); err != nil {
 			return err
 		}
 	}
