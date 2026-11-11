@@ -6,8 +6,8 @@
 // sets of every run of Shingle consecutive words, lowercased, with markup and
 // punctuation dropped. It is 1 for the same words in the same order and falls
 // with every word changed, added or removed, each touching up to Shingle
-// shingles. A text shorter than Shingle words is compared by runs as long as
-// the shorter text, down to single words; an empty text is like nothing.
+// shingles. A text of fewer than MinWords words is like nothing: a stub such
+// as "TBD" says nothing about which document it was.
 package similar
 
 import (
@@ -21,6 +21,9 @@ import (
 // Shingle is how many consecutive words make one shingle.
 const Shingle = 3
 
+// MinWords is the fewest words a text needs to be like another at all.
+const MinWords = 10
+
 // Words splits text into lowercased runs of letters and digits.
 func Words(text string) []string {
 	return strings.FieldsFunc(strings.ToLower(text), func(r rune) bool {
@@ -29,22 +32,24 @@ func Words(text string) []string {
 }
 
 var (
-	cdata    = regexp.MustCompile(`(?s)<!\[CDATA\[(.*?)\]\]>`)
-	comment  = regexp.MustCompile(`(?s)<!--.*?-->`)
-	tag      = regexp.MustCompile(`(?s)<[^>]*>`)
+	cdata   = regexp.MustCompile(`(?s)<!\[CDATA\[(.*?)\]\]>`)
+	comment = regexp.MustCompile(`(?s)<!--.*?-->`)
+	tag     = regexp.MustCompile(`(?s)<[^>]*>`)
+	// htmlTag is a tag written in Markdown, not a "<" in prose or code.
+	htmlTag  = regexp.MustCompile(`<[A-Za-z/!?][^<>]*>`)
 	linkDest = regexp.MustCompile(`\]\([^)]*\)`)
 )
 
 // StorageWords is the words of a page body in storage format: its text and
 // the code in its CDATA sections, without tags, attributes or comments.
 func StorageWords(storage string) []string {
-	text := comment.ReplaceAllString(storage, " ")
-	// Before tags are dropped, so code holding a "<" is not cut short.
+	// Code first, so a "<" or "<!--" in it is not taken for markup.
 	var code []string
-	text = cdata.ReplaceAllStringFunc(text, func(section string) string {
+	text := cdata.ReplaceAllStringFunc(storage, func(section string) string {
 		code = append(code, cdata.FindStringSubmatch(section)[1])
 		return " \x00 "
 	})
+	text = comment.ReplaceAllString(text, " ")
 	text = html.UnescapeString(tag.ReplaceAllString(text, " "))
 	for _, c := range code {
 		text = strings.Replace(text, "\x00", " "+c+" ", 1)
@@ -59,19 +64,18 @@ func StorageWords(storage string) []string {
 func MarkdownWords(markdown string) []string {
 	text := comment.ReplaceAllString(markdown, " ")
 	text = linkDest.ReplaceAllString(text, "] ")
-	text = tag.ReplaceAllString(text, " ")
+	text = htmlTag.ReplaceAllString(text, " ")
 
 	return Words(html.UnescapeString(text))
 }
 
 // Score is the Jaccard similarity of a's and b's shingles, from 0 to 1.
 func Score(a, b []string) float64 {
-	n := min(Shingle, len(a), len(b))
-	if n == 0 {
+	if len(a) < MinWords || len(b) < MinWords {
 		return 0
 	}
 
-	sa, sb := shingles(a, n), shingles(b, n)
+	sa, sb := shingles(a), shingles(b)
 	shared := 0
 	for s := range sa {
 		if sb[s] {
@@ -82,10 +86,10 @@ func Score(a, b []string) float64 {
 	return float64(shared) / float64(len(sa)+len(sb)-shared)
 }
 
-func shingles(words []string, n int) map[string]bool {
-	set := make(map[string]bool, len(words)-n+1)
-	for i := 0; i+n <= len(words); i++ {
-		set[strings.Join(words[i:i+n], "\x00")] = true
+func shingles(words []string) map[string]bool {
+	set := make(map[string]bool, len(words)-Shingle+1)
+	for i := 0; i+Shingle <= len(words); i++ {
+		set[strings.Join(words[i:i+Shingle], "\x00")] = true
 	}
 
 	return set
@@ -102,11 +106,17 @@ type Pair struct {
 // and leads by at least margin both the new document's next best old one and
 // the old one's next best new one. That makes the pairing one-to-one: no two
 // pairs taken share a document, since each leads all the others of both.
+// Rivals holds each new document's best score against texts it cannot be
+// paired with, such as documents that still exist, which it has to lead by
+// the margin too: text shared by a whole set of documents, such as a
+// template's, is then no reason to pair two of them.
 //
 // Unclear names each new document scoring at least threshold against some old
 // one but taken with none, with every old one it scored that well against,
 // best first.
-func Match(scores map[string]map[string]float64, threshold, margin float64) (taken map[string]Pair, unclear map[string][]Pair) {
+func Match(
+	scores map[string]map[string]float64, rivals map[string]float64, threshold, margin float64,
+) (taken map[string]Pair, unclear map[string][]Pair) {
 	bestOld := map[string][2]float64{}
 	for _, row := range scores {
 		for old, score := range row {
@@ -138,7 +148,8 @@ func Match(scores map[string]map[string]float64, threshold, margin float64) (tak
 		})
 
 		best := close[0]
-		if best.Score-bestNew[1] >= margin && best.Score-bestOld[best.Old][1] >= margin {
+		runnerUp := max(bestNew[1], rivals[doc])
+		if best.Score-runnerUp >= margin && best.Score-bestOld[best.Old][1] >= margin {
 			taken[doc] = best
 		} else {
 			unclear[doc] = close

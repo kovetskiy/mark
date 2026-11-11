@@ -440,20 +440,23 @@ type TrackingConfig struct {
 	// takes. The text compared is the document's Markdown, without its
 	// headers, against the gone key's page as it is in Confluence, both as
 	// lowercased words without markup, by the Jaccard similarity of their
-	// runs of three words.
+	// runs of three words. A text of fewer than ten words is like nothing.
 	//
 	// A wrong match overwrites an unrelated page, so it is careful: each gone
 	// key is taken by one document at most, and only when the pair is at
-	// least this alike and clear by 0.1 of the next best for either; a close
-	// call follows nothing and is warned about. Under NoOverwrite a gone key
+	// least this alike and clear by 0.1 of the next best for either, and of
+	// the document's closest other document in the run, so that a template's
+	// text shared by the whole scope pairs nothing; a close call follows
+	// nothing and is warned about. Under NoOverwrite a gone key
 	// whose page was edited in Confluence since mark wrote it, or that has no
 	// version to tell, is never taken. Each rename followed is logged and
 	// warned about on the document, naming both keys and the score, with
 	// report.WarningRename.
 	//
 	// It costs one read of each gone key's page, once a run, and only when
-	// some document has no page of its own to go to; a run with nothing to
-	// match makes no request for it.
+	// some document has no page of its own to go to, and one more of a page
+	// taken, at its document's turn; a run with nothing to match makes no
+	// request for it.
 	RenameSimilarity float64
 }
 
