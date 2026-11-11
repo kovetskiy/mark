@@ -229,6 +229,23 @@ func TestClientRecognisesALoginPage(t *testing.T) {
 	}
 }
 
+// TestRequestErrorBlamesRefusedCredentials: a login page Seraph says it
+// served because it did not accept the credentials -- a wrong token on a
+// public space answers so -- points at the credentials, not at a proxy.
+func TestRequestErrorBlamesRefusedCredentials(t *testing.T) {
+	refused := requestError("read page 1", &loginPageError{
+		requested: "https://confluence.example.org/rest/api/content/1", evidence: seraphRefusal + "AUTHENTICATED_FAILED", strong: true,
+	})
+	require.ErrorIs(t, refused, ErrLoginPage)
+	assert.Contains(t, refused.Error(), "did not accept the credentials")
+	assert.NotContains(t, refused.Error(), "SSO")
+
+	redirected := requestError("read page 1", &loginPageError{
+		requested: "https://confluence.example.org/rest/api/content/1", evidence: "redirected to /login.action", strong: true,
+	})
+	assert.Contains(t, redirected.Error(), "SSO")
+}
+
 // TestClientRecognisesARedirectToTheLoginPage: Seraph sends a request it does
 // not authenticate to /login.action, which the HTTP client follows. Whatever
 // that page answers with, the request ended on a login page, and the error

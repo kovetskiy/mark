@@ -660,6 +660,16 @@ func (e *loginPageError) Error() string {
 
 func (e *loginPageError) Is(target error) bool { return target == ErrLoginPage }
 
+// seraphRefusal starts the evidence of an answer Seraph says it did not
+// authenticate.
+const seraphRefusal = "X-Seraph-LoginReason: "
+
+// credentialsRefused says whether Seraph turned the credentials away, rather
+// than something in front of Confluence answering for it.
+func (e *loginPageError) credentialsRefused() bool {
+	return strings.HasPrefix(e.evidence, seraphRefusal)
+}
+
 // loginEvidence says why a 2xx answer to req is a login page rather than
 // what was asked for, or "" when it is not one, and whether that is strong
 // evidence: anything but an HTML Content-Type alone. mediaType is the
@@ -695,7 +705,7 @@ func loginEvidence(req *http.Request, resp *http.Response, mediaType string, dow
 
 	if download {
 		if refused {
-			return "X-Seraph-LoginReason: " + reason, true
+			return seraphRefusal + reason, true
 		}
 
 		return "", false
@@ -706,7 +716,7 @@ func loginEvidence(req *http.Request, resp *http.Response, mediaType string, dow
 			return "redirected to " + final.Hostname(), true
 		}
 		if refused {
-			return "X-Seraph-LoginReason: " + reason, true
+			return seraphRefusal + reason, true
 		}
 		if resp.Header.Get("X-AUSERNAME") == "anonymous" {
 			return "X-AUSERNAME: anonymous", true

@@ -228,7 +228,8 @@ func TestDownloadAttachmentAuthentication(t *testing.T) {
 				assert.Zero(t, body.read)
 				assert.Contains(t, err.Error(), `unable to download attachment "a.png"`)
 				assert.Contains(t, err.Error(), test.evidence)
-				assert.Contains(t, err.Error(), "SSO", "the hint every login page gets")
+				assert.Contains(t, err.Error(), "did not accept the credentials", "Seraph refused them")
+				assert.NotContains(t, err.Error(), "SSO", "no proxy is to blame")
 				return
 			}
 			require.NoError(t, err)
