@@ -124,59 +124,24 @@ func (l linkedFS) resolve(name string) (string, error) {
 // errOutsideFS is a symbolic link out of an fs.FS.
 var errOutsideFS = fmt.Errorf("%w: a symbolic link leads out of the document's file system", ErrOutsideProject)
 
-// at is name resolved, or the error op fails with.
-func (l linkedFS) at(op, name string) (string, error) {
+// Open opens name with its links resolved. fs.Stat, fs.ReadFile and
+// fs.ReadDir come through it too, as linkedFS has nothing else.
+func (l linkedFS) Open(name string) (fs.File, error) {
 	if !fs.ValidPath(name) {
-		return "", &fs.PathError{Op: op, Path: name, Err: fs.ErrInvalid}
+		return nil, &fs.PathError{Op: "open", Path: name, Err: fs.ErrInvalid}
 	}
 
 	resolved, err := l.resolve(name)
 	if err != nil {
 		var pathErr *fs.PathError
 		if errors.As(err, &pathErr) {
-			return "", &fs.PathError{Op: op, Path: name, Err: pathErr.Err}
+			err = pathErr.Err
 		}
 
-		return "", &fs.PathError{Op: op, Path: name, Err: err}
-	}
-
-	return resolved, nil
-}
-
-func (l linkedFS) Open(name string) (fs.File, error) {
-	resolved, err := l.at("open", name)
-	if err != nil {
-		return nil, err
+		return nil, &fs.PathError{Op: "open", Path: name, Err: err}
 	}
 
 	return l.fsys.Open(resolved)
-}
-
-func (l linkedFS) Stat(name string) (fs.FileInfo, error) {
-	resolved, err := l.at("stat", name)
-	if err != nil {
-		return nil, err
-	}
-
-	return fs.Stat(l.fsys, resolved)
-}
-
-func (l linkedFS) ReadFile(name string) ([]byte, error) {
-	resolved, err := l.at("read", name)
-	if err != nil {
-		return nil, err
-	}
-
-	return fs.ReadFile(l.fsys, resolved)
-}
-
-func (l linkedFS) ReadDir(name string) ([]fs.DirEntry, error) {
-	resolved, err := l.at("readdir", name)
-	if err != nil {
-		return nil, err
-	}
-
-	return fs.ReadDir(l.fsys, resolved)
 }
 
 // errNotInFS is what a name that does not name a path inside the fs.FS
@@ -283,11 +248,10 @@ func (r Root) contain(joined, named string) error {
 		)
 	}
 
-	// A name not there yet is left to the read to report.
-	if linked, ok := r.fsys.(linkedFS); ok {
-		if _, err := linked.resolve(inside); errors.Is(err, ErrOutsideProject) {
-			return fmt.Errorf("%q: %w", named, err)
-		}
+	// Only a link out of the FS is refused here; a name not there yet is
+	// left to the read to report.
+	if _, err := fs.Stat(r.fsys, inside); errors.Is(err, ErrOutsideProject) {
+		return fmt.Errorf("%q: %w", named, err)
 	}
 
 	return nil

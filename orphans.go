@@ -152,12 +152,14 @@ func handleOrphans(
 					continue
 				}
 
-				reason := fmt.Sprintf("nothing under %s was published in space %q in this run", glob, space)
-				if partialKeys(config, glob) {
+				var reason string
+				if listedScope(config, glob) {
 					reason = fmt.Sprintf(
 						"no key of %s tracked in space %q before this run is published or named in DocumentKeys, "+
 							"which a failed render or a bad key list looks exactly like", glob, space,
 					)
+				} else {
+					reason = fmt.Sprintf("nothing under %s was published in space %q in this run", glob, space)
 				}
 				log.Warn().Msgf("space %q: %s, so %s's page is left alone", space, reason, candidate.Path)
 
@@ -211,10 +213,10 @@ func handleOrphans(
 	return nil
 }
 
-// partialKeys reports whether a partial run's DocumentKeys decide which keys
-// of glob are gone: a partial run finds a scope's orphans only when given
-// them.
-func partialKeys(config Config, glob string) bool {
+// listedScope reports whether the orphans of glob are keys a partial run's
+// DocumentKeys left out. A partial run finds a scope's orphans only when
+// given DocumentKeys, so its document orphans need nothing more to tell.
+func listedScope(config Config, glob string) bool {
 	return config.Tracking.Partial && manifest.IsDocumentScope(glob)
 }
 
@@ -224,7 +226,7 @@ func partialKeys(config Config, glob string) bool {
 func warnGoneKeys(config Config, space string, paths []string, globOf map[string]string) {
 	gone := map[string][]string{}
 	for _, path := range paths {
-		if glob := globOf[path]; partialKeys(config, glob) {
+		if glob := globOf[path]; listedScope(config, glob) {
 			gone[glob] = append(gone[glob], path)
 		}
 	}

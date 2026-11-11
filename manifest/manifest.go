@@ -336,13 +336,9 @@ type Store struct {
 	// its entry is recorded under in place of runGlob; "" is none.
 	documentScopes map[string]string
 
-	// scopeKeys holds, for each key SetScopeKeys named, the scope it still
-	// exists in.
-	scopeKeys map[string]string
-
-	// listed holds the scopes SetScopeKeys gave the whole key set of, as
-	// recorded.
-	listed map[string]bool
+	// scopeKeys holds, for each scope SetScopeKeys gave the whole key set of,
+	// as recorded, the keys it named as still existing.
+	scopeKeys map[string]map[string]bool
 
 	// scopes holds every scope the run publishes or names keys in, as it is
 	// recorded.
@@ -608,7 +604,6 @@ func (s *Store) SetRunFiles(glob string, paths []string) {
 	s.runFiles = make(map[string]bool, len(paths))
 	s.documentScopes = nil
 	s.scopeKeys = nil
-	s.listed = nil
 	s.scopes = nil
 	for _, path := range paths {
 		s.runFiles[Key(path)] = true
@@ -716,14 +711,14 @@ func (s *Store) SetScopeKeys(scope string, keys []string) {
 
 	glob := s.addScope(scope)
 	if s.scopeKeys == nil {
-		s.scopeKeys = make(map[string]string, len(keys))
-		s.listed = map[string]bool{}
+		s.scopeKeys = map[string]map[string]bool{}
 	}
 
-	s.listed[glob] = true
+	listed := make(map[string]bool, len(keys))
 	for _, key := range keys {
-		s.scopeKeys[Key(key)] = glob
+		listed[Key(key)] = true
 	}
+	s.scopeKeys[glob] = listed
 }
 
 // addScope notes scope as one of the run's and returns what it is recorded
@@ -742,25 +737,23 @@ func (s *Store) addScope(scope string) string {
 
 // coversDocument is covers for an entry recorded under a document scope: one
 // of the run's scopes, and under SetPartial only a key the run publishes in
-// it, unless SetScopeKeys gave the scope's whole key set. Called with s.mu
-// held.
+// it. Given the scope's whole key set by SetScopeKeys, it covers every key but
+// those named as still existing, which are not gone and so neither orphans,
+// renamed nor moved. Called with s.mu held.
 func (s *Store) coversDocument(path string, entry Entry) bool {
 	if !s.scopes[entry.Glob] {
 		return false
 	}
 
-	if !s.partial || s.listed[entry.Glob] {
+	if listed := s.scopeKeys[entry.Glob]; listed != nil {
+		return !listed[path]
+	}
+
+	if !s.partial {
 		return true
 	}
 
 	scope, ok := s.documentScopes[path]
-	return ok && scope == entry.Glob
-}
-
-// kept reports whether SetScopeKeys names path as still existing in the
-// scope entry is recorded under. Called with s.mu held.
-func (s *Store) kept(path string, entry Entry) bool {
-	scope, ok := s.scopeKeys[path]
 	return ok && scope == entry.Glob
 }
 
@@ -1316,7 +1309,8 @@ func (s *Store) Record(ctx context.Context, spaceKey, path, pageID, title, hash 
 			hint := ""
 			ownerEntry := state.shards[shardFor(owner)].pages[owner]
 			if s.partial && s.absent(state, owner) && ownerEntry.Glob != "" &&
-				!s.covers(owner, ownerEntry) && s.sameScope(path, ownerEntry) {
+				!s.covers(owner, ownerEntry) && s.sameScope(path, ownerEntry) &&
+				s.scopeKeys[ownerEntry.Glob] == nil {
 				if IsDocumentScope(ownerEntry.Glob) {
 					hint = fmt.Sprintf(
 						"; if %s moved to %s, name every key of its scope that still exists to follow the move",
@@ -1494,7 +1488,7 @@ func (s *Store) movedOwner(state *spaceState, path, pageID string) (Entry, bool)
 
 	entry, recorded := state.shards[shardFor(owner)].pages[owner]
 	if !recorded || entry.PageID != pageID || !s.covers(owner, entry) || !s.absent(state, owner) ||
-		s.kept(owner, entry) || !s.sameScope(path, entry) {
+		!s.sameScope(path, entry) {
 		return Entry{}, false
 	}
 
@@ -1614,7 +1608,7 @@ func (s *Store) resolveRenamed(ctx context.Context, spaceKey, path, hash string)
 	for i := range state.shards {
 		for candidate, entry := range state.shards[i].pages {
 			if entry.Hash != hash || !s.sameScope(path, entry) || !s.covers(candidate, entry) ||
-				s.runFiles[candidate] || s.kept(candidate, entry) || state.claimed[entry.PageID] {
+				s.runFiles[candidate] || state.claimed[entry.PageID] {
 				continue
 			}
 			foundPath, foundEntry = candidate, entry
@@ -1875,7 +1869,8 @@ func (s *Store) Survivors(spaceKey, glob string) int {
 	}
 
 	survivors := 0
-	if !s.listed[glob] {
+	listed := s.scopeKeys[glob]
+	if listed == nil {
 		for path := range state.seen {
 			if s.sameScope(path, Entry{Glob: glob}) {
 				survivors++
@@ -1887,7 +1882,7 @@ func (s *Store) Survivors(spaceKey, glob string) int {
 
 	for i := range state.shards {
 		for path, entry := range state.shards[i].pages {
-			if entry.Glob == glob && (state.seen[path] && !state.added[path] || s.kept(path, entry)) {
+			if entry.Glob == glob && (state.seen[path] && !state.added[path] || listed[path]) {
 				survivors++
 			}
 		}
@@ -1930,7 +1925,7 @@ func (s *Store) orphans(spaceKey string) []string {
 	var orphans, left []string
 	for i := range state.shards {
 		for path, entry := range state.shards[i].pages {
-			if state.seen[path] || s.kept(path, entry) {
+			if state.seen[path] {
 				continue
 			}
 			if s.leftToOwner(path, entry) {

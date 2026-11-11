@@ -426,19 +426,14 @@ func linkedAssets(t *testing.T) fs.FS {
 	t.Helper()
 
 	outside := t.TempDir()
-	for name, data := range map[string][]byte{
-		"secret.png": onePixelPNG(),
-		"secret.txt": []byte("secret"),
-		"secret.md":  []byte("<!-- Space: DOCS -->\n<!-- Title: Secret Title -->\n\nSecret include.\n"),
-	} {
-		require.NoError(t, os.WriteFile(filepath.Join(outside, name), data, 0o600))
-	}
+	writeAt(t, outside, "secret.png", string(onePixelPNG()))
+	writeAt(t, outside, "secret.txt", "secret")
+	writeAt(t, outside, "secret.md", "<!-- Space: DOCS -->\n<!-- Title: Secret Title -->\n\nSecret include.\n")
 
 	dir := t.TempDir()
-	require.NoError(t, os.MkdirAll(filepath.Join(dir, "real"), 0o750))
+	writeAt(t, dir, "real/logo.png", string(onePixelPNG()))
+	writeAt(t, dir, "real/frag.md", "Linked fragment.\n")
 	require.NoError(t, os.MkdirAll(filepath.Join(dir, "guides", "files"), 0o750))
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "real", "logo.png"), onePixelPNG(), 0o600))
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "real", "frag.md"), []byte("Linked fragment.\n"), 0o600))
 
 	links := map[string]string{
 		"guides/logo.png":      "../real/logo.png",
