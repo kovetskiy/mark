@@ -205,3 +205,62 @@ func TestFSRootPointerIsTheFS(t *testing.T) {
 	require.Len(t, found, 1)
 	assert.Equal(t, []byte("a"), found[0].FileBytes)
 }
+
+// TestRootWithIncludePathReadsItFromDisk: a Root reading from an fs.FS reads
+// a name under its include path from disk, held to the include path through
+// its symbolic links, and every other name from the FS. On the local disk
+// the include path changes nothing.
+func TestRootWithIncludePathReadsItFromDisk(t *testing.T) {
+	project := t.TempDir()
+	include := filepath.Join(project, "shared")
+	require.NoError(t, os.Mkdir(include, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(include, "frag.md"), []byte("on disk"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(project, "secret.md"), []byte("secret"), 0o600))
+	linkOut := filepath.Join(include, "out.md")
+	if err := os.Symlink(filepath.Join(project, "secret.md"), linkOut); err != nil {
+		t.Skipf("symbolic links: %v", err)
+	}
+
+	root := FSRoot(fstest.MapFS{"frag.md": {Data: []byte("in the FS")}}).WithIncludePath(include)
+
+	name, ok := root.IncludeName("frag.md")
+	require.True(t, ok)
+	assert.Equal(t, filepath.Join(include, "frag.md"), name)
+	assert.True(t, root.OnDisk(name))
+	assert.False(t, root.OnDisk("frag.md"))
+
+	data, err := root.ReadFile(name)
+	require.NoError(t, err)
+	assert.Equal(t, "on disk", string(data))
+
+	data, err = root.ReadFile("frag.md")
+	require.NoError(t, err)
+	assert.Equal(t, "in the FS", string(data), "a relative name is still the FS's")
+
+	for _, outside := range []string{filepath.Join(project, "secret.md"), linkOut} {
+		_, err = root.ReadFile(outside)
+		require.ErrorIs(t, err, ErrOutsideProject, outside)
+		_, err = root.Stat(outside)
+		require.ErrorIs(t, err, ErrOutsideProject, outside)
+		require.ErrorIs(t, root.CheckReadable(".", outside), ErrOutsideProject, outside)
+	}
+	require.NoError(t, root.CheckReadable(".", name))
+
+	_, err = root.Stat(filepath.Join(include, "missing.md"))
+	require.ErrorIs(t, err, fs.ErrNotExist)
+
+	withoutIt := FSRoot(fstest.MapFS{})
+	_, ok = withoutIt.IncludeName("frag.md")
+	assert.False(t, ok)
+	_, err = withoutIt.ReadFile(name)
+	require.Error(t, err, "without an include path no absolute name is read")
+
+	disk := Root{}.WithIncludePath("shared")
+	name, ok = disk.IncludeName("frag.md")
+	require.True(t, ok)
+	assert.Equal(t, filepath.Join("shared", "frag.md"), name, "on disk spelled as given")
+	assert.True(t, disk.OnDisk("anything"))
+	data, err = disk.ReadFile(filepath.Join(project, "secret.md"))
+	require.NoError(t, err, "on disk the include path holds nothing back")
+	assert.Equal(t, "secret", string(data))
+}

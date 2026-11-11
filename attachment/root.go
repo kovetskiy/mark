@@ -37,8 +37,16 @@ import (
 //
 // A Root is an Opener, for ResolveLocalAttachment and
 // ResolveLocalAttachments, which then also glob and check containment in it.
+//
+// WithIncludePath gives a Root that also reads --include-path, which is on
+// disk whatever the document's Root is.
 type Root struct {
 	fsys fs.FS
+
+	// includePath is --include-path as given; includeDir is it made absolute
+	// for a Root reading from an fs.FS, where an absolute name is one under it.
+	includePath string
+	includeDir  string
 }
 
 // FSRoot is the Root reading from fsys; a nil fsys is the local disk.
@@ -55,6 +63,52 @@ func FSRoot(fsys fs.FS) Root {
 // none itself.
 func (r Root) FS() fs.FS {
 	return r.fsys
+}
+
+// WithIncludePath is r reading the files under dir, --include-path, from the
+// local disk, and every other name as r does.
+//
+// On the local disk that is r itself: dir is a directory like any other
+// there, under the rules CheckReadable and its callers already give it. In an
+// fs.FS no name is absolute, so an absolute name is one under dir, which
+// IncludeName gives: Open, Stat, ReadFile and CheckReadable read it from disk
+// as long as it stays inside dir through its symbolic links (CheckWithin),
+// and refuse it with ErrOutsideProject otherwise. Attachments and globs stay
+// inside the fs.FS. An empty dir is r.
+func (r Root) WithIncludePath(dir string) Root {
+	r.includePath, r.includeDir = dir, ""
+	if dir != "" && r.fsys != nil {
+		r.includeDir = dir
+		if abs, err := filepath.Abs(dir); err == nil {
+			r.includeDir = abs
+		} else {
+			r.includeDir = filepath.Clean(dir)
+		}
+	}
+
+	return r
+}
+
+// IncludeName is the name r reads the file rel names under its include path
+// by, and false when r has none: joined to --include-path on the local disk,
+// and absolute for an fs.FS, so that it is not taken for a name inside it.
+func (r Root) IncludeName(rel string) (string, bool) {
+	if r.includePath == "" {
+		return "", false
+	}
+
+	if r.fsys == nil {
+		return filepath.Join(r.includePath, rel), true
+	}
+
+	return filepath.Join(r.includeDir, rel), true
+}
+
+// OnDisk reports whether r reads name from the local disk: every name for the
+// zero Root, and for one reading from an fs.FS an absolute name, under
+// WithIncludePath only.
+func (r Root) OnDisk(name string) bool {
+	return r.fsys == nil || (r.includeDir != "" && filepath.IsAbs(name))
 }
 
 // maxLinks is how many symbolic links one name may pass through, as Linux
@@ -185,6 +239,14 @@ func (r Root) Open(name string) (io.ReadCloser, error) {
 		return os.Open(name)
 	}
 
+	if r.OnDisk(name) {
+		if err := CheckWithin(r.includePath, name); err != nil {
+			return nil, err
+		}
+
+		return os.Open(name)
+	}
+
 	inside, err := r.inside("open", name)
 	if err != nil {
 		return nil, err
@@ -196,6 +258,14 @@ func (r Root) Open(name string) (io.ReadCloser, error) {
 // Stat describes the file name names.
 func (r Root) Stat(name string) (fs.FileInfo, error) {
 	if r.fsys == nil {
+		return os.Stat(name)
+	}
+
+	if r.OnDisk(name) {
+		if err := CheckWithin(r.includePath, name); err != nil {
+			return nil, err
+		}
+
 		return os.Stat(name)
 	}
 
@@ -213,6 +283,14 @@ func (r Root) ReadFile(name string) ([]byte, error) {
 		return os.ReadFile(name)
 	}
 
+	if r.OnDisk(name) {
+		if err := CheckWithin(r.includePath, name); err != nil {
+			return nil, err
+		}
+
+		return os.ReadFile(name)
+	}
+
 	inside, err := r.inside("read", name)
 	if err != nil {
 		return nil, err
@@ -223,10 +301,16 @@ func (r Root) ReadFile(name string) ([]byte, error) {
 
 // CheckReadable is CheckReadable held to r's boundary: on the local disk the
 // same check, and in an fs.FS that reference, joined to base unless it is
-// absolute, stays inside it.
+// absolute, stays inside it. An absolute reference is refused, unless
+// WithIncludePath put it on disk, where it has to stay inside the include
+// path.
 func (r Root) CheckReadable(base, reference string) error {
 	if r.fsys == nil {
 		return CheckReadable(base, reference)
+	}
+
+	if r.OnDisk(reference) {
+		return CheckWithin(r.includePath, reference)
 	}
 
 	joined := reference
