@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"io/fs"
+	"os"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -394,4 +395,23 @@ func TestPagesFileLinkingOutOfADocumentsFSIsRefused(t *testing.T) {
 			assert.Equal(t, 0, countPagesTitled(t, server, "Setup"))
 		})
 	}
+}
+
+// TestPagesFileUnderAFileInADocumentsFSIsAbsent: a Document's Path need not
+// exist in its FS, so a directory of it that is a file there has no .pages
+// file, as a directory that is not there has none, rather than failing the
+// run.
+func TestPagesFileUnderAFileInADocumentsFSIsAbsent(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(t.TempDir())
+	writeAt(t, dir, "generated", "a file, not a directory\n")
+
+	server := hierarchyServer(t)
+	require.NoError(t, Run(context.Background(), documentHierarchyConfig(server, "generated", Document{
+		Path:    "generated/api/users.md",
+		Content: []byte(space + "<!-- Title: Users -->\n\nUsers.\n"),
+		FS:      os.DirFS(dir),
+	})))
+
+	assert.Equal(t, []string{"Home", "Api"}, ancestryOf(t, hierarchyAPI(server), "Users"))
 }
