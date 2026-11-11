@@ -442,8 +442,10 @@ for a file it is run on and as mark does for an image, and an import inside an
 imported file relative to that file. Like every other file a document names, an
 import must resolve, with symlinks followed, inside the document's directory or
 the one mark is running in; one elsewhere fails the file with an error naming
-the import. A diagram with no document on disk behind it -- one compiled
-through the library without a path -- cannot import anything. A change to an
+the import. A diagram with no document behind it -- one compiled
+through the library without a path -- cannot import anything. For a document
+a library caller hands over in an `fs.FS`, imports and images are read from
+that file system and held to it (see [Using mark from Go](library.md)). A change to an
 imported file alone is published like a change to the diagram, for PNG and SVG
 output alike.
 

@@ -67,8 +67,8 @@ type Options struct {
 	// Root is where the files the document names are read from -- images,
 	// linked files, macro attachments, and the includes and macro templates
 	// beside it -- relative to the directory of the path it is compiled as.
-	// The zero Root is the local disk. In an fs.FS, a d2 diagram may not name
-	// a local file, since d2 reads those from disk itself.
+	// The zero Root is the local disk. A d2 diagram's imports and local
+	// images are read from it too.
 	Root attachment.Root
 
 	// ResolveLink turns a link target written in the document -- a relative

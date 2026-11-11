@@ -68,6 +68,9 @@ type ConfluenceFencedCodeBlockRenderer struct {
 	// reads "-" as a diagram that came from nowhere on disk, and resolves
 	// nothing local against it.
 	Path string
+	// Root is where Path is, and where a d2 diagram's imports and local
+	// images are read from; the zero Root is the disk.
+	Root attachment.Root
 }
 
 // NewConfluenceFencedCodeBlockRenderer creates a new instance of the
@@ -154,17 +157,17 @@ func (r *ConfluenceFencedCodeBlockRenderer) renderFencedCodeBlock(writer util.Bu
 
 	if lang == "d2" && slices.Contains(r.Diagrams.Features, "d2") {
 		// The document's own path, empty and all: a diagram that came from
-		// nowhere on disk has nothing for a relative import or image to be
-		// relative to, and d2.Render refuses one rather than reading it from
-		// the working directory. It reads an empty path and d2's own "-"
-		// alike. Render also refuses a format it does not
-		// know, which Run checks but options handed straight to
-		// CompileMarkdown never pass through.
+		// nowhere has nothing for a relative import or image to be relative
+		// to, and d2.Render refuses one rather than reading it from the
+		// working directory. It reads an empty path and d2's own "-" alike.
+		// Render also refuses a format it does not know, which Run checks but
+		// options handed straight to CompileMarkdown never pass through.
 		attachment, err := d2.Render(orBackground(r.ctx), title, lval, d2.Options{
 			Output:       r.Diagrams.D2Output,
 			Scale:        r.Diagrams.D2Scale,
 			Browser:      r.Diagrams.Browser,
 			InputPath:    r.Path,
+			Root:         r.Root,
 			BundleRemote: r.Diagrams.D2BundleRemote,
 		})
 		if err != nil {

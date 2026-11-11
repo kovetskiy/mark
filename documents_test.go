@@ -432,6 +432,46 @@ func TestDocumentReadsFilesFromItsFS(t *testing.T) {
 	assert.Contains(t, body, "<b>hello</b>", "a macro template is read from the FS too")
 }
 
+// TestDocumentDrawsD2FromItsFS: a d2 diagram in a document with an FS imports
+// and shows what is in the FS, and one climbing out of it is refused.
+func TestDocumentDrawsD2FromItsFS(t *testing.T) {
+	t.Chdir(t.TempDir())
+
+	files := fstest.MapFS{
+		"shared/style.d2":     {Data: []byte("sharedlabel\n")},
+		"guides/img/icon.png": {Data: onePixelPNG()},
+	}
+	header := "<!-- Space: DOCS -->\n<!-- Parent: Parent -->\n"
+	document := func(title, diagram string) Document {
+		return Document{
+			Path:    "guides/doc.md",
+			Content: []byte(header + "<!-- Title: " + title + " -->\n\n```d2 title diagram\n" + diagram + "```\n"),
+			FS:      files,
+		}
+	}
+
+	server, _ := docsSpace(t)
+	config := documentsConfig(server, document("Drawn", "a: @../shared/style\nb: {icon: img/icon.png}\na -> b\n"))
+	config.Rendering.Features = []string{"d2"}
+	config.Rendering.D2Output = "svg"
+	config.Rendering.D2Scale = 1
+	require.NoError(t, Run(context.Background(), config))
+
+	stored := server.Attachments(mustFind(t, server, "Drawn"))
+	require.Len(t, stored, 1)
+	assert.Equal(t, "diagram.svg", stored[0].Filename)
+	assert.Contains(t, string(stored[0].Data), "sharedlabel")
+	assert.Contains(t, string(stored[0].Data), "data:image/png;base64")
+
+	config = documentsConfig(server, document("Escapes", "a: @../../outside\n"))
+	config.Rendering.Features = []string{"d2"}
+	config.Rendering.D2Output = "svg"
+	config.Rendering.D2Scale = 1
+	err := Run(context.Background(), config)
+	require.Error(t, err)
+	assert.ErrorIs(t, err, attachment.ErrOutsideProject)
+}
+
 // TestDocumentCannotReadOutsideItsFS: "../" above the FS's root is refused,
 // as a path outside the project is for a file, and nothing on disk is read
 // in its place.

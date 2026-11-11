@@ -80,9 +80,12 @@ Without `FS`, `Path` is an ordinary file path and the files around it are read
 from disk, as for a file the run read. That suits generated text whose images
 already sit beside where it would have been written.
 
-A d2 diagram in a document with an `FS` may not name a local image or import
-a local file, and is refused if it does: d2 reads those itself, from disk.
-Without `FS`, it reads them beside `Path`, as for a file.
+A d2 diagram's imports and local images are read from the `FS` too, around
+`Path` and held to its root, symbolic links included. Its local images are
+inlined into the drawing, as on disk for an SVG, and for a PNG as well, since
+the browser that draws one cannot read the `FS`; a PNG's checksum covers what
+it imported and inlined. Without `FS`, they are read beside `Path`, as for a
+file.
 
 ### Links between documents
 
