@@ -1,7 +1,6 @@
 package mark
 
 import (
-	"reflect"
 	"runtime/debug"
 
 	"golang.org/x/mod/module"
@@ -36,35 +35,20 @@ func Version() string {
 // to run the image of the very release it was built with.
 //
 // CI publishes an image under each release tag, pre-releases included, so the
-// image is ImageRepository tagged with Version.
+// image is ImageRepository tagged with Version. It does so once the tag's
+// lint, tests and build pass, so a release whose checks failed has a version
+// and no image until they are run again.
 func Image() string {
 	return imageOf(Version())
 }
 
-// modulePath returns mark's module path, which a major version changes: this
-// package sits at the module root.
-func modulePath() string {
-	return reflect.TypeFor[Config]().PkgPath()
-}
+// modulePath is mark's module path. A fork that renames the module is not
+// mark, and its releases have no image in ImageRepository.
+const modulePath = "github.com/kovetskiy/mark/v17"
 
 // versionOf is Version for the given build info.
 func versionOf(info *debug.BuildInfo) string {
-	if info == nil {
-		return ""
-	}
-
-	path := modulePath()
-	mod := &info.Main
-	if mod.Path != path {
-		mod = nil
-		for _, dep := range info.Deps {
-			if dep.Path == path {
-				mod = dep
-
-				break
-			}
-		}
-	}
+	mod := linked(info)
 	if mod == nil {
 		return ""
 	}
@@ -73,7 +57,7 @@ func versionOf(info *debug.BuildInfo) string {
 	if mod.Replace != nil {
 		// A directory has no version, and another module's releases are
 		// not mark's.
-		if mod.Replace.Path != path {
+		if mod.Replace.Path != modulePath {
 			return ""
 		}
 		version = mod.Replace.Version
@@ -86,11 +70,27 @@ func versionOf(info *debug.BuildInfo) string {
 	return version
 }
 
+// linked returns mark's module in the build info, as the main module or as
+// a dependency, or nil.
+func linked(info *debug.BuildInfo) *debug.Module {
+	if info.Main.Path == modulePath {
+		return &info.Main
+	}
+	for _, dep := range info.Deps {
+		if dep.Path == modulePath {
+			return dep
+		}
+	}
+
+	return nil
+}
+
 // isRelease tells whether version names a tag mark could have released:
 // canonical semver, no build metadata, and not a pseudo-version, which names
-// a commit and looks like a pre-release.
+// a commit and looks like a pre-release. Canonical gives "" for anything that
+// is not semver.
 func isRelease(version string) bool {
-	return semver.IsValid(version) &&
+	return version != "" &&
 		semver.Canonical(version) == version &&
 		!module.IsPseudoVersion(version)
 }
