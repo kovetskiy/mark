@@ -1254,3 +1254,120 @@ func TestADryRunsLinkToAPageNotYetCreatedIsAWarning(t *testing.T) {
 
 	t.Fatalf("a.md is not in the report: %s", out.String())
 }
+
+// strandedLabel is a document with one warning: a Label header below its
+// opening comments, on line 7.
+var strandedLabel = map[string]string{
+	"a.md": outHeader + "<!-- Title: A -->\n\nText.\n\n<!-- Label: late -->\n",
+}
+
+// reportAfterHTML is the report a run that prints its documents' HTML wrote
+// after them.
+func reportAfterHTML(t *testing.T, out string) *report.Report {
+	t.Helper()
+
+	start := strings.Index(out, "{\n")
+	require.GreaterOrEqual(t, start, 0, "no report in %q", out)
+
+	got := report.New()
+	require.NoError(t, json.Unmarshal([]byte(out[start:]), got), "%s", out)
+
+	return got
+}
+
+// TestAReadOnlyRunReportsItsDocuments: a compile and a dry run that compares
+// nothing publish nothing, and still record each document, with a status
+// saying so and the warnings found in it -- what a pull request gate without
+// Confluence runs them for.
+func TestAReadOnlyRunReportsItsDocuments(t *testing.T) {
+	cases := []struct {
+		name   string
+		mode   ModeConfig
+		status report.Status
+	}{
+		{"compile only", ModeConfig{CompileOnly: true, Offline: true}, report.StatusCompiled},
+		{"dry run", ModeConfig{DryRun: true}, report.StatusWouldPublish},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			out, err := runReport(t, report.FormatJSON, strandedLabel, func(config *Config) {
+				config.Mode = tc.mode
+			})
+			require.NoError(t, err)
+			assert.Contains(t, out, "<p>Text.</p>", "the compiled body is printed as before")
+
+			got := reportAfterHTML(t, out)
+			require.Len(t, got.Pages, 1)
+
+			page := got.Pages[0]
+			assert.Equal(t, tc.status, page.Status)
+			assert.Equal(t, "a.md", filepath.Base(page.File))
+			assert.Equal(t, "DOCS", page.Space)
+			assert.Equal(t, "A", page.Title)
+			assert.Empty(t, page.PageID, "no page was found or made")
+			assert.Empty(t, page.URL)
+
+			require.Len(t, page.WarningDetails, 1)
+			assert.Equal(t, report.WarningStrandedHeader, page.WarningDetails[0].Kind)
+			assert.Equal(t, 7, page.WarningDetails[0].Line)
+			assert.Equal(t, []string{page.WarningDetails[0].Message}, page.Warnings)
+		})
+	}
+}
+
+// TestADryRunReportsThePageItWouldPublishTo: a dry run that finds the page
+// names it, as a real run would.
+func TestADryRunReportsThePageItWouldPublishTo(t *testing.T) {
+	out, err := runReport(t, report.FormatJSON, map[string]string{
+		"a.md": "<!-- Space: DOCS -->\n<!-- Parent: Home -->\n<!-- Title: Parent -->\n\nText.\n",
+	}, func(config *Config) {
+		config.Mode.DryRun = true
+	})
+	require.NoError(t, err)
+
+	got := reportAfterHTML(t, out)
+	require.Len(t, got.Pages, 1)
+	assert.Equal(t, report.StatusWouldPublish, got.Pages[0].Status)
+	assert.NotEmpty(t, got.Pages[0].PageID)
+	assert.Contains(t, got.Pages[0].URL, "/display/DOCS/")
+}
+
+// TestAReadOnlyRunAnnotatesItsWarnings: the github format annotates the
+// warnings of a compile and a dry run, and has nothing to say of the status.
+func TestAReadOnlyRunAnnotatesItsWarnings(t *testing.T) {
+	for _, mode := range []ModeConfig{{CompileOnly: true, Offline: true}, {DryRun: true}} {
+		out, err := runReport(t, report.FormatGitHub, strandedLabel, func(config *Config) {
+			config.Mode = mode
+		})
+		require.NoError(t, err)
+
+		var annotations []string
+		for _, line := range strings.Split(out, "\n") {
+			if strings.HasPrefix(line, "::") {
+				annotations = append(annotations, line)
+			}
+		}
+
+		require.Len(t, annotations, 1, "%+v: %s", mode, out)
+		assert.True(t, strings.HasPrefix(annotations[0], "::warning file="), annotations[0])
+		assert.Contains(t, annotations[0], "a.md,line=7::")
+		assert.Contains(t, annotations[0], "Label header is below the document's opening comments")
+	}
+}
+
+// TestAReadOnlyRunPrintsOnlyItsHTMLByDefault: without a report format, a
+// compile and a dry run print the compiled body and nothing about the report.
+func TestAReadOnlyRunPrintsOnlyItsHTMLByDefault(t *testing.T) {
+	for _, mode := range []ModeConfig{{CompileOnly: true, Offline: true}, {DryRun: true}} {
+		out, err := runReport(t, "", strandedLabel, func(config *Config) {
+			config.Mode = mode
+		})
+		require.NoError(t, err)
+
+		assert.True(t, strings.HasPrefix(out, "<p>Text.</p>"), "%+v: %q", mode, out)
+		for _, absent := range []string{"{", "::", string(report.StatusCompiled), string(report.StatusWouldPublish)} {
+			assert.NotContains(t, out, absent, "%+v", mode)
+		}
+	}
+}

@@ -63,6 +63,15 @@ const (
 	// do. A page it would leave alone is StatusUnchanged, as it is on a real run.
 	StatusWouldCreate Status = "would-create"
 	StatusWouldUpdate Status = "would-update"
+
+	// What a run that publishes nothing and compares nothing says of a
+	// document it got through: StatusCompiled under --compile-only, and
+	// StatusWouldPublish under a --dry-run without --changes-only. Either
+	// carries the document's warnings, so a run without Confluence can
+	// report them, and the github format annotates those but writes nothing
+	// for the status itself, since nothing happened to a page.
+	StatusCompiled     Status = "compiled"
+	StatusWouldPublish Status = "would-publish"
 )
 
 // ReasonNotSynchronized is the Reason of a page skipped because its document
@@ -403,8 +412,9 @@ func (r *Report) writeGitHub(w io.Writer) error {
 		}
 
 		// Whatever became of the document. A warning is worth showing against
-		// a page that published and against one that was left unchanged, which
-		// has no line of its own at all -- the point of it is to be seen in the
+		// a page that published and against one that was left unchanged,
+		// compiled or would be published, which has no line of its own at
+		// all -- the point of it is to be seen in the
 		// diff by somebody who is not reading the build log.
 		details := page.WarningDetails
 		if len(details) == 0 {
