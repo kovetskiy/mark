@@ -111,7 +111,9 @@ Documents have no pattern, so `DocumentScope` names them instead:
   document's `Key` finds its page orphaned, and `OnOrphan` acts on it. A
   document with a new `Key`, whose title finds no page, is taken for a rename
   of the one `Key` recorded under the same scope with the same content that
-  the run no longer publishes.
+  the run no longer publishes, or, with `Tracking.RenameSimilarity`, of the
+  one whose page's text is clearly the closest to its own (see
+  [Renamed and edited at once](#renamed-and-edited-at-once)).
 * **Without a scope**, a document's page is found again by its `Key` alone. It
   is never reported, archived or deleted because a later run did not publish
   it, and no document is taken for a rename. `OnOrphan` archive or delete on a
@@ -165,8 +167,9 @@ the caller keeps no history:
   left out of the list by mistake is gone too, so the run logs how many keys
   of each scope it took as gone, and each is in the report's orphans.
 * A published document with a new `Key` is taken for a rename of the one gone
-  key with the same content, and its page follows it, its `NoOverwrite`
-  baseline included. A page found by its title for a new `Key` is followed
+  key with the same content, or with `Tracking.RenameSimilarity` of a gone
+  key whose page's text is clearly the closest to its own, and its page
+  follows it, its `NoOverwrite` baseline included. A page found by its title for a new `Key` is followed
   from a gone key the same way. Either way the entry keeps the scope.
 * A key in `DocumentKeys` is left alone and stays tracked, its baseline
   unchanged. It is never taken for a rename, so a new document with the same
@@ -202,6 +205,65 @@ about when the run has no files.
 Files and documents in one partial run each follow their own rule: `Files` and
 `Paths` as [`--partial`](page-tree.md#publishing-only-some-of-the-files)
 describes, documents by key as above.
+
+### Renamed and edited at once
+
+A record is often renamed, retitled and edited in one change, and its content
+then matches no gone key exactly: it would get a new page, and the old one
+would be an orphan. `Tracking.RenameSimilarity` follows such a rename by how
+alike the texts are:
+
+```go
+Tracking: mark.TrackingConfig{
+    TrackPages:       true,
+    Partial:          true,
+    RenameSimilarity: 0.6,
+},
+```
+
+It is the least similarity, from 0 to 1, a document and a gone key's page must
+have; 0, the default, follows only renames with the same content. The text
+compared is the document's Markdown without its headers, against the gone
+key's page as it is in Confluence, both reduced to lowercased words without
+markup. The measure is the Jaccard similarity of their shingles, every run of
+three consecutive words: the shingles both texts have, over those either has.
+A text shorter than three words is compared by shorter runs, and an empty one
+is like nothing.
+
+0.6 is a good value. On the ADRs `internal/similar` measures against, one
+retitled, its status changed, a sentence reworded and a paragraph added scores
+about 0.78; the same with its decision rewritten about 0.37, which is a new
+decision more than the old one renamed; and two different records of one
+template under 0.05.
+
+Taking the wrong page overwrites an unrelated document, so the match is
+careful:
+
+* Exact matches come first, unchanged, and documents found by their `Key`,
+  their title or their exact content, with the keys and pages they take, are
+  left out of the comparison.
+* Only a document and a gone key of the same scope and space are compared.
+* Each gone key is taken by one document at most: a pair is taken only when
+  it is at least as alike as the setting asks, and ahead by 0.1 of both the
+  document's next closest gone key and the gone key's next closest document.
+  A document close to some gone key but clear of none gets a new page, as
+  without the setting, and a warning naming the keys and scores.
+* Under `NoOverwrite`, a gone key whose page was edited in Confluence since
+  mark wrote it, or that has no version mark wrote to tell, is never taken.
+* Each rename followed is logged and given to the document as a warning of
+  kind `report.WarningRename`, naming the new key, the old key, the page and
+  the score.
+
+It applies wherever the run knows which keys of the scope are gone: a run
+publishing the whole scope, and a partial run given `DocumentKeys`. It does
+not apply to `Files` and `Paths`, to documents without a scope, or to a
+partial run without `DocumentKeys`. A dry run makes the same decision and
+logs it, writing nothing.
+
+The comparison is made once a run per space, when the first document with no
+page of its own asks, and only when there are both such documents and gone
+keys: each gone key's page is then read once. A run with nothing to match
+makes no request for it.
 
 ## Publishing one document at a time
 

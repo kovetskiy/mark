@@ -71,6 +71,11 @@ const (
 	// WarningMissingPage is a page or folder the page manifest recorded, for the
 	// document or one of its parents, that no longer exists.
 	WarningMissingPage WarningKind = "missing-page"
+
+	// WarningRename is a document taken for another renamed because their
+	// texts are alike rather than the same, or one not taken for any because
+	// more than one is about as alike; see TrackingConfig.RenameSimilarity.
+	WarningRename WarningKind = "rename"
 )
 
 // Warning is one thing wrong with a document that was published anyway.

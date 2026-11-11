@@ -1630,6 +1630,55 @@ func (s *Store) resolveRenamed(ctx context.Context, spaceKey, path, hash string)
 	return foundPath, foundEntry, true, nil
 }
 
+// RenameSources returns the entries a document published under path could
+// have been renamed from, whatever its content: those of its own document
+// scope that the run covers, that it neither publishes nor has seen, and whose
+// page no document of the run has claimed. None for a file, or for a document
+// with no scope. It is what a caller comparing documents by more than their
+// fingerprint chooses among.
+func (s *Store) RenameSources(ctx context.Context, spaceKey, path string) (map[string]Entry, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	path = Key(path)
+	if scope := s.documentScopes[path]; scope == "" {
+		return nil, nil
+	}
+
+	state, err := s.load(ctx, spaceKey)
+	if err != nil {
+		return nil, err
+	}
+
+	sources := map[string]Entry{}
+	for i := range state.shards {
+		for candidate, entry := range state.shards[i].pages {
+			if s.sameScope(path, entry) && s.covers(candidate, entry) &&
+				s.absent(state, candidate) && !state.claimed[entry.PageID] {
+				sources[candidate] = entry
+			}
+		}
+	}
+
+	return sources, nil
+}
+
+// Recorded is Lookup without marking path as seen, for asking about a
+// document before its turn: seen counts what the run published.
+func (s *Store) Recorded(ctx context.Context, spaceKey, path string) (Entry, bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	state, err := s.load(ctx, spaceKey)
+	if err != nil {
+		return Entry{}, false, err
+	}
+
+	path = Key(path)
+	entry, ok := state.shards[shardFor(path)].pages[path]
+	return entry, ok, nil
+}
+
 // Forget drops a recorded path: one whose page no longer exists, or an orphan
 // that has been dealt with. A document followed to its new name is not
 // forgotten here; Record hands its old entry over, version included.

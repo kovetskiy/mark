@@ -74,7 +74,8 @@ type Config struct {
 	// it, and a later run with the same scope that no longer publishes that
 	// document's Key finds the page orphaned, and --on-orphan acts on it. A
 	// run's documents are also only taken for renames, by their content, of
-	// documents recorded under the same scope.
+	// documents recorded under the same scope: the same content, or with
+	// Tracking.RenameSimilarity, a page whose text is clearly the closest.
 	//
 	// With Tracking.Partial the run publishes only some of the scope's
 	// documents. Given every other key of the scope in DocumentKeys, it still
@@ -104,8 +105,9 @@ type Config struct {
 	//
 	//   - a key tracked under the scope and in neither is gone: an orphan,
 	//     which OnOrphan acts on, so a key left out by mistake is removed too;
-	//   - a document under a new Key with the content of exactly one gone key
-	//     is that document renamed, and its page follows it;
+	//   - a document under a new Key with the content of exactly one gone key,
+	//     or under Tracking.RenameSimilarity a text clearly closest to one gone
+	//     key's page, is that document renamed, and its page follows it;
 	//   - a key named here is left alone and tracked: it is never taken for a
 	//     rename or a move, and a page it owns that another document finds by
 	//     title is a conflict to warn of.
@@ -419,6 +421,40 @@ type TrackingConfig struct {
 	// NoOverwrite leaves alone a page edited in Confluence since mark last
 	// published it, which only the manifest remembers.
 	NoOverwrite bool
+
+	// RenameSimilarity, from 0 to 1, also follows a document renamed and
+	// edited in one change, which its content no longer matches exactly: a
+	// document of a DocumentScope under a new Key is taken for a gone key of
+	// the scope whose page's text is at least this alike to its own. 0, the
+	// default, follows only a rename with the same content. 0.6 is a good
+	// value: an ADR retitled, its status changed and a paragraph added scores
+	// about 0.8, one whose decision was rewritten under 0.4, and two
+	// different ADRs of one template under 0.05. Values outside 0 to 1 are
+	// refused, and so is one without TrackPages.
+	//
+	// It applies wherever the run knows which keys of the scope are gone: a
+	// run of the whole scope, or a partial one given DocumentKeys. Not to
+	// Files or Paths, nor to documents without a scope. Only documents found
+	// neither by their Key, their title nor their exact content take part,
+	// and only gone keys of the same scope and space that none of those
+	// takes. The text compared is the document's Markdown, without its
+	// headers, against the gone key's page as it is in Confluence, both as
+	// lowercased words without markup, by the Jaccard similarity of their
+	// runs of three words.
+	//
+	// A wrong match overwrites an unrelated page, so it is careful: each gone
+	// key is taken by one document at most, and only when the pair is at
+	// least this alike and clear by 0.1 of the next best for either; a close
+	// call follows nothing and is warned about. Under NoOverwrite a gone key
+	// whose page was edited in Confluence since mark wrote it, or that has no
+	// version to tell, is never taken. Each rename followed is logged and
+	// warned about on the document, naming both keys and the score, with
+	// report.WarningRename.
+	//
+	// It costs one read of each gone key's page, once a run, and only when
+	// some document has no page of its own to go to; a run with nothing to
+	// match makes no request for it.
+	RenameSimilarity float64
 }
 
 // RenderingConfig is how a document becomes storage format: diagrams,
@@ -763,6 +799,16 @@ func Run(ctx context.Context, config Config) (err error) {
 		)
 	}
 
+	if similarity := config.Tracking.RenameSimilarity; similarity != 0 {
+		if !(similarity > 0 && similarity <= 1) {
+			return fmt.Errorf("Tracking.RenameSimilarity %v is not a similarity: it is from 0 to 1, 0 for none", similarity)
+		}
+		if !config.Tracking.TrackPages {
+			return errors.New("Tracking.RenameSimilarity requires Tracking.TrackPages: " +
+				"a rename is followed from the key the page manifest recorded")
+		}
+	}
+
 	if config.Tracking.NoOverwrite && !config.Tracking.TrackPages {
 		return fmt.Errorf("--no-overwrite requires --track-pages: " +
 			"the version mark last published is remembered in the page manifest")
@@ -1079,6 +1125,9 @@ func Run(ctx context.Context, config Config) (err error) {
 	pub.titles = &runTitles{
 		config: config.PublishConfig, inputs: inputs, hierarchy: hierarchy,
 		warningsFor: pub.warningsFor,
+	}
+	if tracker != nil && config.Tracking.RenameSimilarity > 0 && config.DocumentScope != "" && len(documents) > 0 {
+		pub.similar = &similarRenames{threshold: config.Tracking.RenameSimilarity, documents: documents}
 	}
 
 	// Pages that asked for a position among their siblings, collected as they
@@ -1766,6 +1815,10 @@ type publishRun struct {
 	// inputs indexes the run's files and Documents by name, for links
 	// between them and for the second pass; nil when it has no Documents.
 	inputs *runInputs
+
+	// similar follows documents renamed and edited at once; nil unless
+	// Tracking.RenameSimilarity asks for it and the run has scoped documents.
+	similar *similarRenames
 }
 
 // runUsers is the "user" template func's lookup for a run's templates and
@@ -2280,7 +2333,7 @@ func (r *publishRun) previewLocation(ctx context.Context, doc *document) (pagePr
 		// the manifest. Saying so is the whole point of a dry run:
 		// otherwise it reports a new page for every rename and retitle
 		// the run would actually have handled in place.
-		found.page, err = previewTrackedResolution(ctx, r.tracker, r.api, doc)
+		found.page, err = r.previewTrackedResolution(ctx, doc)
 		if err != nil {
 			return found, err
 		}
@@ -2583,7 +2636,7 @@ func (r *publishRun) resolveDocumentPage(ctx context.Context, doc *document) (*d
 			// Not published under this path before. It may have been
 			// published under another: a renamed file is a new key holding
 			// an old document.
-			pg, err = resolveRenamedFile(ctx, r.tracker, api, doc)
+			pg, err = r.resolveRenamed(ctx, doc)
 			if err != nil {
 				return nil, err
 			}

@@ -24,20 +24,15 @@ import (
 // A dry run that reports a new page for every rename and retitle the real run
 // would have handled in place is worse than no dry run, because it is confidently
 // wrong about the one thing somebody is checking.
-func previewTrackedResolution(
-	ctx context.Context,
-	tracker *manifest.Store,
-	api *confluence.API,
-	doc *document,
-) (*confluence.PageInfo, error) {
+func (r *publishRun) previewTrackedResolution(ctx context.Context, doc *document) (*confluence.PageInfo, error) {
 	meta, file := doc.meta, doc.file
-	if tracker == nil || meta == nil {
+	if r.tracker == nil || meta == nil {
 		return nil, nil
 	}
 
 	// Errors stop the preview as they stop a real run: reporting "would create"
 	// over a lookup that failed would hide the duplicate a real run refuses to make.
-	pg, err := resolveTrackedPage(ctx, tracker, api, doc)
+	pg, err := resolveTrackedPage(ctx, r.tracker, r.api, doc)
 	if err != nil {
 		return nil, err
 	}
@@ -51,7 +46,7 @@ func previewTrackedResolution(
 		return pg, nil
 	}
 
-	pg, err = resolveRenamedFile(ctx, tracker, api, doc)
+	pg, err = r.resolveRenamed(ctx, doc)
 	if err != nil {
 		return nil, err
 	}
