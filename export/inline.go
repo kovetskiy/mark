@@ -368,7 +368,8 @@ func linkTitle(title string) string {
 		return ""
 	}
 
-	return ` "` + strings.NewReplacer(`\`, `\\`, `"`, `\"`).Replace(title) + `"`
+	// "<!" as a reference keeps "<!--" from being read as a directive.
+	return ` "` + strings.NewReplacer(`\`, `\\`, `"`, `\"`, "<!", "&lt;!").Replace(title) + `"`
 }
 
 // pathDestination writes the path of a downloaded attachment as a link

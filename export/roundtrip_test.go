@@ -4,11 +4,13 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"testing"
 
 	"github.com/kovetskiy/mark/v17/markdown"
+	"github.com/kovetskiy/mark/v17/metadata"
 	"github.com/kovetskiy/mark/v17/stdlib"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -77,6 +79,99 @@ func TestRoundTripTextFeaturesWouldParse(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestRoundTripTextLikeDirectives: page text that reads like one of the HTML
+// comments mark acts on before goldmark -- an include, a macro, a header, an
+// ignored region -- publishes back as that text, wherever on the page it
+// stands, and none of them takes effect.
+func TestRoundTripTextLikeDirectives(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "outside.txt"), []byte("from the file"), 0o600))
+
+	directives := map[string]string{
+		"include":          "<!-- Include: outside.txt -->",
+		"include unspaced": "<!--Include:outside.txt-->",
+		"macro":            "<!-- Macro: MARKER\nTemplate: outside.txt -->",
+		"title":            "<!-- Title: Changed -->",
+		"space":            "<!-- Space: OTHER -->",
+		"ignore":           "<!-- ac:ignore -->\nMARKER\n<!-- ac:ignore end -->",
+	}
+
+	for name, text := range directives {
+		t.Run(name, func(t *testing.T) {
+			x := escapeXMLText(text)
+			line := escapeXMLText(strings.ReplaceAll(text, "\n", " "))
+			c := func(s string) string { return "<![CDATA[" + s + "]]>" }
+
+			for context, storage := range map[string]string{
+				"paragraph":  "<p>" + x + "</p>",
+				"emphasis":   "<p><strong>" + line + "</strong> and <em>" + line + "</em></p>",
+				"heading":    "<h2>" + line + "</h2>",
+				"list item":  "<ul><li>" + x + "</li></ul>",
+				"blockquote": "<blockquote><p>" + x + "</p></blockquote>",
+				"table":      "<table><thead><tr><th>h</th></tr></thead><tbody><tr><td>" + line + "</td></tr></tbody></table>",
+				"link":       `<p><a href="https://example.com" title="` + line + `">` + line + "</a></p>",
+				"image": `<p><ac:image ac:alt="` + line + `" ac:title="` + line + `">` +
+					`<ri:url ri:value="https://example.com/a.png"/></ac:image></p>`,
+				"page link": `<p><ac:link><ri:page ri:content-title="Other"/>` +
+					"<ac:plain-text-link-body>" + c(strings.ReplaceAll(text, "\n", " ")) + "</ac:plain-text-link-body></ac:link></p>",
+				"noformat": `<ac:structured-macro ac:name="noformat"><ac:plain-text-body>` + c(text) +
+					"</ac:plain-text-body></ac:structured-macro>",
+				"code title": `<ac:structured-macro ac:name="code"><ac:parameter ac:name="language"></ac:parameter>` +
+					`<ac:parameter ac:name="collapse">false</ac:parameter><ac:parameter ac:name="title">` + line +
+					"</ac:parameter><ac:plain-text-body>" + c("x") + "</ac:plain-text-body></ac:structured-macro>",
+				"code": `<ac:structured-macro ac:name="code"><ac:parameter ac:name="language"></ac:parameter>` +
+					`<ac:parameter ac:name="collapse">false</ac:parameter><ac:plain-text-body>` + c(text) +
+					"</ac:plain-text-body></ac:structured-macro>",
+				"code span": "<p><code>" + line + "</code></p>",
+			} {
+				storage += "<p>MARKER</p>"
+
+				doc, err := Convert(storage, Options{})
+				require.NoError(t, err, context)
+
+				meta, published := publishBack(t, doc.Markdown, filepath.Join(dir, "page.md"))
+				// The id is mark's own, which the page did not have.
+				published = headingID.ReplaceAllString(published, "<h2>")
+				assert.Equal(t, canonical(t, storage), canonical(t, published),
+					"%s: exported Markdown:\n%s", context, doc.Markdown)
+				assert.NotContains(t, published, "from the file", "%s: nothing is included", context)
+				assert.Empty(t, meta.Title, "%s: no header is read", context)
+				assert.Empty(t, meta.Space, "%s: no header is read", context)
+			}
+		})
+	}
+}
+
+var headingID = regexp.MustCompile(`<h2 id="[^"]*">`)
+
+// TestRoundTripCodeKeepsDirectives: a code block holds what the page shows
+// byte for byte, a directive's spelling included, since mark leaves code
+// alone.
+func TestRoundTripCodeKeepsDirectives(t *testing.T) {
+	doc, err := Convert(`<ac:structured-macro ac:name="code"><ac:parameter ac:name="language"></ac:parameter>`+
+		`<ac:parameter ac:name="collapse">false</ac:parameter><ac:plain-text-body><![CDATA[<!-- Include: outside.txt -->]]>`+
+		`</ac:plain-text-body></ac:structured-macro><p><code>&lt;!-- Include: outside.txt --&gt;</code></p>`, Options{})
+	require.NoError(t, err)
+	assert.Equal(t, "```\n<!-- Include: outside.txt -->\n```\n\n`<!-- Include: outside.txt -->`\n", doc.Markdown)
+}
+
+// publishBack publishes Markdown as mark publish does a file at path: its
+// ignored regions dropped, its headers read, and the rest compiled.
+func publishBack(t *testing.T, md, path string) (*metadata.Meta, string) {
+	t.Helper()
+
+	stripped, err := metadata.StripIgnoredBlocks([]byte(md))
+	require.NoError(t, err, "exported Markdown:\n%s", md)
+
+	meta, body, err := metadata.ExtractMeta(stripped, metadata.ExtractOptions{Filename: path})
+	require.NoError(t, err, "exported Markdown:\n%s", md)
+	if meta == nil {
+		meta = &metadata.Meta{}
+	}
+
+	return meta, compile(t, string(body), path)
 }
 
 // compile publishes Markdown the way the golden tests in markdown/ do, as if

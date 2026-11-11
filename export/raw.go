@@ -144,7 +144,7 @@ func cdata(text string) string {
 			b.WriteString("&#10;")
 		}
 		if line != "" {
-			b.WriteString("<![CDATA[" + stdlib.CDATA(line) + "]]>")
+			b.WriteString("<![CDATA[" + cdataDirective.Replace(stdlib.CDATA(line)) + "]]>")
 		}
 	}
 
@@ -171,6 +171,10 @@ func rawText(text string, mode rawMode) string {
 
 	return escaped
 }
+
+// cdataDirective splits "<!--" across two CDATA sections: mark reads it for
+// its directives before goldmark does, wherever it is outside code.
+var cdataDirective = strings.NewReplacer("<!--", "<]]><![CDATA[!--")
 
 var blankLine = regexp.MustCompile(`\n[ \t]*\n`)
 

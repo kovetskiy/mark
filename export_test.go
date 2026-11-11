@@ -276,6 +276,50 @@ func TestExportRoundTripFrontMatter(t *testing.T) {
 	assert.Equal(t, "Installing", server.Page(id).Title)
 }
 
+// TestExportRoundTripTextLikeDirectives: a page whose text reads like the
+// HTML comments mark acts on -- an include, a macro, a header -- publishes
+// back from its export as that text, to the same page.
+func TestExportRoundTripTextLikeDirectives(t *testing.T) {
+	server := confluencetest.New(t)
+	home := server.AddPage("DOCS", "Home", "page", "")
+	server.SetHomepage("DOCS", home.ID)
+	notes := server.AddPage("DOCS", "Notes", "page", home.ID)
+	body := "<p>&lt;!-- Title: Changed --&gt;</p>\n" +
+		"<p>&lt;!-- Space: OTHER --&gt;</p>\n" +
+		"<p>&lt;!-- Include: outside.txt --&gt;</p>\n" +
+		"<p>&lt;!-- Macro: MARKER\nTemplate: outside.txt --&gt;</p>\n" +
+		"<p>MARKER</p>\n" +
+		`<ac:structured-macro ac:name="noformat"><ac:plain-text-body><![CDATA[<!-- Include: outside.txt -->]]></ac:plain-text-body></ac:structured-macro>` + "\n"
+	server.EditPage(notes.ID, body)
+
+	dir := t.TempDir()
+	writeFile(t, dir, "outside.txt", "from the file")
+	out := filepath.Join(dir, "notes.md")
+	_, err := Export(context.Background(), ExportConfig{
+		Connection: ConnectionConfig{BaseURL: server.URL, Username: "user", Password: "token"},
+		PageID:     notes.ID, Output: out,
+	})
+	require.NoError(t, err)
+
+	require.NoError(t, Run(context.Background(), Config{
+		PublishConfig: PublishConfig{
+			Rendering: RenderingConfig{Features: []string{"mention"}},
+			Output:    io.Discard,
+		},
+		Files:      out,
+		Connection: ConnectionConfig{BaseURL: server.URL, Username: "user", Password: "token"},
+	}))
+
+	exported, err := os.ReadFile(out)
+	require.NoError(t, err)
+
+	page := server.Page(notes.ID)
+	assert.Equal(t, "Notes", page.Title, "exported Markdown:\n%s", exported)
+	// The noformat text comes back the same, in two CDATA sections.
+	want := strings.Replace(body, "<![CDATA[<!--", "<![CDATA[<]]><![CDATA[!--", 1)
+	assert.Equal(t, want, page.Body, "exported Markdown:\n%s", exported)
+}
+
 // TestExportOKFIgnoresMetadata: OKF has front matter of its own, and writes
 // it whatever the metadata says.
 func TestExportOKFIgnoresMetadata(t *testing.T) {

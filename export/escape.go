@@ -53,7 +53,14 @@ func escapeInline(text string, opts inlineOptions) string {
 			}
 
 		case '<':
-			if !opts.raw && (unicode.IsLetter(next) || next == '/' || next == '!' || next == '?') {
+			if !opts.raw && next == '!' {
+				// A backslash is enough for goldmark, but mark reads "<!--"
+				// for its directives -- an include, a macro, a header --
+				// before goldmark does, wherever it is outside code.
+				b.WriteString("&lt;")
+				continue
+			}
+			if !opts.raw && (unicode.IsLetter(next) || next == '/' || next == '?') {
 				b.WriteRune('\\')
 			}
 
