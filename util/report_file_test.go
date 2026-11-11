@@ -123,3 +123,35 @@ func TestReportFileFlagEmptiedWhenTheRunIsRefused(t *testing.T) {
 	require.NoError(t, err)
 	assert.Empty(t, written)
 }
+
+// TestReportFileFlagEmptiedWhenTheFlagsAreRefused: a run refused for its
+// flags, before the publish action, empties the file as well, whichever source
+// names it.
+func TestReportFileFlagEmptiedWhenTheFlagsAreRefused(t *testing.T) {
+	for _, fromConfig := range []bool{false, true} {
+		t.Run(map[bool]string{false: "flag", true: "configuration file"}[fromConfig], func(t *testing.T) {
+			noDefaultConfig(t)
+			_, document := reportFileFixture(t)
+
+			reportFile := filepath.Join(t.TempDir(), "report.json")
+			require.NoError(t, os.WriteFile(reportFile, []byte(`{"pages": []}`), 0o600))
+
+			args := []string{"--color", "never", "publish", "--compile-only",
+				"--features", "bogus", "--files", document}
+			configContent := ""
+			if fromConfig {
+				configContent = "report-file = \"" + filepath.ToSlash(reportFile) + "\"\n"
+			} else {
+				args = append(args, "--report-file", reportFile)
+			}
+			config := writeConfig(t, t.TempDir(), "mark.toml", configContent)
+
+			_, _, err := runMark(t, append([]string{"-c", config}, args...)...)
+			require.ErrorContains(t, err, "bogus")
+
+			written, err := os.ReadFile(reportFile)
+			require.NoError(t, err)
+			assert.Empty(t, written)
+		})
+	}
+}
