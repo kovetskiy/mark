@@ -368,29 +368,18 @@ func (f *importFS) Open(name string) (fs.File, error) {
 		return nil, err
 	}
 
-	file, err := f.doc.root.Open(f.doc.join(name))
-	if err != nil {
-		return nil, err
-	}
-	defer file.Close()
-
-	content, err := io.ReadAll(file)
+	joined := f.doc.join(name)
+	content, err := f.doc.root.ReadFile(joined)
 	if err != nil {
 		return nil, err
 	}
 
-	stat, ok := file.(interface{ Stat() (fs.FileInfo, error) })
-	if !ok {
-		return nil, fmt.Errorf("%s: cannot be described", name)
-	}
-
-	info, err := stat.Stat()
+	info, err := f.doc.root.Stat(joined)
 	if err != nil {
 		return nil, err
 	}
 
-	f.read = fmt.Appendf(f.read, "%s\x00%d\x00", name, len(content))
-	f.read = append(f.read, content...)
+	f.read = appendRead(f.read, name, content)
 
 	return importedFile{Reader: bytes.NewReader(content), info: info}, nil
 }
@@ -447,26 +436,36 @@ func (d document) join(name string) string {
 // checked each. It also returns every image read, each named, for a checksum
 // taken over the source to cover them too.
 func bundleLocalIn(doc document, svg []byte) (out, read []byte, err error) {
-	done := map[string]bool{}
-	for _, match := range image.FindAllSubmatch(svg, -1) {
-		href := string(match[1])
-		unescaped := stdhtml.UnescapeString(href)
-		if done[href] || strings.HasPrefix(href, "data:") || isRemote(unescaped) {
-			continue
-		}
-		done[href] = true
-
-		content, err := doc.root.ReadFile(doc.join(unescaped))
+	// One pass, each image read once however often it is drawn.
+	inlined := map[string][]byte{}
+	svg = image.ReplaceAllFunc(svg, func(match []byte) []byte {
 		if err != nil {
-			return nil, nil, fmt.Errorf("references %q: %w", unescaped, err)
+			return match
 		}
 
-		read = fmt.Appendf(read, "%s\x00%d\x00", unescaped, len(content))
-		read = append(read, content...)
+		href := stdhtml.UnescapeString(string(image.FindSubmatch(match)[1]))
+		if strings.HasPrefix(href, "data:") || isRemote(href) {
+			return match
+		}
 
-		inlined := fmt.Sprintf(`<image href="data:%s;base64,%s"`,
-			imageType(unescaped, content), base64.StdEncoding.EncodeToString(content))
-		svg = bytes.ReplaceAll(svg, match[0], []byte(inlined))
+		if done, ok := inlined[href]; ok {
+			return done
+		}
+
+		content, readErr := doc.root.ReadFile(doc.join(href))
+		if readErr != nil {
+			err = fmt.Errorf("references %q: %w", href, readErr)
+			return match
+		}
+
+		read = appendRead(read, href, content)
+		inlined[href] = fmt.Appendf(nil, `<image href="data:%s;base64,%s"`,
+			imageType(href, content), base64.StdEncoding.EncodeToString(content))
+
+		return inlined[href]
+	})
+	if err != nil {
+		return nil, nil, err
 	}
 
 	// The type is guessed from the name, as the bundler guesses it, so what
@@ -476,6 +475,13 @@ func bundleLocalIn(doc document, svg []byte) (out, read []byte, err error) {
 	}
 
 	return svg, read, nil
+}
+
+// appendRead adds a file read for a diagram to read, named, in the form a
+// checksum taken over the source covers it in.
+func appendRead(read []byte, name string, content []byte) []byte {
+	read = fmt.Appendf(read, "%s\x00%d\x00", name, len(content))
+	return append(read, content...)
 }
 
 // imageType is the media type d2's bundler gives a local image: by its

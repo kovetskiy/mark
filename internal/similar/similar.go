@@ -12,6 +12,7 @@ package similar
 
 import (
 	"cmp"
+	"hash/fnv"
 	"html"
 	"regexp"
 	"slices"
@@ -66,8 +67,10 @@ func MarkdownWords(markdown string) []string {
 	return Words(html.UnescapeString(text))
 }
 
-// Text is a text's shingles, made once to compare it with many others.
-type Text map[string]bool
+// Text is a text's shingles, made once to compare it with many others. Each
+// is kept as a 64-bit hash of its words, a fraction of their size: a run
+// holds every document's at once.
+type Text map[uint64]struct{}
 
 // Shingles is the shingles of words; none for fewer than MinWords.
 func Shingles(words []string) Text {
@@ -77,7 +80,12 @@ func Shingles(words []string) Text {
 
 	set := make(Text, len(words)-Shingle+1)
 	for i := 0; i+Shingle <= len(words); i++ {
-		set[strings.Join(words[i:i+Shingle], "\x00")] = true
+		h := fnv.New64a()
+		for _, word := range words[i : i+Shingle] {
+			h.Write([]byte(word))
+			h.Write([]byte{0})
+		}
+		set[h.Sum64()] = struct{}{}
 	}
 
 	return set
@@ -94,7 +102,7 @@ func (t Text) Similarity(other Text) float64 {
 
 	shared := 0
 	for s := range t {
-		if other[s] {
+		if _, ok := other[s]; ok {
 			shared++
 		}
 	}

@@ -289,8 +289,7 @@ func buildHierarchy(config Config, run *runInputs) (*page.Hierarchy, error) {
 	titles := page.DirectoryTitleReader(read, titleFromH1, frontmatter)
 	if len(run.documents) > 0 {
 		onDisk := diskDirectories(run.all)
-		withPagesFile := titles
-		indexOnly := page.IndexTitleReader(read, titleFromH1, frontmatter)
+		withPagesFile, indexOnly := titles, page.IndexTitleReader(read, titleFromH1, frontmatter)
 		titles = func(directory, indexFile string) (string, error) {
 			if onDisk[directory] {
 				return withPagesFile(directory, indexFile)
@@ -451,35 +450,28 @@ type includePathFiles struct {
 	files page.LinkFiles
 }
 
-// onDisk refuses name unless it is under dir, symbolic links followed.
-func (f includePathFiles) onDisk(name string) error {
-	return attachment.CheckWithin(f.dir, name)
-}
-
 func (f includePathFiles) Stat(name string) (fs.FileInfo, error) {
-	info, err := f.files.Stat(name)
-	if err == nil || !filepath.IsAbs(name) {
-		return info, err
-	}
-
-	if err := f.onDisk(name); err != nil {
-		return nil, err
-	}
-
-	return os.Stat(name)
+	return orUnderDir(f, name, f.files.Stat, os.Stat)
 }
 
 func (f includePathFiles) ReadFile(name string) ([]byte, error) {
-	data, err := f.files.ReadFile(name)
+	return orUnderDir(f, name, f.files.ReadFile, os.ReadFile)
+}
+
+// orUnderDir asks files for name first, and only then the disk, for an
+// absolute name under f.dir, symbolic links followed.
+func orUnderDir[T any](f includePathFiles, name string, files, disk func(string) (T, error)) (T, error) {
+	found, err := files(name)
 	if err == nil || !filepath.IsAbs(name) {
-		return data, err
+		return found, err
 	}
 
-	if err := f.onDisk(name); err != nil {
-		return nil, err
+	if err := attachment.CheckWithin(f.dir, name); err != nil {
+		var none T
+		return none, err
 	}
 
-	return os.ReadFile(name)
+	return disk(name)
 }
 
 // PublishDocument publishes doc as Publish publishes a file, and checks the
