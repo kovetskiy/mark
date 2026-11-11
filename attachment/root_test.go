@@ -173,3 +173,23 @@ func TestDiskRootFollowsLinks(t *testing.T) {
 	assert.Nil(t, Root{}.FS())
 	assert.Nil(t, FSRoot(nil).FS())
 }
+
+// TestCheckWithinRelativeDirUnderLinkedWorkingDirectory: a relative dir is
+// read against the working directory as the path is, though the working
+// directory is reached through a symbolic link.
+func TestCheckWithinRelativeDirUnderLinkedWorkingDirectory(t *testing.T) {
+	base := t.TempDir()
+	target := filepath.Join(base, "real")
+	require.NoError(t, os.MkdirAll(filepath.Join(target, "inc"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(target, "inc", "partial.md"), []byte("x"), 0o600))
+
+	link := filepath.Join(base, "link")
+	if err := os.Symlink(target, link); err != nil {
+		t.Skipf("cannot make a symbolic link: %v", err)
+	}
+	t.Chdir(link)
+
+	assert.NoError(t, CheckWithin("inc", filepath.Join(link, "inc", "partial.md")))
+	assert.NoError(t, CheckWithin(filepath.Join(link, "inc"), "inc/partial.md"))
+	assert.ErrorIs(t, CheckWithin("inc", filepath.Join(link, "other.md")), ErrOutsideProject)
+}
