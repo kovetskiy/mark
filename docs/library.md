@@ -125,10 +125,12 @@ is read from where the directory's documents are:
   that is a symbolic link out of the `FS` fails the run with
   `attachment.ErrOutsideProject`. A `.pages` file on disk at the same path is
   not read.
-* **From the first document's `FS`** when documents from several `FS`s lie in
-  the directory: the first of them, in the order `Documents` gives them, that
-  lies in the directory or below it. Give the document whose `FS` holds the
-  directory's `.pages` file first, or put the file in every `FS`.
+* **From each document's `FS` in turn** when documents from several `FS`s lie
+  in the directory or below it: the `title:` of the first `.pages` file found,
+  in the order `Documents` gives them, names the directory, so it may sit in
+  any one of them. Where more than one has a title, give the document whose
+  `FS` holds the one meant first. A `.pages` file one of them refuses to read
+  fails the run, whichever it is.
 
 A run of documents alone has no `--files` pattern to take the root from, so it
 needs `ParentsFromPathRoot`, and is refused before publishing without it:

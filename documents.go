@@ -7,9 +7,11 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"iter"
 	"os"
 	"path"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"time"
 
@@ -95,6 +97,8 @@ type input struct {
 	content  []byte
 	document bool
 	root     attachment.Root
+	// fsID tells the Document's FS from another's (see fsIdentity).
+	fsID any
 }
 
 // fileInput is the file at path.
@@ -123,7 +127,7 @@ func documentInput(doc Document) (input, error) {
 
 	return input{
 		file: doc.Path, key: key, source: doc.Source,
-		content: doc.Content, document: true, root: attachment.FSRoot(doc.FS),
+		content: doc.Content, document: true, root: attachment.FSRoot(doc.FS), fsID: fsIdentity(doc.FS),
 	}, nil
 }
 
@@ -298,14 +302,8 @@ func buildHierarchy(config Config, run *runInputs) (*page.Hierarchy, error) {
 	titles := page.DirectoryTitleReader(read, titleFromH1, frontmatter)
 	if len(run.documents) > 0 {
 		roots := directoryRoots(run.all)
-		indexOnly := page.IndexTitleReader(read, titleFromH1, frontmatter)
 		titles = func(directory, indexFile string) (string, error) {
-			root, ok := roots[directory]
-			if !ok {
-				return indexOnly(directory, indexFile)
-			}
-
-			return page.DirectoryTitleReaderIn(root, read, titleFromH1, frontmatter)(directory, indexFile)
+			return page.DirectoryTitleReaderIn(roots[directory], read, titleFromH1, frontmatter)(directory, indexFile)
 		}
 	}
 
@@ -314,37 +312,82 @@ func buildHierarchy(config Config, run *runInputs) (*page.Hierarchy, error) {
 
 // directoryRoots gives each directory the inputs lie in, and every one above
 // them, named as the hierarchy names them (slash-separated and clean), the
-// Root its .pages file is read from. A directory a file or a Document without
-// an FS lies in is on disk, whatever else lies there. One only documents in an
-// fs.FS lie in is read from the FS of the first of them in the run's order:
-// fs.FS values cannot be told equal, so documents from several FSs sharing a
-// directory leave the choice to the order the caller gave them in.
-func directoryRoots(inputs []input) map[string]attachment.Root {
-	roots := map[string]attachment.Root{}
-	add := func(in input) {
-		for dir := filepath.ToSlash(filepath.Dir(filepath.Clean(in.file))); ; dir = path.Dir(dir) {
-			if _, ok := roots[dir]; ok {
-				return
+// Roots its .pages file is looked for in, in order. A directory a file or a
+// Document without an FS lies in is on disk alone, whatever else lies there.
+// One only documents in an fs.FS lie in is looked for in each of their FSs, in
+// the order the run gives the documents, each FS once.
+func directoryRoots(inputs []input) map[string][]attachment.Root {
+	roots := map[string][]attachment.Root{}
+	onDisk := map[string]bool{}
+	for _, in := range inputs {
+		if in.inFS() {
+			continue
+		}
+		for dir := range directoriesOf(in.file) {
+			if onDisk[dir] {
+				break
 			}
-			roots[dir] = in.root
-			if dir == "." || dir == "/" {
-				return
-			}
+			onDisk[dir] = true
+			roots[dir] = []attachment.Root{{}}
 		}
 	}
 
+	seen := map[string]map[any]bool{}
 	for _, in := range inputs {
 		if !in.inFS() {
-			add(in)
+			continue
 		}
-	}
-	for _, in := range inputs {
-		if in.inFS() {
-			add(in)
+		for dir := range directoriesOf(in.file) {
+			if onDisk[dir] {
+				break
+			}
+			if in.fsID != nil {
+				// Every directory above was given this FS with this one.
+				if seen[dir][in.fsID] {
+					break
+				}
+				if seen[dir] == nil {
+					seen[dir] = map[any]bool{}
+				}
+				seen[dir][in.fsID] = true
+			}
+			roots[dir] = append(roots[dir], in.root)
 		}
 	}
 
 	return roots
+}
+
+// directoriesOf yields the directories file lies in, innermost first, up to
+// "." or "/", slash-separated and clean.
+func directoriesOf(file string) iter.Seq[string] {
+	return func(yield func(string) bool) {
+		for dir := filepath.ToSlash(filepath.Dir(filepath.Clean(file))); ; dir = path.Dir(dir) {
+			if !yield(dir) || dir == "." || dir == "/" {
+				return
+			}
+		}
+	}
+}
+
+// fsIdentity is a comparable stand-in for fsys, equal for two values that read
+// the same files, or nil for one it cannot tell apart: an fs.FS need not be
+// comparable, and comparing an fstest.MapFS, a map, panics.
+func fsIdentity(fsys fs.FS) any {
+	value := reflect.ValueOf(fsys)
+	switch {
+	case !value.IsValid():
+		return nil
+	case value.Kind() == reflect.Map || value.Kind() == reflect.Chan:
+		return struct {
+			kind    reflect.Type
+			address uintptr
+		}{value.Type(), value.Pointer()}
+	case value.Comparable():
+		return fsys
+	default:
+		return nil
+	}
 }
 
 // inFS reports whether the input's files are read from an fs.FS.

@@ -97,16 +97,20 @@ func DirectoryHash(key string) string {
 // The filename is deliberately not consulted. It is "README" in every directory
 // that has one, which is a name for a file rather than for a page.
 func DirectoryTitleReader(read func(file string) ([]byte, error), titleFromH1, frontmatter bool) TitleResolver {
-	return DirectoryTitleReaderIn(attachment.Root{}, read, titleFromH1, frontmatter)
+	return DirectoryTitleReaderIn([]attachment.Root{{}}, read, titleFromH1, frontmatter)
 }
 
-// DirectoryTitleReaderIn is DirectoryTitleReader reading the .pages file from
-// root: the local disk for the zero Root, or the fs.FS of documents a library
-// caller handed over from memory, held to its boundary as any read of it is. A
-// .pages file root refuses to read, such as one behind a symbolic link out of
-// its fs.FS, fails as an unreadable one on disk does.
+// DirectoryTitleReaderIn is DirectoryTitleReader looking for the .pages file
+// in each of roots in turn, and taking the title of the first that names one:
+// the local disk for the zero Root, or the fs.FS of documents a library caller
+// handed over from memory, held to its boundary as any read of it is. A
+// directory several fs.FSs lay out may keep its .pages file in any one of
+// them. With no roots, no .pages file is read, as with IndexTitleReader. A
+// .pages file a root refuses to read, such as one behind a symbolic link out
+// of its fs.FS, fails as an unreadable one on disk does, whichever root it is
+// in.
 func DirectoryTitleReaderIn(
-	root attachment.Root, read func(file string) ([]byte, error), titleFromH1, frontmatter bool,
+	roots []attachment.Root, read func(file string) ([]byte, error), titleFromH1, frontmatter bool,
 ) TitleResolver {
 	index := IndexTitleReader(read, titleFromH1, frontmatter)
 
@@ -116,7 +120,14 @@ func DirectoryTitleReaderIn(
 			return title, err
 		}
 
-		return directoryTitleFromPagesFile(root, directory)
+		for _, root := range roots {
+			title, err := directoryTitleFromPagesFile(root, directory)
+			if err != nil || title != "" {
+				return title, err
+			}
+		}
+
+		return "", nil
 	}
 }
 

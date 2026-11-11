@@ -367,6 +367,68 @@ func TestPagesFileOnDiskBeatsADocumentsFS(t *testing.T) {
 	assert.Equal(t, 0, countPagesTitled(t, server, "From The FS"))
 }
 
+// TestPagesFileFromAnyDocumentsFS: a directory that documents from several
+// FSs lie in takes its .pages title from the first FS, in the order of the
+// documents, that has one, whichever document comes first.
+func TestPagesFileFromAnyDocumentsFS(t *testing.T) {
+	pages := func(title string) fstest.MapFS {
+		return fstest.MapFS{"docs/guides/.pages": {Data: []byte("title: " + title + "\n")}}
+	}
+	document := func(title string, fsys fs.FS) Document {
+		return Document{
+			Path:    "docs/guides/" + strings.ToLower(title) + ".md",
+			Content: []byte(space + "<!-- Title: " + title + " -->\n\n" + title + ".\n"),
+			FS:      fsys,
+		}
+	}
+
+	for name, test := range map[string]struct {
+		documents []Document
+		want      string
+	}{
+		"the first FS has none": {
+			[]Document{document("Setup", fstest.MapFS{}), document("Deploy", pages("From The Second"))},
+			"From The Second",
+		},
+		"both have one": {
+			[]Document{document("Setup", pages("From The First")), document("Deploy", pages("From The Second"))},
+			"From The First",
+		},
+		"neither has one": {
+			[]Document{document("Setup", fstest.MapFS{}), document("Deploy", os.DirFS(t.TempDir()))},
+			"Guides",
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Chdir(t.TempDir())
+
+			server := hierarchyServer(t)
+			require.NoError(t, Run(context.Background(), documentHierarchyConfig(server, "docs", test.documents...)))
+
+			api := hierarchyAPI(server)
+			assert.Equal(t, []string{"Home", test.want}, ancestryOf(t, api, "Setup"))
+			assert.Equal(t, []string{"Home", test.want}, ancestryOf(t, api, "Deploy"))
+		})
+	}
+}
+
+// TestFSIdentity: the same FS is told apart from another, whether or not its
+// type is comparable, and one it cannot compare is not taken for any other.
+func TestFSIdentity(t *testing.T) {
+	first, second := fstest.MapFS{}, fstest.MapFS{}
+	assert.Equal(t, fsIdentity(first), fsIdentity(first))
+	assert.NotEqual(t, fsIdentity(first), fsIdentity(second))
+	assert.Equal(t, fsIdentity(os.DirFS("a")), fsIdentity(os.DirFS("a")))
+	assert.NotEqual(t, fsIdentity(os.DirFS("a")), fsIdentity(os.DirFS("b")))
+	assert.Nil(t, fsIdentity(nil))
+	assert.Nil(t, fsIdentity(uncomparableFS{files: fstest.MapFS{}}))
+}
+
+// uncomparableFS is an fs.FS whose values == cannot compare.
+type uncomparableFS struct{ files fstest.MapFS }
+
+func (u uncomparableFS) Open(name string) (fs.File, error) { return u.files.Open(name) }
+
 // TestPagesFileLinkingOutOfADocumentsFSIsRefused: a .pages file is read as
 // any file of the FS is, so a symbolic link out of it, the file's own or a
 // directory's above it, is refused rather than followed or taken for absent.
