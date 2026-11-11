@@ -658,9 +658,15 @@ func runReport(t *testing.T, format report.Format, files map[string]string, adju
 
 // errorLines returns the ::error annotations in GitHub output.
 func errorLines(out string) []string {
+	return commandLines(out, "::error")
+}
+
+// commandLines are the lines of out that start with prefix, such as the
+// workflow commands of a github report.
+func commandLines(out, prefix string) []string {
 	var lines []string
 	for _, line := range strings.Split(out, "\n") {
-		if strings.HasPrefix(line, "::error") {
+		if strings.HasPrefix(line, prefix) {
 			lines = append(lines, line)
 		}
 	}
@@ -1269,10 +1275,7 @@ func reportAfterHTML(t *testing.T, out string) *report.Report {
 	start := strings.Index(out, "{\n")
 	require.GreaterOrEqual(t, start, 0, "no report in %q", out)
 
-	got := report.New()
-	require.NoError(t, json.Unmarshal([]byte(out[start:]), got), "%s", out)
-
-	return got
+	return decodeReport(t, []byte(out[start:]))
 }
 
 // TestAReadOnlyRunReportsItsDocuments: a compile and a dry run that compares
@@ -1342,13 +1345,7 @@ func TestAReadOnlyRunAnnotatesItsWarnings(t *testing.T) {
 		})
 		require.NoError(t, err)
 
-		var annotations []string
-		for _, line := range strings.Split(out, "\n") {
-			if strings.HasPrefix(line, "::") {
-				annotations = append(annotations, line)
-			}
-		}
-
+		annotations := commandLines(out, "::")
 		require.Len(t, annotations, 1, "%+v: %s", mode, out)
 		assert.True(t, strings.HasPrefix(annotations[0], "::warning file="), annotations[0])
 		assert.Contains(t, annotations[0], "a.md,line=7::")

@@ -412,10 +412,10 @@ func (r *Report) writeGitHub(w io.Writer) error {
 		}
 
 		// Whatever became of the document. A warning is worth showing against
-		// a page that published and against one that was left unchanged,
-		// compiled or would be published, which has no line of its own at
-		// all -- the point of it is to be seen in the
-		// diff by somebody who is not reading the build log.
+		// a page that published and against one that has no line of its own
+		// at all, such as one left unchanged or only compiled -- the point of
+		// it is to be seen in the diff by somebody who is not reading the
+		// build log.
 		details := page.WarningDetails
 		if len(details) == 0 {
 			for _, message := range page.Warnings {

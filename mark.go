@@ -2318,15 +2318,6 @@ func (r *publishRun) preview(ctx context.Context, doc *document) error {
 		return err
 	}
 
-	// A run that compares nothing still records the document, so that its
-	// warnings reach the report; the status says nothing was published.
-	if status == "" {
-		status = report.StatusWouldPublish
-		if config.Mode.CompileOnly {
-			status = report.StatusCompiled
-		}
-	}
-
 	var target confluence.PageInfo
 	var url string
 	if previewed != nil {
@@ -2405,8 +2396,13 @@ func (r *publishRun) previewBody(
 		}
 	}
 
+	// Nothing compared, so the status only says how far the document got.
 	if !compare {
-		return html, "", "", nil
+		if r.config.Mode.CompileOnly {
+			return html, report.StatusCompiled, "", nil
+		}
+
+		return html, report.StatusWouldPublish, "", nil
 	}
 
 	var relinked bool
