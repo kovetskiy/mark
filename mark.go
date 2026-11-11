@@ -481,7 +481,18 @@ type RenderingConfig struct {
 	Features         []string
 	ImageAlign       string
 	AttachReferenced bool
-	IncludePath      string
+	// AttachmentRoot is how far the files a document names may reach, with
+	// symlinks followed: its Attachment: headers, images, files links point
+	// at with AttachReferenced, files macros name, and a d2 diagram's imports
+	// and images. A file outside it fails the document with
+	// attachment.ErrOutsideProject. Empty is the default boundary, the
+	// document's directory or the working directory, or a Document's FS;
+	// attachment.BoundaryDocument is the document's directory alone; anything
+	// else is a directory on disk, which must exist, and which a Document with
+	// an FS is refused under. Includes keep their own boundary, which
+	// IncludePath widens.
+	AttachmentRoot attachment.Boundary
+	IncludePath    string
 	// PageHeader is a template placed at the top of every page: Markdown
 	// when it has a Markdown extension, storage format otherwise.
 	PageHeader string
@@ -638,6 +649,10 @@ func (r RenderingConfig) validate() error {
 				output.field, output.value,
 			)
 		}
+	}
+
+	if err := r.AttachmentRoot.Validate(); err != nil {
+		return fmt.Errorf("invalid Rendering.AttachmentRoot (--attachment-root): %w", err)
 	}
 
 	if r.MermaidBundle && r.MermaidOutput != imageformat.SVG {
@@ -2064,6 +2079,10 @@ func absPath(file string) string {
 // readDocument reads a file and settles the metadata it publishes under.
 func (r *publishRun) readDocument(in input) (*document, error) {
 	file := in.file
+
+	// Every file the document names is read through its root, so the root
+	// carries the boundary they are held to.
+	in.root = in.root.WithBoundary(r.config.Rendering.AttachmentRoot)
 
 	source, markdown, lineOf, err := in.read()
 	if err != nil {
