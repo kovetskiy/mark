@@ -436,3 +436,32 @@ func TestOrphanInAnotherSpaceIsReportedOnce(t *testing.T) {
 	require.Len(t, listed, 1, "%+v", got.Orphans)
 	assert.Equal(t, report.OnOrphanReport, listed[0].Action)
 }
+
+// TestOnOrphanLeavesAPageWhoseSpaceIsUnknown: an orphan whose page answers
+// with no space at all is left alone, with a reason saying so.
+func TestOnOrphanLeavesAPageWhoseSpaceIsUnknown(t *testing.T) {
+	server, docsID, elsewhere := twoSpacesOn(t, false)
+	dir := t.TempDir()
+	writeFile(t, dir, "keep.md", markdownWithTitle("Keep"))
+	moved := writeFile(t, dir, "moved.md", markdownWithTitle("Moved"))
+	config := trackingConfig(server, filepath.Join(dir, "*.md"))
+	config.Tracking.OnOrphan = report.OnOrphanDelete
+	require.NoError(t, Run(context.Background(), config))
+
+	repointEntries(t, server, docsID,
+		manifest.PropertyKey(manifest.ShardFor(filepath.ToSlash(moved))), pageIDTitled(t, server, "Moved"), elsewhere.ID)
+	require.NoError(t, os.Remove(moved))
+	server.SetFail(func(r *http.Request) (int, string, bool) {
+		if r.Method == http.MethodGet && r.URL.Path == "/rest/api/content/"+elsewhere.ID {
+			return http.StatusOK, `{"id":"` + elsewhere.ID + `","type":"page","status":"current","title":"Elsewhere","version":{"number":1}}`, true
+		}
+		return 0, "", false
+	})
+
+	got := decodeReport(t, []byte(publishJSON(t, config)))
+	server.SetFail(nil)
+	assertUntouched(t, server, elsewhere)
+	require.Len(t, got.Orphans, 1)
+	assert.Equal(t, report.OnOrphanReport, got.Orphans[0].Action)
+	assert.Equal(t, `mark could not tell which space it is in, and space "DOCS"'s page manifest records it`, got.Orphans[0].Reason)
+}
