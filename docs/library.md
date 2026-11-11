@@ -193,9 +193,11 @@ with what was left.
 `DocumentKeys` needs `Partial` and `DocumentScope`, and is refused without
 them: without `Partial` the run's documents are the whole scope already, and
 those left out would be removed. An empty `DocumentKeys` is no list: a caller
-whose documents are all the scope has publishes them without `Partial`. `Partial` with documents that have no scope
-changes nothing for them, since they take part in no orphan handling or
-renames either way, and is warned about when the run has no files.
+whose documents are the whole scope publishes them without `Partial`.
+
+`Partial` with documents that have no scope changes nothing for them, since
+they take part in no orphan handling or renames either way, and is warned
+about when the run has no files.
 
 Files and documents in one partial run each follow their own rule: `Files` and
 `Paths` as [`--partial`](page-tree.md#publishing-only-some-of-the-files)
