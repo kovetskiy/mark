@@ -193,3 +193,15 @@ func TestCheckWithinRelativeDirUnderLinkedWorkingDirectory(t *testing.T) {
 	assert.NoError(t, CheckWithin(filepath.Join(link, "inc"), "inc/partial.md"))
 	assert.ErrorIs(t, CheckWithin("inc", filepath.Join(link, "other.md")), ErrOutsideProject)
 }
+
+// TestFSRootPointerIsTheFS: a *Root is an Opener too, and globs and holds
+// names in its FS as the Root does, rather than on disk.
+func TestFSRootPointerIsTheFS(t *testing.T) {
+	t.Chdir(t.TempDir())
+	root := FSRoot(fstest.MapFS{"docs/img/a.png": {Data: []byte("a")}})
+
+	found, err := ResolveLocalAttachments(&root, "docs", []string{"img/*.png"})
+	require.NoError(t, err)
+	require.Len(t, found, 1)
+	assert.Equal(t, []byte("a"), found[0].FileBytes)
+}
