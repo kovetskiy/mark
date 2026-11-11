@@ -107,6 +107,18 @@ func (line *commandLine) runPublish(ctx context.Context, cmd *cli.Command) error
 	if err := line.prepare(cmd); err != nil {
 		return err
 	}
+	// Emptied as soon as the configuration file can name it, so that a run
+	// refused for its flags leaves no earlier run's report to be read as its
+	// own. The publish action opens it again to write.
+	reportFile, err := createReportFile(cmd.String("report-file"))
+	if err != nil {
+		return err
+	}
+	if reportFile != nil {
+		if err := reportFile.Close(); err != nil {
+			return fmt.Errorf("unable to write --report-file: %w", err)
+		}
+	}
 	// An unquoted --files glob the shell expanded would publish only its
 	// first match.
 	if cmd.NArg() > 0 {
@@ -296,6 +308,8 @@ func SetUpLogging(cmd *cli.Command) error {
 func RunPublish(ctx context.Context, cmd *cli.Command) (err error) {
 	// Opened, and emptied, first, so that a report left by an earlier run is
 	// never read as this one's, even when this one is refused for its settings.
+	// The command line has emptied it already, but RunPublish is an action of
+	// its own.
 	reportFile, err := createReportFile(cmd.String("report-file"))
 	if err != nil {
 		return err
