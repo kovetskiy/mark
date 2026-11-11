@@ -3,6 +3,7 @@ package similar_test
 import (
 	"context"
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/kovetskiy/mark/v17/internal/similar"
@@ -38,19 +39,34 @@ func TestMarkdownWords(t *testing.T) {
 
 func TestScore(t *testing.T) {
 	words := similar.Words
+	ten := "one two three four five six seven eight nine ten"
 
-	assert.InDelta(t, 1, similar.Score(words("one two three four"), words("One, two; three four.")), 1e-9)
-	assert.Zero(t, similar.Score(nil, words("anything")), "an empty text is like nothing")
+	assert.InDelta(t, 1, similar.Score(words(ten), words(strings.ToUpper(ten)+"!")), 1e-9)
+	assert.Zero(t, similar.Score(nil, words(ten)), "an empty text is like nothing")
 	assert.Zero(t, similar.Score(nil, nil), "two empty texts are not alike")
 
-	// Four shingles of five words; one word changed in the middle leaves one
-	// of them on each side: 1 / (4 + 4 - 1).
-	assert.InDelta(t, 1.0/7, similar.Score(words("a b c d e f"), words("a b x d e f")), 1e-9)
+	// Eight shingles of ten words; the fifth word changed leaves five of
+	// them on each side: 5 / (8 + 8 - 5).
+	changed := strings.Replace(ten, "five", "5", 1)
+	assert.InDelta(t, 5.0/11, similar.Score(words(ten), words(changed)), 1e-9)
 
-	// Shorter than a shingle: compared by runs as long as the shorter text.
-	assert.InDelta(t, 1, similar.Score(words("Hello"), words("hello!")), 1e-9)
-	assert.InDelta(t, 1.0/2, similar.Score(words("hello world"), words("hello")), 1e-9)
-	assert.Zero(t, similar.Score(words("hello world"), words("goodbye")))
+	// Stubs too short to tell a rename by are alike to nothing, themselves
+	// included.
+	assert.Zero(t, similar.Score(words("TBD"), words("TBD")))
+	assert.Zero(t, similar.Score(words("Coming soon, watch this space"), words("Coming soon, watch this space")))
+}
+
+func TestMarkdownWordsKeepsALessThan(t *testing.T) {
+	assert.Equal(t,
+		[]string{"if", "n", "10", "then", "later", "quote"},
+		similar.MarkdownWords("if n < 10 then later > quote"),
+	)
+}
+
+func TestStorageWordsKeepsACommentInCode(t *testing.T) {
+	storage := `<ac:plain-text-body><![CDATA[<!-- open]]></ac:plain-text-body><p>Kept text.</p><!-- gone -->`
+
+	assert.Equal(t, []string{"open", "kept", "text"}, similar.StorageWords(storage))
 }
 
 // TestScoresOfRealisticRenames is the evidence for the threshold the docs
@@ -100,13 +116,13 @@ func TestMatch(t *testing.T) {
 	t.Run("clear best is taken", func(t *testing.T) {
 		taken, unclear := similar.Match(map[string]map[string]float64{
 			"new": {"old": 0.8, "other": 0.2},
-		}, threshold, margin)
+		}, nil, threshold, margin)
 		assert.Equal(t, map[string]similar.Pair{"new": {New: "new", Old: "old", Score: 0.8}}, taken)
 		assert.Empty(t, unclear)
 	})
 
 	t.Run("below the threshold is nothing", func(t *testing.T) {
-		taken, unclear := similar.Match(map[string]map[string]float64{"new": {"old": 0.55}}, threshold, margin)
+		taken, unclear := similar.Match(map[string]map[string]float64{"new": {"old": 0.55}}, nil, threshold, margin)
 		assert.Empty(t, taken)
 		assert.Empty(t, unclear)
 	})
@@ -114,7 +130,7 @@ func TestMatch(t *testing.T) {
 	t.Run("two old ones within the margin", func(t *testing.T) {
 		taken, unclear := similar.Match(map[string]map[string]float64{
 			"new": {"a": 0.8, "b": 0.75},
-		}, threshold, margin)
+		}, nil, threshold, margin)
 		assert.Empty(t, taken)
 		assert.Equal(t, []similar.Pair{{New: "new", Old: "a", Score: 0.8}, {New: "new", Old: "b", Score: 0.75}}, unclear["new"])
 	})
@@ -122,7 +138,7 @@ func TestMatch(t *testing.T) {
 	t.Run("a runner-up below the threshold still counts", func(t *testing.T) {
 		taken, unclear := similar.Match(map[string]map[string]float64{
 			"new": {"a": 0.65, "b": 0.58},
-		}, threshold, margin)
+		}, nil, threshold, margin)
 		assert.Empty(t, taken)
 		assert.Len(t, unclear["new"], 1)
 	})
@@ -131,23 +147,33 @@ func TestMatch(t *testing.T) {
 		taken, unclear := similar.Match(map[string]map[string]float64{
 			"clear": {"old": 0.9},
 			"weak":  {"old": 0.7},
-		}, threshold, margin)
+		}, nil, threshold, margin)
 		assert.Equal(t, map[string]similar.Pair{"clear": {New: "clear", Old: "old", Score: 0.9}}, taken)
 		assert.Contains(t, unclear, "weak")
 
 		taken, unclear = similar.Match(map[string]map[string]float64{
 			"one":   {"old": 0.9},
 			"other": {"old": 0.85},
-		}, threshold, margin)
+		}, nil, threshold, margin)
 		assert.Empty(t, taken, "neither leads the other by the margin")
 		assert.Len(t, unclear, 2)
+	})
+
+	t.Run("a rival the new one cannot be paired with", func(t *testing.T) {
+		scores := map[string]map[string]float64{"new": {"old": 0.7}}
+		taken, unclear := similar.Match(scores, map[string]float64{"new": 0.65}, threshold, margin)
+		assert.Empty(t, taken, "as alike to a document that still exists")
+		assert.Contains(t, unclear, "new")
+
+		taken, _ = similar.Match(scores, map[string]float64{"new": 0.2}, threshold, margin)
+		assert.Contains(t, taken, "new")
 	})
 
 	t.Run("each pair is clear of the rest", func(t *testing.T) {
 		taken, unclear := similar.Match(map[string]map[string]float64{
 			"x": {"a": 0.9, "b": 0.1},
 			"y": {"a": 0.2, "b": 0.7},
-		}, threshold, margin)
+		}, nil, threshold, margin)
 		assert.Equal(t, map[string]similar.Pair{
 			"x": {New: "x", Old: "a", Score: 0.9},
 			"y": {New: "y", Old: "b", Score: 0.7},

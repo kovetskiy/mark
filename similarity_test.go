@@ -425,3 +425,39 @@ func TestRenameSimilarityIsChecked(t *testing.T) {
 	require.ErrorContains(t, Run(context.Background(), untracked), "requires Tracking.TrackPages")
 	assert.Empty(t, pageIDTitled(t, server, "Record a"))
 }
+
+// TestSimilarRenameNotForTemplateText: a record deleted and an unrelated one
+// added in one change, both mostly a template's text, are as alike to each
+// other as to every record that stays, so the new one is not taken for the
+// deleted one.
+func TestSimilarRenameNotForTemplateText(t *testing.T) {
+	template := "## Status\n\nProposed\n\n## Context\n\nDescribe the forces at play, including technological, " +
+		"political, social and project local ones, and why a decision is needed now.\n\n## Decision\n\n" +
+		"Describe the response to these forces, stated in full sentences, with active voice.\n\n" +
+		"## Consequences\n\nDescribe the resulting context, after applying the decision, good and bad.\n\n"
+	record := func(key, title, topic string) Document {
+		return adrDocument(key, "DOCS", title, template+topic+"\n")
+	}
+
+	server, _ := docsSpace(t)
+	full := documentsConfig(server,
+		record("cache.md", "Cache sessions", "Sessions go to the cache."),
+		record("queue.md", "Queue jobs", "Jobs go to the queue."),
+		record("logs.md", "Ship logs", "Logs go to the collector."),
+	)
+	full.DocumentScope = "adr"
+	require.NoError(t, Run(context.Background(), full))
+	cacheID := mustFind(t, server, "Cache sessions")
+
+	var out bytes.Buffer
+	unrelated := record("tracing.md", "Trace requests", "Requests carry a trace id.")
+	partial := partialDocumentsOf(full, []string{"logs.md"}, full.Documents[1], unrelated)
+	partial.Tracking.OnOrphan = report.OnOrphanReport
+	require.NoError(t, Run(context.Background(), similarly(partial, 0.6, &out)))
+
+	assertNotFollowed(t, server, "tracing.md", cacheID)
+	assert.Equal(t, "Cache sessions", server.Page(cacheID).Title)
+	warnings := renameWarnings(t, &out, "tracing.md")
+	require.Len(t, warnings, 1)
+	assert.Contains(t, warnings[0], "cache.md (0.")
+}

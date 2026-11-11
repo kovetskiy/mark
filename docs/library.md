@@ -227,8 +227,8 @@ compared is the document's Markdown without its headers, against the gone
 key's page as it is in Confluence, both reduced to lowercased words without
 markup. The measure is the Jaccard similarity of their shingles, every run of
 three consecutive words: the shingles both texts have, over those either has.
-A text shorter than three words is compared by shorter runs, and an empty one
-is like nothing.
+A text of fewer than ten words is like nothing, itself included: a stub such
+as "TBD" says nothing about which record it was.
 
 0.6 is a good value. On the ADRs `internal/similar` measures against, one
 retitled, its status changed, a sentence reworded and a paragraph added scores
@@ -244,12 +244,18 @@ careful:
   left out of the comparison.
 * Only a document and a gone key of the same scope and space are compared.
 * Each gone key is taken by one document at most: a pair is taken only when
-  it is at least as alike as the setting asks, and ahead by 0.1 of both the
-  document's next closest gone key and the gone key's next closest document.
-  A document close to some gone key but clear of none gets a new page, as
-  without the setting, and a warning naming the keys and scores.
+  it is at least as alike as the setting asks, and ahead by 0.1 of the
+  document's next closest gone key, of the gone key's next closest document,
+  and of the document's closest other document in the run. The last keeps a
+  template's text, which every record of a scope shares, from pairing a
+  deleted record with an unrelated new one. A document close to some gone key
+  but clear of none gets a new page, as without the setting, and a warning
+  naming the keys and scores.
 * Under `NoOverwrite`, a gone key whose page was edited in Confluence since
   mark wrote it, or that has no version mark wrote to tell, is never taken.
+  The page is read again at the document's turn, and one edited, deleted or
+  taken by another document since the comparison is not taken either, with
+  a warning.
 * Each rename followed is logged and given to the document as a warning of
   kind `report.WarningRename`, naming the new key, the old key, the page and
   the score.
@@ -262,8 +268,14 @@ logs it, writing nothing.
 
 The comparison is made once a run per space, when the first document with no
 page of its own asks, and only when there are both such documents and gone
-keys: each gone key's page is then read once. A run with nothing to match
+keys: each gone key's page is then read once, and a page taken is read again
+at the document's turn, as an exact rename's is. A run with nothing to match
 makes no request for it.
+
+A parent renamed, retitled and edited at once is followed when its own turn
+comes, but a child published before it, declaring the new title, does not
+find it by similarity: it creates the parent under the new title, as without
+the setting.
 
 ## Publishing one document at a time
 
