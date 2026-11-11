@@ -84,6 +84,9 @@ go install github.com/kovetskiy/mark/v17/cmd/mark@latest
 docker run --rm -i kovetskiy/mark:latest mark publish <params>
 ```
 
+Each release is also tagged on its own, such as `kovetskiy/mark:v17.1.0`; see
+[Continuous Integration](docs/publishing.md#continuous-integration).
+
 ### Compile and install using docker-compose
 
 Mostly useful when you intend to enhance `mark`.

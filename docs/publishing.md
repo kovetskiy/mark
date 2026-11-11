@@ -392,6 +392,15 @@ command line. Keep the page address out of a variable a job shares:
 `MARK_PAGE_URL` sends every `mark publish` of the job to that one page, and
 every `mark export` that names no other page on its command line.
 
+The image is published under every release tag, pre-releases included
+(`kovetskiy/mark:v17.1.0`), and `latest` the last release that is not a pre-release. Pin a
+tag rather than `latest`: the image carries the headless Chrome mark draws
+diagrams in, and a job is easier to reproduce when the two cannot move apart. A
+Go program that writes such a job for the mark it links can ask for the image of
+that release with `mark.Image()`, and for the release itself with
+`mark.Version()`; both are `""` for a build of mark that is not a release, such
+as a pseudo-version or a local `replace`, which has no image.
+
 The following directive tells the CI to run this particular job only if the changes are pushed into the
 `main` branch. It means you can safely push your changes into feature branches without being afraid
 that they have automatically shown in Confluence, then go through the reviewal process and automatically
