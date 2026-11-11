@@ -132,9 +132,9 @@ that only documents lie in is remembered under a key of its own,
 `manifest.DocumentDirectoryKey(DocumentScope, directory)`, in the documents'
 scope. So a directory of files and a directory of documents with the same path
 never share an entry, and the next run of the scope that leaves no document in
-a directory finds its page an orphan. A partial run given `DocumentKeys` never
-takes a directory for gone, since the keys it lists say nothing of where those
-documents lie; the next full run of the scope does.
+a directory finds its page an orphan. A partial run never takes a directory
+for gone, since the keys it is given say nothing of where those documents lie;
+the next full run of the scope does.
 
 `Publisher.PublishDocument` lays out no hierarchy, since `ParentsFromPath` is a
 setting of a run.
