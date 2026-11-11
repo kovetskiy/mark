@@ -128,14 +128,14 @@ func publishFlags(config *configFile) []cli.Flag {
 		&cli.BoolFlag{
 			Name:    "compile-only",
 			Value:   false,
-			Usage:   "show resulting HTML and don't update Confluence page content.",
+			Usage:   "show resulting HTML and don't update Confluence page content. With --output-format json or github, the HTML is shown only when --report-file is set, so that the report on standard output stands alone.",
 			Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_COMPILE_ONLY"), config.value("compile-only")),
 		},
 		&cli.BoolFlag{
 			Name:    "dry-run",
 			Aliases: []string{"n"},
 			Value:   false,
-			Usage:   "resolve page and ancestry, show resulting HTML and exit. With --changes-only, say which pages would change and show the HTML of only those, and none with --output-format json or github unless --report-file is set.",
+			Usage:   "resolve page and ancestry, show resulting HTML and exit. With --changes-only, say which pages would change and show the HTML of only those. With --output-format json or github, the HTML is shown only when --report-file is set, so that the report on standard output stands alone.",
 			Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_DRY_RUN"), config.value("dry-run")),
 		},
 		&cli.BoolFlag{

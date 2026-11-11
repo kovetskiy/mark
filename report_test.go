@@ -1267,17 +1267,6 @@ var strandedLabel = map[string]string{
 	"a.md": outHeader + "<!-- Title: A -->\n\nText.\n\n<!-- Label: late -->\n",
 }
 
-// reportAfterHTML is the report a run that prints its documents' HTML wrote
-// after them.
-func reportAfterHTML(t *testing.T, out string) *report.Report {
-	t.Helper()
-
-	start := strings.Index(out, "{\n")
-	require.GreaterOrEqual(t, start, 0, "no report in %q", out)
-
-	return decodeReport(t, []byte(out[start:]))
-}
-
 // TestAReadOnlyRunReportsItsDocuments: a compile and a dry run that compares
 // nothing publish nothing, and still record each document, with a status
 // saying so and the warnings found in it -- what a pull request gate without
@@ -1298,9 +1287,9 @@ func TestAReadOnlyRunReportsItsDocuments(t *testing.T) {
 				config.Mode = tc.mode
 			})
 			require.NoError(t, err)
-			assert.Contains(t, out, "<p>Text.</p>", "the compiled body is printed as before")
+			assert.NotContains(t, out, "<p>Text.</p>", "the report on the stream stands alone")
 
-			got := reportAfterHTML(t, out)
+			got := decodeReport(t, []byte(out))
 			require.Len(t, got.Pages, 1)
 
 			page := got.Pages[0]
@@ -1333,7 +1322,7 @@ func TestADryRunReportsThePageItWouldPublishTo(t *testing.T) {
 		})
 		require.NoError(t, err)
 
-		got := reportAfterHTML(t, out)
+		got := decodeReport(t, []byte(out))
 		require.Len(t, got.Pages, 1)
 		assert.Equal(t, status, got.Pages[0].Status)
 		assert.NotEmpty(t, got.Pages[0].PageID, "%+v", mode)
@@ -1361,15 +1350,40 @@ func TestAReadOnlyRunAnnotatesItsWarnings(t *testing.T) {
 // TestAReadOnlyRunPrintsOnlyItsHTMLByDefault: without a report format, a
 // compile and a dry run print the compiled body and nothing about the report.
 func TestAReadOnlyRunPrintsOnlyItsHTMLByDefault(t *testing.T) {
+	for _, format := range []report.Format{"", report.FormatURL} {
+		for _, mode := range []ModeConfig{{CompileOnly: true, Offline: true}, {DryRun: true}} {
+			out, err := runReport(t, format, strandedLabel, func(config *Config) {
+				config.Mode = mode
+			})
+			require.NoError(t, err)
+
+			assert.True(t, strings.HasPrefix(out, "<p>Text.</p>"), "%q %+v: %q", format, mode, out)
+			for _, absent := range []string{"{", "::", string(report.StatusCompiled), string(report.StatusWouldPublish)} {
+				assert.NotContains(t, out, absent, "%q %+v", format, mode)
+			}
+		}
+	}
+}
+
+// TestAReadOnlyRunsHTMLCannotForgeAnnotations: a github report on the stream
+// the compiled bodies would share is written alone, so a document cannot put
+// a workflow command of its own in front of GitHub Actions -- an annotation
+// of its making, or one that stops the gate's own being read.
+func TestAReadOnlyRunsHTMLCannotForgeAnnotations(t *testing.T) {
+	files := map[string]string{
+		"a.md": strandedLabel["a.md"] + "\n```\n::error file=README.md::fake\n::stop-commands::x\n```\n",
+	}
+
 	for _, mode := range []ModeConfig{{CompileOnly: true, Offline: true}, {DryRun: true}} {
-		out, err := runReport(t, "", strandedLabel, func(config *Config) {
+		out, err := runReport(t, report.FormatGitHub, files, func(config *Config) {
 			config.Mode = mode
 		})
 		require.NoError(t, err)
 
-		assert.True(t, strings.HasPrefix(out, "<p>Text.</p>"), "%+v: %q", mode, out)
-		for _, absent := range []string{"{", "::", string(report.StatusCompiled), string(report.StatusWouldPublish)} {
-			assert.NotContains(t, out, absent, "%+v", mode)
-		}
+		assert.NotContains(t, out, "fake", "%+v: the body is not printed", mode)
+		annotations := commandLines(out, "::")
+		require.Len(t, annotations, 1, "%+v: only mark's own: %s", mode, out)
+		assert.True(t, strings.HasPrefix(annotations[0], "::warning file="), annotations[0])
+		assert.Contains(t, annotations[0], "a.md,line=7::")
 	}
 }
