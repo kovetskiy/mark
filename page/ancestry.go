@@ -280,12 +280,19 @@ func EnsureFolderAncestry(
 					)
 				}
 
-				if folder == nil {
+				switch {
+				case folder == nil:
 					// Recorded, and really not there any more. Fall through and
 					// create it again.
 					options.Warnings.Add(report.WarningMissingPage,
 						"folder %q was recorded as %s, which no longer exists; it will be created again", title, id)
-				} else {
+				case folder.SpaceID != spaceID:
+					// The manifest speaks for this space's folders alone, and
+					// pages created under one elsewhere would land in its space.
+					options.Warnings.Add(report.WarningOtherSpace,
+						"folder %q was recorded as %s, which is not in space %q; it is left alone", title, id, space)
+					folder = nil
+				default:
 					log.Info().Msgf(
 						"folder %q was renamed to %q; using it rather than creating another",
 						title, folder.Title,

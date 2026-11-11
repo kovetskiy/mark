@@ -106,6 +106,19 @@ func InScope(ctx context.Context, api *confluence.API, scopeID string, orphan Or
 		return false, fmt.Errorf("unable to read page %s: %w", orphan.PageID, err)
 	}
 
+	return InScopeOf(ctx, api, scopeID, orphan, page)
+}
+
+// InScopeOf is InScope for an orphan whose page the caller has already read
+// with its ancestors, so that the page is not read a second time. A nil page is
+// one already gone, and out of scope.
+func InScopeOf(
+	ctx context.Context, api *confluence.API, scopeID string, orphan Orphan, page *confluence.PageInfo,
+) (bool, error) {
+	if scopeID == "" {
+		return true, nil
+	}
+
 	if page == nil {
 		return false, nil
 	}

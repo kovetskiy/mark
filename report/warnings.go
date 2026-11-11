@@ -76,6 +76,12 @@ const (
 	// texts are alike rather than the same, or one not taken for any because
 	// more than one is about as alike; see TrackingConfig.RenameSimilarity.
 	WarningRename WarningKind = "rename"
+
+	// WarningOtherSpace is a page the page manifest of the document's space
+	// records, for the document, a file it was renamed from or one of its
+	// parents, that is in another space. It is left alone and the document is
+	// published as though nothing had been recorded.
+	WarningOtherSpace WarningKind = "other-space"
 )
 
 // Warning is one thing wrong with a document that was published anyway.
