@@ -43,13 +43,6 @@ func (w *inlineWriter) write(s string) {
 	if s == "" {
 		return
 	}
-	// Text ending in "<" and what follows starting with "!" -- across an
-	// inline comment's marker, say -- would meet as "<!", which escapeInline
-	// keeps from opening a directive within one piece of text. "<![" cannot
-	// open one, and the backslash would make an image a link.
-	if strings.HasPrefix(s, "!") && !strings.HasPrefix(s, "![") && strings.HasSuffix(w.b.String(), "<") {
-		s = `\` + s
-	}
 	w.b.WriteString(s)
 	w.afterBreak = false
 }
@@ -161,7 +154,9 @@ func (w *inlineWriter) text(text string) {
 		text = strings.TrimLeft(text, " \t\n")
 	}
 
-	w.write(escapeInline(text, inlineOptions{table: w.ctx.table}))
+	// What was written before -- text ending in "<" ahead of an inline
+	// comment's marker, say -- is what the text follows.
+	w.write(escapeInline(text, inlineOptions{table: w.ctx.table, after: w.lastRune()}))
 }
 
 func (w *inlineWriter) lineBreak() {
