@@ -3,6 +3,9 @@ package mark
 import (
 	"strings"
 
+	"github.com/kovetskiy/mark/v17/fingerprint"
+	"github.com/kovetskiy/mark/v17/internal/similar"
+	"github.com/kovetskiy/mark/v17/metadata"
 	"github.com/kovetskiy/mark/v17/page"
 	"github.com/kovetskiy/mark/v17/report"
 	"github.com/rs/zerolog/log"
@@ -11,6 +14,11 @@ import (
 // runTitles records which of the run's own documents declare which title, so a
 // parent retitled in this run can be found before its own turn. Read lazily:
 // most runs never miss a parent.
+//
+// It also keeps what is read of each document before its turn, for the
+// titles and for the similarity renames, so that a document is read and its
+// metadata parsed once a run however often it is asked about. Its own turn
+// reads it again: that read is the one reporting its warnings.
 type runTitles struct {
 	config    PublishConfig
 	inputs    []input
@@ -18,6 +26,11 @@ type runTitles struct {
 
 	// documents maps a title's key to the documents declaring it; nil until read.
 	documents map[string][]input
+
+	// texts says a read ahead keeps the document's text too, for
+	// RenameSimilarity; ahead holds each read ahead by file.
+	texts bool
+	ahead map[string]*readAhead
 
 	// warningsFor gives a document's collector, for a title declared by more
 	// than one; nil only logs. warned holds the titles already said so about.
@@ -30,18 +43,52 @@ func runTitleKey(space, kind, title string) string {
 	return space + "\x00" + kind + "\x00" + strings.ToLower(title)
 }
 
+// readAhead is what is read of a document before its turn.
+type readAhead struct {
+	// meta is nil for a document that cannot be read, whose metadata cannot
+	// be parsed, or that has none; its own turn reports why.
+	meta *metadata.Meta
+	// sourceHash fingerprints the source as read, as the document's turn does.
+	sourceHash string
+	// text is the Markdown after the metadata, as similarity compares it;
+	// kept only when the run asks for texts.
+	text similar.Text
+}
+
+// readAhead reads in, once a run.
+func (r *runTitles) readAhead(in input) *readAhead {
+	if ahead, ok := r.ahead[in.file]; ok {
+		return ahead
+	}
+
+	ahead := &readAhead{}
+	if source, markdown, _, err := in.read(); err == nil {
+		ahead.sourceHash = fingerprint.SHA1(string(source))
+
+		meta, markdown, err := documentMeta(r.config, in.file, markdown, r.hierarchy, nil)
+		if err == nil && meta != nil {
+			ahead.meta = meta
+			if r.texts {
+				ahead.text = similar.Shingles(similar.MarkdownWords(string(markdown)))
+			}
+		}
+	}
+
+	if r.ahead == nil {
+		r.ahead = map[string]*readAhead{}
+	}
+	r.ahead[in.file] = ahead
+
+	return ahead
+}
+
 // index leaves out any file that cannot be read; processing it reports why.
 func (r *runTitles) index() {
 	r.documents = map[string][]input{}
 
 	for _, in := range r.inputs {
-		_, markdown, _, err := in.read()
-		if err != nil {
-			continue
-		}
-
-		meta, _, err := documentMeta(r.config, in.file, markdown, r.hierarchy, nil)
-		if err != nil || meta == nil || !meta.Publish() || meta.Title == "" || meta.Space == "" {
+		meta := r.readAhead(in).meta
+		if meta == nil || !meta.Publish() || meta.Title == "" || meta.Space == "" {
 			continue
 		}
 

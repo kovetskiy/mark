@@ -10,7 +10,6 @@ import (
 	"strings"
 
 	"github.com/kovetskiy/mark/v17/confluence"
-	"github.com/kovetskiy/mark/v17/fingerprint"
 	"github.com/kovetskiy/mark/v17/internal/similar"
 	"github.com/kovetskiy/mark/v17/manifest"
 	"github.com/kovetskiy/mark/v17/metadata"
@@ -219,24 +218,21 @@ func (r *publishRun) pairSimilar(ctx context.Context, space, key string) (*simil
 
 // runTexts returns the texts of the run's documents, saying which of those
 // publishing to space find no page of their own, and the pages the others
-// there find, which are no longer any gone key's to give.
+// there find, which are no longer any gone key's to give. Each document is
+// read once a run, whichever space asks.
 func (r *publishRun) runTexts(ctx context.Context, space string) ([]runText, map[string]bool, error) {
 	var documents []runText
 	taken := map[string]bool{}
 	for _, in := range r.inputs.documents {
-		source, markdown, _, err := in.read()
-		if err != nil {
+		ahead := r.titles.readAhead(in)
+		meta := ahead.meta
+		if meta == nil || !meta.Publish() || meta.Title == "" {
 			continue
 		}
 
-		meta, markdown, err := documentMeta(r.config, in.file, markdown, r.hierarchy, nil)
-		if err != nil || meta == nil || !meta.Publish() || meta.Title == "" {
-			continue
-		}
-
-		doc := runText{key: manifest.Key(in.key), text: similar.Shingles(similar.MarkdownWords(string(markdown)))}
+		doc := runText{key: manifest.Key(in.key), text: ahead.text}
 		if meta.Space == space {
-			pageID, found, err := r.ownPage(ctx, doc.key, source, meta)
+			pageID, found, err := r.ownPage(ctx, doc.key, ahead.sourceHash, meta)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -254,13 +250,13 @@ func (r *publishRun) runTexts(ctx context.Context, space string) ([]runText, map
 // ownPage is the page the document of key finds at its turn before any
 // similarity is asked: recorded under its key, of the same content as a gone
 // key, or of its title.
-func (r *publishRun) ownPage(ctx context.Context, key string, source []byte, meta *metadata.Meta) (string, bool, error) {
+func (r *publishRun) ownPage(ctx context.Context, key, sourceHash string, meta *metadata.Meta) (string, bool, error) {
 	entry, recorded, err := r.tracker.Recorded(ctx, meta.Space, key)
 	if err != nil || recorded {
 		return entry.PageID, recorded, err
 	}
 
-	_, entry, same, err := r.tracker.ResolveRenamedFor(ctx, meta.Space, key, fingerprint.SHA1(string(source)))
+	_, entry, same, err := r.tracker.ResolveRenamedFor(ctx, meta.Space, key, sourceHash)
 	if err != nil || same {
 		return entry.PageID, same, err
 	}

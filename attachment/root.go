@@ -73,7 +73,8 @@ func (r Root) FS() fs.FS {
 // fs.FS no name is absolute, so an absolute name is one under dir, which
 // IncludeName gives: Open, Stat, ReadFile and CheckReadable read it from disk
 // as long as it stays inside dir through its symbolic links (CheckWithin),
-// and refuse it with ErrOutsideProject otherwise. Attachments and globs stay
+// and refuse it with ErrOutsideProject otherwise; Stat reports one that is
+// not there missing before resolving its links. Attachments and globs stay
 // inside the fs.FS. An empty dir is r.
 func (r Root) WithIncludePath(dir string) Root {
 	r.includePath, r.includeDir = dir, ""
@@ -185,6 +186,16 @@ func (l linkedFS) Open(name string) (fs.File, error) {
 		return nil, &fs.PathError{Op: "open", Path: name, Err: fs.ErrInvalid}
 	}
 
+	resolved, err := l.resolveOpen(name)
+	if err != nil {
+		return nil, err
+	}
+
+	return l.fsys.Open(resolved)
+}
+
+// resolveOpen is resolve failing as Open does.
+func (l linkedFS) resolveOpen(name string) (string, error) {
 	resolved, err := l.resolve(name)
 	if err != nil {
 		var pathErr *fs.PathError
@@ -192,10 +203,10 @@ func (l linkedFS) Open(name string) (fs.File, error) {
 			err = pathErr.Err
 		}
 
-		return nil, &fs.PathError{Op: "open", Path: name, Err: err}
+		return "", &fs.PathError{Op: "open", Path: name, Err: err}
 	}
 
-	return l.fsys.Open(resolved)
+	return resolved, nil
 }
 
 // errNotInFS is what a name that does not name a path inside the fs.FS
@@ -262,11 +273,18 @@ func (r Root) Stat(name string) (fs.FileInfo, error) {
 	}
 
 	if r.OnDisk(name) {
+		// Statted first: most names a link lookup asks about are not there,
+		// and a missing one needs no links resolved to say so.
+		info, err := os.Stat(name)
+		if err != nil {
+			return nil, err
+		}
+
 		if err := CheckWithin(r.includePath, name); err != nil {
 			return nil, err
 		}
 
-		return os.Stat(name)
+		return info, nil
 	}
 
 	inside, err := r.inside("stat", name)
@@ -333,8 +351,14 @@ func (r Root) contain(joined, named string) error {
 	}
 
 	// Only a link out of the FS is refused here; a name not there yet is
-	// left to the read to report.
-	if _, err := fs.Stat(r.fsys, inside); errors.Is(err, ErrOutsideProject) {
+	// left to the read to report. Resolving the links says so without
+	// opening the file, which the read does next.
+	if links, ok := r.fsys.(linkedFS); ok {
+		_, err = links.resolveOpen(inside)
+	} else {
+		_, err = fs.Stat(r.fsys, inside)
+	}
+	if errors.Is(err, ErrOutsideProject) {
 		return fmt.Errorf("%q: %w", named, err)
 	}
 
