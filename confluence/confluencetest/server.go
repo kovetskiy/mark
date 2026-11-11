@@ -15,9 +15,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"mime"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"path"
 	"sort"
 	"strconv"
 	"strings"
@@ -83,6 +85,39 @@ type Attachment struct {
 	MinorEdit string
 	// Data is the content of the latest upload, served at the download link.
 	Data []byte
+	// MediaType is the media type the listings record for the file and its
+	// download is served as. Empty, it is the one the filename's extension
+	// names, or application/octet-stream.
+	MediaType string
+}
+
+// mediaType is the media type Confluence records for the attachment.
+func (a *Attachment) mediaType() string {
+	if a.MediaType != "" {
+		return a.MediaType
+	}
+	if byExtension := mime.TypeByExtension(path.Ext(a.Filename)); byExtension != "" {
+		if mediaType, _, err := mime.ParseMediaType(byExtension); err == nil {
+			return mediaType
+		}
+	}
+	return "application/octet-stream"
+}
+
+// v1JSON is the attachment as v1 lists it: the media type under metadata and
+// under extensions, beside the size.
+func (a *Attachment) v1JSON() map[string]any {
+	mediaType := a.mediaType()
+	return map[string]any{
+		"id":         a.ID,
+		"title":      a.Filename,
+		"metadata":   map[string]any{"comment": a.Comment, "mediaType": mediaType},
+		"extensions": map[string]any{"comment": a.Comment, "mediaType": mediaType, "fileSize": len(a.Data)},
+		"_links": map[string]any{
+			"context":  "/wiki",
+			"download": downloadLink(a.PageID, a.Filename),
+		},
+	}
 }
 
 // InlineComment is a comment returned by the child/comment endpoint.
@@ -2032,15 +2067,7 @@ func (s *Server) childAttachment(w http.ResponseWriter, r *http.Request, pageID 
 
 		results := []map[string]any{}
 		for _, a := range page {
-			results = append(results, map[string]any{
-				"id":       a.ID,
-				"title":    a.Filename,
-				"metadata": map[string]any{"comment": a.Comment},
-				"_links": map[string]any{
-					"context":  "/wiki",
-					"download": downloadLink(a.PageID, a.Filename),
-				},
-			})
+			results = append(results, a.v1JSON())
 		}
 		writeJSON(w, http.StatusOK, map[string]any{
 			"results": results,
@@ -2074,16 +2101,8 @@ func (s *Server) childAttachment(w http.ResponseWriter, r *http.Request, pageID 
 		s.wroteTo(pageID)
 		s.mu.Unlock()
 		writeJSON(w, http.StatusOK, map[string]any{
-			"_links": map[string]any{"context": "/wiki"},
-			"results": []map[string]any{{
-				"id":       a.ID,
-				"title":    a.Filename,
-				"metadata": map[string]any{"comment": a.Comment},
-				"_links": map[string]any{
-					"context":  "/wiki",
-					"download": downloadLink(pageID, a.Filename),
-				},
-			}},
+			"_links":  map[string]any{"context": "/wiki"},
+			"results": []map[string]any{a.v1JSON()},
 		})
 
 	default:
@@ -2115,11 +2134,13 @@ func (s *Server) updateAttachment(w http.ResponseWriter, r *http.Request, pageID
 			break
 		}
 	}
+	var updated map[string]any
 	if found != nil {
 		found.Comment = comment
 		found.MinorEdit = minorEdit
 		found.Data = data
 		s.wroteTo(pageID)
+		updated = found.v1JSON()
 	}
 	s.mu.Unlock()
 
@@ -2127,14 +2148,7 @@ func (s *Server) updateAttachment(w http.ResponseWriter, r *http.Request, pageID
 		writeJSON(w, http.StatusNotFound, map[string]any{"message": "no such attachment"})
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{
-		"id":    found.ID,
-		"title": found.Filename,
-		"_links": map[string]any{
-			"context":  "/wiki",
-			"download": downloadLink(pageID, found.Filename),
-		},
-	})
+	writeJSON(w, http.StatusOK, updated)
 }
 
 // checkXSRF refuses a multipart upload that does not carry the header
@@ -2193,7 +2207,7 @@ func (s *Server) download(w http.ResponseWriter, r *http.Request, rest string) {
 
 	for _, a := range s.attachments {
 		if a.PageID == pageID && a.Filename == filename {
-			w.Header().Set("Content-Type", "application/octet-stream")
+			w.Header().Set("Content-Type", a.mediaType())
 			_, _ = w.Write(a.Data)
 			return
 		}
@@ -2214,7 +2228,7 @@ func (s *Server) downloadByID(w http.ResponseWriter, r *http.Request, pageID, at
 
 	for _, a := range s.attachments {
 		if a.PageID == pageID && a.ID == attachID {
-			w.Header().Set("Content-Type", "application/octet-stream")
+			w.Header().Set("Content-Type", a.mediaType())
 			_, _ = w.Write(a.Data)
 			return
 		}
@@ -2909,6 +2923,8 @@ func (s *Server) attachmentsV2(w http.ResponseWriter, r *http.Request, collectio
 			"title":        a.Filename,
 			"comment":      a.Comment,
 			"downloadLink": downloadLink(a.PageID, a.Filename),
+			"mediaType":    a.mediaType(),
+			"fileSize":     len(a.Data),
 		})
 	}
 

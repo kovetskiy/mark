@@ -824,22 +824,31 @@ func TestAFailedDownloadWritesNothing(t *testing.T) {
 	for _, test := range []struct {
 		name, body string
 		status     int
-		login      bool
+		headers    http.Header
+		want       error
 	}{
-		{"not found", `{}`, http.StatusNotFound, false},
-		{"login page", `<html>Log in</html>`, http.StatusOK, true},
-		{"empty login page", "", http.StatusOK, true},
+		{"not found", `{}`, http.StatusNotFound, nil, nil},
+		{"login page", `<html>Log in</html>`, http.StatusOK, http.Header{
+			"Content-Type": {"text/html"}, "X-Seraph-LoginReason": {"AUTHENTICATED_FAILED"},
+		}, confluence.ErrLoginPage},
+		{"empty login page", "", http.StatusOK, http.Header{
+			"Content-Type": {"text/html"}, "X-Seraph-LoginReason": {"AUTHENTICATED_FAILED"},
+		}, confluence.ErrLoginPage},
+		{"an identity provider's page", `<html>Sign in</html>`, http.StatusOK, http.Header{
+			"Content-Type": {"text/html; charset=UTF-8"},
+		}, confluence.ErrLoginPage},
+		// Longer than net/http buffers before it sends a body in chunks, so
+		// the answer gives no length and the mismatch shows only at its end.
+		{"a body longer than the attachment", strings.Repeat("x", 4096), http.StatusOK, http.Header{
+			"Content-Type": {"image/png"},
+		}, confluence.ErrAttachmentSizeMismatch},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			server, id := exportPage(t, `<p><ac:image><ri:attachment ri:filename="first.png"/></ac:image>`+
 				`<ac:image><ri:attachment ri:filename="second.png"/></ac:image></p>`)
 			server.AddAttachmentData(id, "first.png", []byte("first"))
 			server.AddAttachmentData(id, "second.png", []byte("second"))
-			if test.login {
-				server.SetFailHeaders(http.Header{
-					"Content-Type": {"text/html"}, "X-Seraph-LoginReason": {"AUTHENTICATED_FAILED"},
-				})
-			}
+			server.SetFailHeaders(test.headers)
 			server.SetFail(func(r *http.Request) (int, string, bool) {
 				return test.status, test.body, strings.HasSuffix(r.URL.Path, "/second.png")
 			})
@@ -849,8 +858,8 @@ func TestAFailedDownloadWritesNothing(t *testing.T) {
 				Connection: ConnectionConfig{BaseURL: server.URL, Username: "user", Password: "token"}, PageID: id,
 				Output: filepath.Join(dir, "page.md"),
 			})
-			if test.login {
-				assert.ErrorIs(t, err, confluence.ErrLoginPage)
+			if test.want != nil {
+				assert.ErrorIs(t, err, test.want)
 			} else {
 				assert.Error(t, err)
 			}

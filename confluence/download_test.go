@@ -2,10 +2,13 @@ package confluence
 
 import (
 	"bytes"
+	"compress/gzip"
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -95,6 +98,11 @@ func TestDownloadAttachment(t *testing.T) {
 	attachments, err := api.GetAttachments(context.Background(), page.ID)
 	require.NoError(t, err)
 	require.Len(t, attachments, 1)
+
+	assert.Equal(t, "image/png", attachments[0].Extensions.MediaType)
+	assert.Equal(t, "image/png", attachments[0].Metadata.MediaType)
+	require.NotNil(t, attachments[0].Extensions.FileSize)
+	assert.Equal(t, int64(len("content")), *attachments[0].Extensions.FileSize)
 
 	var got bytes.Buffer
 	require.NoError(t, api.DownloadAttachment(context.Background(), page.ID, attachments[0], &got))
@@ -255,17 +263,18 @@ func TestDownloadAttachmentWithoutCredentials(t *testing.T) {
 // TestDownloadAttachmentRedirects: a download may be redirected, to another
 // path or, on Cloud, to a media host, and may be of an attachment named
 // login.action; one redirected to Seraph's /login.action, on any host and with
-// no Seraph headers, is a login page.
+// no Seraph headers, is a login page, and so is one redirected to an identity
+// provider that answers in HTML for an attachment recorded as a PNG.
 func TestDownloadAttachmentRedirects(t *testing.T) {
 	for _, test := range []struct {
-		name, link, target string
-		login              bool
+		name, link, target, evidence string
 	}{
-		{"same host", "/redirect", "/download/attachments/PAGE/a.png", false},
-		{"another host", "/redirect", "OTHER/download/attachments/PAGE/a.png", false},
-		{"login.action attachment", "/download/attachments/PAGE/login.action", "", false},
-		{"header-free login redirect", "/redirect", "/login.action?os_destination=x", true},
-		{"login redirect to another host", "/redirect", "OTHER/login.action", true},
+		{"same host", "/redirect", "/download/attachments/PAGE/a.png", ""},
+		{"another host", "/redirect", "OTHER/download/attachments/PAGE/a.png", ""},
+		{"login.action attachment", "/download/attachments/PAGE/login.action", "", ""},
+		{"header-free login redirect", "/redirect", "/login.action?os_destination=x", "redirected to /login.action"},
+		{"login redirect to another host", "/redirect", "OTHER/login.action", "redirected to /login.action"},
+		{"identity provider on another host", "/redirect", "OTHER/idp/sso", "Confluence records as image/png"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			server := confluencetest.New(t)
@@ -282,17 +291,20 @@ func TestDownloadAttachmentRedirects(t *testing.T) {
 				if r.URL.Path == "/redirect" {
 					return http.StatusFound, "", true
 				}
-				return http.StatusOK, "<html>Log in</html>", r.URL.Path == "/login.action"
+				return http.StatusOK, "<html>Log in</html>", r.URL.Path == "/login.action" || r.URL.Path == "/idp/sso"
 			})
-			info := downloadInfo(page.ID, "a.png")
-			info.Links.Download = strings.ReplaceAll(test.link, "PAGE", page.ID)
+			api := NewAPI(server.URL, Options{Username: "user", Password: "token"})
+			attachments, err := api.GetAttachments(context.Background(), page.ID)
+			require.NoError(t, err)
+			info := attachments[0]
+			require.Equal(t, "a.png", info.Filename)
+			info.Links.Context, info.Links.Download = "", strings.ReplaceAll(test.link, "PAGE", page.ID)
 
 			var got bytes.Buffer
-			err := NewAPI(server.URL, Options{Username: "user", Password: "token"}).
-				DownloadAttachment(context.Background(), page.ID, info, &got)
-			if test.login {
+			err = api.DownloadAttachment(context.Background(), page.ID, info, &got)
+			if test.evidence != "" {
 				require.ErrorIs(t, err, ErrLoginPage)
-				assert.Contains(t, err.Error(), "redirected to /login.action")
+				assert.Contains(t, err.Error(), test.evidence)
 				assert.Empty(t, got.Bytes())
 				return
 			}
@@ -539,3 +551,199 @@ func observeDownload(api *API) *downloadBody {
 type downloadWriter func([]byte) (int, error)
 
 func (w downloadWriter) Write(p []byte) (int, error) { return w(p) }
+
+// recordedDownload lists one attachment, a.png, with record merged into what
+// the listing says of it, and answers its download with serve. It returns the
+// attachment as listed and an API for the server.
+func recordedDownload(t *testing.T, record map[string]any, serve http.HandlerFunc) (AttachmentInfo, *API) {
+	t.Helper()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/rest/api/content/1/child/attachment" {
+			serve(w, r)
+			return
+		}
+		attachment := map[string]any{
+			"id": "att1", "title": "a.png",
+			"_links": map[string]any{"download": "/download/attachments/1/a.png"},
+		}
+		maps.Copy(attachment, record)
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{"results": []any{attachment}, "size": 1})
+	}))
+	t.Cleanup(server.Close)
+
+	api := NewAPI(server.URL, Options{Username: "user", Password: "token"})
+	attachments, err := api.GetAttachments(context.Background(), "1")
+	require.NoError(t, err)
+	require.Len(t, attachments, 1)
+
+	return attachments[0], api
+}
+
+// record is what Confluence's v1 listing says of a file of mediaType and
+// size, in both places it says it.
+func record(mediaType string, size int) map[string]any {
+	return map[string]any{
+		"metadata":   map[string]any{"mediaType": mediaType, "comment": ""},
+		"extensions": map[string]any{"mediaType": mediaType, "fileSize": size},
+	}
+}
+
+// answer serves body as contentType, with no Seraph headers.
+func answer(contentType, body string) http.HandlerFunc {
+	return func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", contentType)
+		_, _ = w.Write([]byte(body))
+	}
+}
+
+// TestDownloadAttachmentAgainstTheRecord: an identity provider or a proxy
+// that answers a download with its login form, on any host and with nothing
+// of Seraph about it, answers in HTML for an attachment Confluence records as
+// something else; and a body that is not the size Confluence records is not
+// the attachment.
+func TestDownloadAttachmentAgainstTheRecord(t *testing.T) {
+	const png = "\x89PNG-image"
+	idp := httptest.NewServer(answer("text/html; charset=UTF-8", "<html>Sign in</html>"))
+	t.Cleanup(idp.Close)
+	media := httptest.NewServer(answer("image/png", png))
+	t.Cleanup(media.Close)
+
+	t.Run("an identity provider on another host", func(t *testing.T) {
+		info, api := recordedDownload(t, record("image/png", len(png)), func(w http.ResponseWriter, r *http.Request) {
+			http.Redirect(w, r, idp.URL+"/saml/sso", http.StatusFound)
+		})
+		var got bytes.Buffer
+		err := api.DownloadAttachment(context.Background(), "1", info, &got)
+		require.ErrorIs(t, err, ErrLoginPage)
+		assert.Contains(t, err.Error(), "an HTML Content-Type for an attachment Confluence records as image/png")
+		assert.Contains(t, err.Error(), idp.URL+"/saml/sso")
+		assert.Contains(t, err.Error(), "SSO or a proxy")
+		assert.Empty(t, got.Bytes())
+	})
+
+	t.Run("a proxy on the same host", func(t *testing.T) {
+		info, api := recordedDownload(t, record("image/png", len(png)), answer("application/xhtml+xml", "<html/>"))
+		var got bytes.Buffer
+		err := api.DownloadAttachment(context.Background(), "1", info, &got)
+		require.ErrorIs(t, err, ErrLoginPage)
+		assert.Empty(t, got.Bytes())
+	})
+
+	t.Run("an HTML attachment", func(t *testing.T) {
+		const page = "<html>An attachment</html>"
+		info, api := recordedDownload(t, record("text/html", len(page)), answer("text/html;charset=UTF-8", page))
+		var got bytes.Buffer
+		require.NoError(t, api.DownloadAttachment(context.Background(), "1", info, &got))
+		assert.Equal(t, page, got.String())
+	})
+
+	t.Run("a media host serving the attachment", func(t *testing.T) {
+		info, api := recordedDownload(t, record("image/png", len(png)), func(w http.ResponseWriter, r *http.Request) {
+			http.Redirect(w, r, media.URL+"/file/att1/binary", http.StatusFound)
+		})
+		var got bytes.Buffer
+		require.NoError(t, api.DownloadAttachment(context.Background(), "1", info, &got))
+		assert.Equal(t, png, got.String())
+	})
+
+	t.Run("a compressed answer", func(t *testing.T) {
+		info, api := recordedDownload(t, record("image/png", len(png)), func(w http.ResponseWriter, r *http.Request) {
+			assert.Contains(t, r.Header.Get("Accept-Encoding"), "gzip")
+			w.Header().Set("Content-Type", "image/png")
+			w.Header().Set("Content-Encoding", "gzip")
+			compressed := gzip.NewWriter(w)
+			_, _ = compressed.Write([]byte(png))
+			_ = compressed.Close()
+		})
+		var got bytes.Buffer
+		require.NoError(t, api.DownloadAttachment(context.Background(), "1", info, &got))
+		assert.Equal(t, png, got.String())
+	})
+
+	t.Run("a Content-Length that is not the recorded size", func(t *testing.T) {
+		info, api := recordedDownload(t, record("image/png", len(png)+1), answer("image/png", png))
+		body := observeDownload(api)
+		var got bytes.Buffer
+		err := api.DownloadAttachment(context.Background(), "1", info, &got)
+		require.ErrorIs(t, err, ErrAttachmentSizeMismatch)
+		assert.NotErrorIs(t, err, ErrLoginPage)
+		assert.Contains(t, err.Error(), fmt.Sprintf("%d bytes where Confluence records %d", len(png), len(png)+1))
+		assert.Empty(t, got.Bytes())
+		assert.Zero(t, body.read)
+	})
+
+	t.Run("an HTML answer that is not the recorded size", func(t *testing.T) {
+		recorded := map[string]any{"extensions": map[string]any{"fileSize": len(png)}}
+		info, api := recordedDownload(t, recorded, answer("text/html", "<html>Sign in</html>"))
+		var got bytes.Buffer
+		err := api.DownloadAttachment(context.Background(), "1", info, &got)
+		require.ErrorIs(t, err, ErrLoginPage)
+		assert.Empty(t, got.Bytes())
+	})
+
+	t.Run("a body without a length that is not the recorded size", func(t *testing.T) {
+		long := strings.Repeat("x", 4096)
+		info, api := recordedDownload(t, record("image/png", len(long)-1), func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Content-Type", "image/png")
+			_, _ = w.Write([]byte(long[:10]))
+			w.(http.Flusher).Flush()
+			_, _ = w.Write([]byte(long[10:]))
+		})
+		var got bytes.Buffer
+		err := api.DownloadAttachment(context.Background(), "1", info, &got)
+		require.ErrorIs(t, err, ErrAttachmentSizeMismatch)
+		assert.Contains(t, err.Error(), fmt.Sprintf("%d bytes where Confluence records %d", len(long), len(long)-1))
+	})
+
+	t.Run("nothing recorded", func(t *testing.T) {
+		info, api := recordedDownload(t, nil, func(w http.ResponseWriter, r *http.Request) {
+			http.Redirect(w, r, idp.URL+"/saml/sso", http.StatusFound)
+		})
+		var got bytes.Buffer
+		require.NoError(t, api.DownloadAttachment(context.Background(), "1", info, &got))
+		assert.Equal(t, "<html>Sign in</html>", got.String())
+	})
+
+	t.Run("only metadata's media type", func(t *testing.T) {
+		recorded := map[string]any{"metadata": map[string]any{"mediaType": "image/png"}}
+		info, api := recordedDownload(t, recorded, answer("text/html", "<html>Sign in</html>"))
+		require.ErrorIs(t, api.DownloadAttachment(context.Background(), "1", info, io.Discard), ErrLoginPage)
+	})
+
+	t.Run("a size that is not a number", func(t *testing.T) {
+		recorded := map[string]any{"extensions": map[string]any{"mediaType": "image/png", "fileSize": "big"}}
+		info, api := recordedDownload(t, recorded, answer("image/png", png))
+		var got bytes.Buffer
+		require.NoError(t, api.DownloadAttachment(context.Background(), "1", info, &got))
+		assert.Equal(t, png, got.String())
+	})
+}
+
+// TestAttachmentExtensions: what Confluence records about a file is read where
+// it is what Confluence gives, and left out otherwise, without failing the
+// listing it is in.
+func TestAttachmentExtensions(t *testing.T) {
+	size := func(n int64) *int64 { return &n }
+	for _, test := range []struct {
+		name, json string
+		want       AttachmentExtensions
+	}{
+		{"both", `{"mediaType":"image/png","fileSize":42,"comment":"c"}`, AttachmentExtensions{"image/png", size(42)}},
+		{"empty file", `{"mediaType":"text/plain","fileSize":0}`, AttachmentExtensions{"text/plain", size(0)}},
+		{"neither", `{}`, AttachmentExtensions{}},
+		{"null size", `{"fileSize":null}`, AttachmentExtensions{}},
+		{"size as text", `{"fileSize":"42"}`, AttachmentExtensions{}},
+		{"fractional size", `{"fileSize":4.2}`, AttachmentExtensions{}},
+		{"negative size", `{"fileSize":-1}`, AttachmentExtensions{}},
+		{"media type not text", `{"mediaType":7,"fileSize":3}`, AttachmentExtensions{"", size(3)}},
+		{"not an object", `"x"`, AttachmentExtensions{}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			var info AttachmentInfo
+			require.NoError(t, json.Unmarshal([]byte(`{"title":"a.png","extensions":`+test.json+`}`), &info))
+			assert.Equal(t, "a.png", info.Filename)
+			assert.Equal(t, test.want, info.Extensions)
+		})
+	}
+}

@@ -378,11 +378,72 @@ type AttachmentInfo struct {
 	ID       string `json:"id"`
 	Metadata struct {
 		Comment string `json:"comment"`
+		// MediaType is the media type Confluence records for the file, as
+		// v1 gives it under metadata; Extensions.MediaType is the same,
+		// and is read first.
+		MediaType string `json:"mediaType"`
 	} `json:"metadata"`
-	Links struct {
+	// Extensions is what Confluence records about the file itself.
+	// DownloadAttachment checks an answer against it.
+	Extensions AttachmentExtensions `json:"extensions"`
+	Links      struct {
 		Context  string `json:"context"`
 		Download string `json:"download"`
 	} `json:"_links"`
+}
+
+// AttachmentExtensions is what Confluence records about an attachment's file:
+// v1 gives it under extensions, and v2 at the top level of the attachment.
+// A field Confluence did not give is left empty, and nothing is checked
+// against it.
+type AttachmentExtensions struct {
+	// MediaType is the file's media type, such as "image/png".
+	MediaType string `json:"mediaType"`
+	// FileSize is the file's size in bytes, or nil when Confluence did not
+	// give one.
+	FileSize *int64 `json:"fileSize"`
+}
+
+// UnmarshalJSON reads the extensions, leaving out a field that is not what
+// Confluence gives rather than failing the listing it is in: the listing is
+// what publishing reads to tell which attachments changed.
+func (e *AttachmentExtensions) UnmarshalJSON(data []byte) error {
+	var raw struct {
+		MediaType json.RawMessage `json:"mediaType"`
+		FileSize  json.RawMessage `json:"fileSize"`
+	}
+	// Extensions that are not an object record nothing.
+	*e = AttachmentExtensions{}
+	if json.Unmarshal(data, &raw) == nil {
+		*e = extensionsOf(raw.MediaType, raw.FileSize)
+	}
+
+	return nil
+}
+
+// extensionsOf reads a media type and a file size as Confluence gives them,
+// leaving out either one that is missing or not of its type.
+func extensionsOf(mediaType, fileSize json.RawMessage) AttachmentExtensions {
+	var extensions AttachmentExtensions
+	_ = json.Unmarshal(mediaType, &extensions.MediaType)
+
+	var size int64
+	if len(fileSize) > 0 && string(fileSize) != "null" && json.Unmarshal(fileSize, &size) == nil && size >= 0 {
+		extensions.FileSize = &size
+	}
+
+	return extensions
+}
+
+// recordedMediaType is the media type Confluence records for the attachment,
+// lowercased and without parameters, or "" when it records none.
+func (info AttachmentInfo) recordedMediaType() string {
+	recorded := info.Extensions.MediaType
+	if recorded == "" {
+		recorded = info.Metadata.MediaType
+	}
+
+	return contentMediaType(http.Header{"Content-Type": {recorded}})
 }
 
 type Label struct {
