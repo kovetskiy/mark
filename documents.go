@@ -50,7 +50,8 @@ type Document struct {
 	// path. It is what finds the document's page again on the next run, so
 	// it has to stay the same from run to run: a temporary directory in it
 	// gives every run new keys and a page the manifest never matches. Empty
-	// is Path.
+	// is Path. A key starting with "documents:" is refused: that is how
+	// manifest.DocumentDirectoryKey spells a directory's.
 	Key string
 
 	// Source names the file the document was made from, such as a template,
@@ -179,6 +180,13 @@ func indexInputs(files []string, documents []Document) (*runInputs, error) {
 		}
 
 		key := manifest.Key(in.key)
+		if manifest.IsDocumentDirectoryKey(key) {
+			return nil, fmt.Errorf(
+				"Document %s has the manifest key %q, which is spelled like the key of a directory of documents: "+
+					"give it a Key that does not start with \"documents:\"",
+				in.file, key,
+			)
+		}
 		if other, taken := r.byKey[key]; taken {
 			return nil, fmt.Errorf(
 				"Document %s has the manifest key %q, which %s already has: each needs a key of its own",

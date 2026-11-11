@@ -679,6 +679,13 @@ func DocumentDirectoryKey(scope, directory string) string {
 	return documentDirectoryPrefix + url.PathEscape(scope) + "/" + url.PathEscape(Key(directory))
 }
 
+// IsDocumentDirectoryKey reports whether key is spelled as DocumentDirectoryKey
+// spells one, and so would be taken for a directory's if a document were
+// recorded under it.
+func IsDocumentDirectoryKey(key string) bool {
+	return isDocumentDirectory(Key(key))
+}
+
 // isDocumentDirectory reports whether a recorded key is one
 // DocumentDirectoryKey made.
 func isDocumentDirectory(path string) bool {
