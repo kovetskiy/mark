@@ -176,9 +176,15 @@ func (r *publishRun) pairSimilar(ctx context.Context, space, key string) (*simil
 
 		// A page elsewhere is not this manifest's to publish over, and
 		// compared, it could take a match from a gone key of this space.
-		inSpace, _, err := pageInSpace(ctx, r.api, pg, space)
+		inSpace, known, err := pageInSpace(ctx, r.api, pg, space)
 		if err != nil {
 			return nil, err
+		}
+		if !known {
+			log.Info().Msgf("%s is not compared for a rename: mark could not tell which space its page %s is in",
+				key, pg.ID)
+
+			continue
 		}
 		if !inSpace {
 			log.Info().Msgf("%s is not compared for a rename: its page %s is in %s, not space %q",

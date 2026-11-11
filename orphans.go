@@ -91,13 +91,18 @@ func handleOrphans(
 					return err
 				}
 				if located != nil {
-					var inSpace bool
-					// A page whose space cannot be told is left alone too.
-					inSpace, _, err = pageInSpace(ctx, api, located, space)
+					var inSpace, known bool
+					inSpace, known, err = pageInSpace(ctx, api, located, space)
 					if err != nil {
 						return err
 					}
-					if !inSpace {
+					switch {
+					case !known:
+						// Left alone too: removing it could reach outside the space.
+						elsewhere[candidate.Path] = fmt.Sprintf(
+							"mark could not tell which space it is in, and space %q's page manifest records it", space,
+						)
+					case !inSpace:
 						elsewhere[candidate.Path] = fmt.Sprintf(
 							"it is in %s, not space %q, whose page manifest records it", pageSpace(located), space,
 						)

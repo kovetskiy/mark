@@ -187,7 +187,8 @@ document is published by its title as though nothing had been recorded for it.
 The run warns about it with the `other-space` kind; a page `--on-orphan` would
 have removed is instead listed under `orphans` with a `reason`. The space of a
 recorded page is part of reading it: a page whose space mark cannot tell stops
-the run rather than being passed over and published a second time.
+the run rather than being passed over and published a second time, and
+`--on-orphan` leaves such a page alone and says why.
 
 ### What it never does
 
