@@ -175,55 +175,50 @@ func handleOrphans(
 					survivors[glob] = left
 				}
 
-				if left > 0 {
-					acting = append(acting, candidate)
+				if left == 0 {
+					var reason string
+					if listedScope(config, glob) {
+						reason = fmt.Sprintf(
+							"no key of %s tracked in space %q before this run is published or named in DocumentKeys, "+
+								"which a failed render or a bad key list looks exactly like", glob, space,
+						)
+					} else {
+						reason = fmt.Sprintf("nothing under %s was published in space %q in this run", glob, space)
+					}
+					log.Warn().Msgf("space %q: %s, so %s's page is left alone", space, reason, candidate.Path)
+
+					if !config.Mode.readOnly() {
+						reportKept(results, candidate, reason)
+					}
 
 					continue
 				}
 
-				var reason string
-				if listedScope(config, glob) {
-					reason = fmt.Sprintf(
-						"no key of %s tracked in space %q before this run is published or named in DocumentKeys, "+
-							"which a failed render or a bad key list looks exactly like", glob, space,
-					)
-				} else {
-					reason = fmt.Sprintf("nothing under %s was published in space %q in this run", glob, space)
-				}
-				log.Warn().Msgf("space %q: %s, so %s's page is left alone", space, reason, candidate.Path)
+				// A manifest speaks for its own space's pages alone, however one
+				// of its entries came to name a page elsewhere. The entry is
+				// kept, so that each run reports the page again until somebody
+				// corrects it.
+				if reason, ok := elsewhere[candidate.Path]; ok {
+					log.Warn().Msgf("page %q (%s) is left alone: %s", candidate.Title, candidate.PageID, reason)
 
-				if !config.Mode.readOnly() {
-					reportKept(results, candidate, reason)
-				}
-			}
-
-			// A manifest speaks for its own space's pages alone, however one of
-			// its entries came to name a page elsewhere. The entry is kept, so
-			// that each run reports the page again until somebody corrects it.
-			ours := make([]page.Orphan, 0, len(acting))
-			for _, candidate := range acting {
-				reason, ok := elsewhere[candidate.Path]
-				if !ok {
-					ours = append(ours, candidate)
+					if !config.Mode.readOnly() {
+						reportKept(results, candidate, reason)
+					}
 
 					continue
 				}
 
-				log.Warn().Msgf("page %q (%s) is left alone: %s", candidate.Title, candidate.PageID, reason)
+				acting = append(acting, candidate)
 			}
 
 			var kept map[string]string
-			handled, kept, err = page.HandleOrphansKeeping(ctx, api, action, ours, config.Mode.readOnly())
+			handled, kept, err = page.HandleOrphansKeeping(ctx, api, action, acting, config.Mode.readOnly())
 			if err != nil {
 				return err
 			}
-			if kept == nil {
-				kept = make(map[string]string, len(elsewhere))
-			}
-			maps.Copy(kept, elsewhere)
 
 			if !config.Mode.readOnly() {
-				for _, candidate := range acting {
+				for _, candidate := range candidates {
 					if reason, ok := kept[candidate.Path]; ok {
 						reportKept(results, candidate, reason)
 					}
