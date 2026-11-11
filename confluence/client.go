@@ -686,8 +686,7 @@ func loginEvidence(req *http.Request, resp *http.Response, mediaType string, dow
 		final = resp.Request.URL
 	}
 
-	// An attachment can be named login.action; only a redirect there is one.
-	if final.Path != req.URL.Path && strings.HasSuffix(final.Path, "/login.action") {
+	if redirectedToLogin(req, resp) {
 		return "redirected to /login.action", true
 	}
 
@@ -719,6 +718,37 @@ func loginEvidence(req *http.Request, resp *http.Response, mediaType string, dow
 	}
 
 	return "", false
+}
+
+// redirectedToLogin says whether the redirects that led to resp went through
+// Seraph's /login.action, at the end or on the way to an identity provider's
+// login form. An attachment can itself be named login.action, and a proxy or
+// a presigned URL may move it without renaming it, so for a request of a path
+// that ends there no redirect says anything.
+func redirectedToLogin(req *http.Request, resp *http.Response) bool {
+	if isLoginAction(req.URL.Path) {
+		return false
+	}
+
+	for hop := resp.Request; hop != nil && hop != req; {
+		if hop.URL != nil && isLoginAction(hop.URL.Path) {
+			return true
+		}
+		if hop.Response == nil {
+			break
+		}
+		hop = hop.Response.Request
+	}
+
+	return false
+}
+
+// isLoginAction says whether a path is Seraph's /login.action, with or
+// without the ;jsessionid= Tomcat may put after it.
+func isLoginAction(path string) bool {
+	slash := strings.LastIndex(path, "/")
+	last, _, _ := strings.Cut(path[slash+1:], ";")
+	return slash >= 0 && last == "login.action"
 }
 
 // contentMediaType is the media type of a Content-Type header, lowercased and
