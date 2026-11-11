@@ -129,3 +129,22 @@ func TestReportFileFlagRefusesAnUnwritablePath(t *testing.T) {
 	require.ErrorContains(t, err, "unable to create --report-file")
 	assert.Zero(t, server.CountRequests("POST", "/content"), "nothing is published")
 }
+
+// TestReportFileFlagEmptiedWhenTheRunIsRefused: a run refused for its
+// settings, here for want of a base URL, still empties the file, so that
+// the report an earlier run left there is not read as this one's.
+func TestReportFileFlagEmptiedWhenTheRunIsRefused(t *testing.T) {
+	noDefaultConfig(t)
+	_, document := reportFileFixture(t)
+
+	reportFile := filepath.Join(t.TempDir(), "report.json")
+	require.NoError(t, os.WriteFile(reportFile, []byte(`{"pages": []}`), 0o600))
+
+	_, _, err := runMark(t, "--color", "never", "-u", "user", "-p", "token", "publish",
+		"--output-format", "json", "--report-file", reportFile, "--files", document)
+	require.ErrorContains(t, err, "base URL")
+
+	written, err := os.ReadFile(reportFile)
+	require.NoError(t, err)
+	assert.Empty(t, written)
+}

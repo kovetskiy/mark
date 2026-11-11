@@ -294,6 +294,20 @@ func SetUpLogging(cmd *cli.Command) error {
 
 // RunPublish is the action of "mark publish".
 func RunPublish(ctx context.Context, cmd *cli.Command) (err error) {
+	// Opened, and emptied, first, so that a report left by an earlier run is
+	// never read as this one's, even when this one is refused for its settings.
+	reportFile, err := createReportFile(cmd.String("report-file"))
+	if err != nil {
+		return err
+	}
+	if reportFile != nil {
+		defer func() {
+			if closeErr := reportFile.Close(); closeErr != nil && err == nil {
+				err = fmt.Errorf("unable to write --report-file: %w", closeErr)
+			}
+		}()
+	}
+
 	creds, err := GetCredentials(
 		ctx,
 		cmd.String("username"),
@@ -324,20 +338,6 @@ func RunPublish(ctx context.Context, cmd *cli.Command) (err error) {
 	outputs, err := imageOutputs(cmd)
 	if err != nil {
 		return err
-	}
-
-	// Opened, and emptied, before the run, so that a report left by an
-	// earlier run is never read as this one's.
-	reportFile, err := createReportFile(cmd.String("report-file"))
-	if err != nil {
-		return err
-	}
-	if reportFile != nil {
-		defer func() {
-			if closeErr := reportFile.Close(); closeErr != nil && err == nil {
-				err = fmt.Errorf("unable to write --report-file: %w", closeErr)
-			}
-		}()
 	}
 
 	config := mark.Config{
