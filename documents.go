@@ -74,8 +74,8 @@ type Document struct {
 	// os.Root, from os.OpenRoot, also keeps out a link swapped in while the
 	// run reads.
 	//
-	// A d2 diagram in a document with an FS may not name a local file; d2
-	// reads those from disk itself.
+	// A d2 diagram's imports and local images are read from FS too, under the
+	// same rules.
 	FS fs.FS
 }
 

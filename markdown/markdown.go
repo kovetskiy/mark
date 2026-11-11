@@ -473,15 +473,13 @@ func (c *ConfluenceExtension) linkRenderer() html.Extension {
 	return r
 }
 
-// diskPath is the document's path for what reads beside it from disk by
-// itself, d2 above all: none when its files are in an fs.FS, so that d2
-// refuses a local reference rather than reading one from disk.
-func (c *ConfluenceExtension) diskPath() string {
-	if c.Options.Root.FS() != nil {
-		return ""
-	}
+// fencedCodeBlockRenderer renders fenced code blocks and the diagrams in
+// them, a d2 diagram reading what it names from the document's root.
+func (c *ConfluenceExtension) fencedCodeBlockRenderer() html.Extension {
+	r := crenderer.NewConfluenceFencedCodeBlockRenderer(c.ctx, c.Stdlib, c, c.Options.diagramConfig(), c.Path).(*crenderer.ConfluenceFencedCodeBlockRenderer)
+	r.Root = c.Options.Root
 
-	return c.Path
+	return r
 }
 
 // columnWidthsTransformer is the Column-Widths transformer for the document,
@@ -566,7 +564,7 @@ func (c *ConfluenceExtension) RendererOptions(cfg *html.Config) []html.Option {
 
 		// Core renderers (excluding blockquote and text which are replaced below)
 		crenderer.NewConfluenceCodeBlockRenderer(c.Stdlib),
-		crenderer.NewConfluenceFencedCodeBlockRenderer(c.ctx, c.Stdlib, c, c.Options.diagramConfig(), c.diskPath()),
+		c.fencedCodeBlockRenderer(),
 		crenderer.NewConfluenceHeadingRenderer(c.Stdlib, c.Options.DropH1),
 		c.imageRenderer(),
 		crenderer.NewConfluenceParagraphRenderer(),

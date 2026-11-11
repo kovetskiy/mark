@@ -3,6 +3,7 @@ package d2
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -10,8 +11,10 @@ import (
 	"io"
 	"io/fs"
 	"math"
+	"mime"
+	"net/http"
 	"net/url"
-	"os"
+	"path"
 	"path/filepath"
 	"regexp"
 	"strconv"
@@ -122,6 +125,13 @@ type Options struct {
 	// and the images an SVG references are relative to; empty or "-" for none.
 	InputPath string
 
+	// Root is where InputPath is and what the diagram names is read from. The
+	// zero Root is the disk. With an fs.FS, InputPath is a path inside it,
+	// imports and local images are read through Root and held to its
+	// boundary, and the local images a PNG references are inlined too, since
+	// the browser drawing it has no file system to read them from.
+	Root attachment.Root
+
 	// BundleRemote lets a diagram inline the remote images it references, which
 	// are otherwise refused: an SVG carries them, and a PNG is drawn by a
 	// browser that loads nothing from the network.
@@ -133,16 +143,16 @@ type Options struct {
 func Render(ctx context.Context, title string, d2Diagram []byte, options Options) (attachment.Attachment, error) {
 	switch options.Output {
 	case imageformat.PNG, "":
-		return renderPNGAttachment(ctx, options.Browser, title, d2Diagram, options.InputPath, options.Scale, options.BundleRemote)
+		return renderPNGAttachment(ctx, options.Browser, title, d2Diagram, options.document(), options.Scale, options.BundleRemote)
 	case imageformat.SVG:
-		return renderSVGAttachment(ctx, title, d2Diagram, options.InputPath, options.Scale, options.BundleRemote)
+		return renderSVGAttachment(ctx, title, d2Diagram, options.document(), options.Scale, options.BundleRemote)
 	default:
 		return attachment.Attachment{}, fmt.Errorf("unknown d2 output %q: expected png or svg", options.Output)
 	}
 }
 
 // renderPNGAttachment draws a diagram as a PNG, rasterised in browser.
-func renderPNGAttachment(ctx context.Context, browser *chrome.Browser, title string, d2Diagram []byte, inputPath string, scale float64, bundleRemote bool) (attachment.Attachment, error) {
+func renderPNGAttachment(ctx context.Context, browser *chrome.Browser, title string, d2Diagram []byte, doc document, scale float64, bundleRemote bool) (attachment.Attachment, error) {
 	// Before the layout, which can take seconds, rather than after it.
 	if browser == nil {
 		return attachment.Attachment{}, chrome.ErrNoBrowser
@@ -154,7 +164,7 @@ func renderPNGAttachment(ctx context.Context, browser *chrome.Browser, title str
 	layoutCtx = d2log.WithDefault(layoutCtx)
 	defer cancel()
 
-	imports := &importFS{inputPath: inputPath}
+	imports := &importFS{doc: doc}
 
 	out, _, _, err := renderSVG(layoutCtx, d2Diagram, imports)
 	if err != nil {
@@ -163,8 +173,20 @@ func renderPNGAttachment(ctx context.Context, browser *chrome.Browser, title str
 
 	// The browser loads nothing from the network, so a remote image is
 	// fetched here, by the same rule and the same bundler as for an SVG, or the
-	// diagram is refused rather than drawn without it.
-	remote, err := remoteReferences(out, bundleRemote)
+	// diagram is refused rather than drawn without it. Nor does it see the
+	// document's fs.FS, so a local image there is inlined first; on disk one
+	// is left as it always has been.
+	var remote bool
+	var images []byte
+	if doc.inFS() {
+		var local bool
+		local, remote, err = references(out, doc, bundleRemote)
+		if err == nil && local {
+			out, images, err = bundleLocalIn(doc, out)
+		}
+	} else {
+		remote, err = remoteReferences(out, bundleRemote)
+	}
 	if err != nil {
 		return attachment.Attachment{}, fmt.Errorf("diagram %q: %w", title, err)
 	}
@@ -192,8 +214,8 @@ func renderPNGAttachment(ctx context.Context, browser *chrome.Browser, title str
 	// changes the checksum; a diagram that imports nothing keeps the one it
 	// had. A fetched image can change without the source changing, so when
 	// there is one the drawing that carries it is part of what identifies the
-	// PNG too.
-	identity := []io.Reader{bytes.NewReader(d2Diagram), bytes.NewReader(scaleAsBytes), bytes.NewReader(imports.read)}
+	// PNG too. So is every local image inlined from the document's fs.FS.
+	identity := []io.Reader{bytes.NewReader(d2Diagram), bytes.NewReader(scaleAsBytes), bytes.NewReader(imports.read), bytes.NewReader(images)}
 	if remote {
 		identity = append(identity, bytes.NewReader(out))
 	}
@@ -230,12 +252,12 @@ func renderPNGAttachment(ctx context.Context, browser *chrome.Browser, title str
 // scale multiplies the size the page displays it at. The file itself is the
 // same drawing whatever that is, so unlike the PNG's the scale is not part of
 // what identifies the attachment.
-func renderSVGAttachment(ctx context.Context, title string, d2Diagram []byte, inputPath string, scale float64, bundleRemote bool) (attachment.Attachment, error) {
+func renderSVGAttachment(ctx context.Context, title string, d2Diagram []byte, doc document, scale float64, bundleRemote bool) (attachment.Attachment, error) {
 	ctx, cancel := context.WithTimeout(ctx, renderTimeout)
 	ctx = d2log.WithDefault(ctx)
 	defer cancel()
 
-	out, width, height, err := renderSVG(ctx, d2Diagram, &importFS{inputPath: inputPath})
+	out, width, height, err := renderSVG(ctx, d2Diagram, &importFS{doc: doc})
 	if err != nil {
 		return attachment.Attachment{}, err
 	}
@@ -253,15 +275,21 @@ func renderSVGAttachment(ctx context.Context, title string, d2Diagram []byte, in
 	// and fetches any URL with a client that follows redirects to anywhere at
 	// all. None of that is reachable through its API, so the only place to say
 	// no is here, before it is asked.
-	local, remote, err := references(out, inputPath, bundleRemote)
+	local, remote, err := references(out, doc, bundleRemote)
 	if err != nil {
 		return attachment.Attachment{}, fmt.Errorf("diagram %q: %w", title, err)
 	}
 
 	// Files first: what a server answers is written into the drawing, and
-	// only the references judged above may be read from disk.
-	if local {
-		out, err = imgbundler.BundleLocal(ctx, bundleLogger{}, inputPath, out, false)
+	// only the references judged above may be read.
+	switch {
+	case local && doc.inFS():
+		out, _, err = bundleLocalIn(doc, out)
+		if err != nil {
+			return attachment.Attachment{}, fmt.Errorf("diagram %q: %w", title, err)
+		}
+	case local:
+		out, err = imgbundler.BundleLocal(ctx, bundleLogger{}, doc.path, out, false)
 		if err != nil {
 			return attachment.Attachment{}, err
 		}
@@ -317,7 +345,7 @@ func renderSVGAttachment(ctx context.Context, title string, d2Diagram []byte, in
 // d2 asks for nested imports through the same Open, already joined to the
 // directory of the file that imports them.
 type importFS struct {
-	inputPath string
+	doc document
 
 	// refused is the first import turned down, kept because d2 passes on
 	// only its message.
@@ -332,7 +360,7 @@ type importFS struct {
 // was given.
 func (f *importFS) Open(name string) (fs.File, error) {
 	// d2 names the import in its own message, which is all it passes on.
-	if err := checkLocal(f.inputPath, name); err != nil {
+	if err := f.doc.check(name); err != nil {
 		if f.refused == nil {
 			f.refused = err
 		}
@@ -340,12 +368,7 @@ func (f *importFS) Open(name string) (fs.File, error) {
 		return nil, err
 	}
 
-	path := name
-	if !filepath.IsAbs(path) {
-		path = filepath.Join(filepath.Dir(f.inputPath), path)
-	}
-
-	file, err := os.Open(path)
+	file, err := f.doc.root.Open(f.doc.join(name))
 	if err != nil {
 		return nil, err
 	}
@@ -356,7 +379,12 @@ func (f *importFS) Open(name string) (fs.File, error) {
 		return nil, err
 	}
 
-	info, err := file.Stat()
+	stat, ok := file.(interface{ Stat() (fs.FileInfo, error) })
+	if !ok {
+		return nil, fmt.Errorf("%s: cannot be described", name)
+	}
+
+	info, err := stat.Stat()
 	if err != nil {
 		return nil, err
 	}
@@ -377,15 +405,94 @@ type importedFile struct {
 func (f importedFile) Stat() (fs.FileInfo, error) { return f.info, nil }
 func (importedFile) Close() error                 { return nil }
 
-// checkLocal holds a file a diagram names to the project of the document at
-// inputPath. The error does not repeat the name: the caller says what the
-// diagram did with it.
-func checkLocal(inputPath, name string) error {
-	if inputPath == "" || inputPath == "-" {
+// document is the document a diagram was written in, and where the files it
+// names are read from.
+type document struct {
+	path string
+	root attachment.Root
+}
+
+func (o Options) document() document {
+	return document{path: o.InputPath, root: o.Root}
+}
+
+// inFS reports whether the document's files are in an fs.FS.
+func (d document) inFS() bool {
+	return d.root.FS() != nil
+}
+
+// check holds a file a diagram names to the document's boundary: its project
+// on disk, or its fs.FS. The error does not repeat the name: the caller says
+// what the diagram did with it.
+func (d document) check(name string) error {
+	if d.path == "" || d.path == "-" {
 		return errors.New("needs the document it was written in to be a file on disk")
 	}
 
-	return attachment.CheckReadable(filepath.Dir(inputPath), name)
+	return d.root.CheckReadable(filepath.Dir(d.path), name)
+}
+
+// join is name read relative to the document's directory. On disk an
+// absolute name is read as written; in an fs.FS check has refused one.
+func (d document) join(name string) string {
+	if filepath.IsAbs(name) {
+		return name
+	}
+
+	return filepath.Join(filepath.Dir(d.path), name)
+}
+
+// bundleLocalIn inlines the local images a drawing references, read from the
+// document's fs.FS, as imgbundler.BundleLocal does from disk; references has
+// checked each. It also returns every image read, each named, for a checksum
+// taken over the source to cover them too.
+func bundleLocalIn(doc document, svg []byte) (out, read []byte, err error) {
+	done := map[string]bool{}
+	for _, match := range image.FindAllSubmatch(svg, -1) {
+		href := string(match[1])
+		unescaped := stdhtml.UnescapeString(href)
+		if done[href] || strings.HasPrefix(href, "data:") || isRemote(unescaped) {
+			continue
+		}
+		done[href] = true
+
+		content, err := doc.root.ReadFile(doc.join(unescaped))
+		if err != nil {
+			return nil, nil, fmt.Errorf("references %q: %w", unescaped, err)
+		}
+
+		read = fmt.Appendf(read, "%s\x00%d\x00", unescaped, len(content))
+		read = append(read, content...)
+
+		inlined := fmt.Sprintf(`<image href="data:%s;base64,%s"`,
+			imageType(unescaped, content), base64.StdEncoding.EncodeToString(content))
+		svg = bytes.ReplaceAll(svg, match[0], []byte(inlined))
+	}
+
+	// The type is guessed from the name, as the bundler guesses it, so what
+	// came of it has to pass the check the drawing did.
+	if err := checkDrawingIsSafe(svg); err != nil {
+		return nil, nil, err
+	}
+
+	return svg, read, nil
+}
+
+// imageType is the media type d2's bundler gives a local image: by its
+// extension, or else by its content, an SVG read as XML or as bytes being an
+// SVG all the same.
+func imageType(name string, content []byte) string {
+	mimeType := mime.TypeByExtension(path.Ext(name))
+	if mimeType == "" {
+		mimeType = http.DetectContentType(content)
+	}
+
+	mimeType = strings.Replace(mimeType, "text/xml", "image/svg+xml", 1)
+	if mimeType == "application/octet-stream" && bytes.Contains(content, []byte("<svg")) {
+		mimeType = "image/svg+xml"
+	}
+
+	return mimeType
 }
 
 // importError is d2's own report of a failed compile, which says where the
@@ -407,9 +514,9 @@ var image = regexp.MustCompile(`<image href="([^"]+)"`)
 // ones this run may not read.
 //
 // A file is held to the boundary an attachment is held to -- the document's own
-// directory or the one mark is running in -- because a diagram naming a file is
-// doing what a document does, and "../../../etc/id_rsa" reaches no further in
-// one than the other. It needs a document on disk to be relative to: "-" is
+// directory or the one mark is running in, or the document's fs.FS -- because a
+// diagram naming a file is doing what a document does, and "../../../etc/id_rsa"
+// reaches no further in one than the other. It needs a document on disk to be relative to: "-" is
 // d2's way of writing standard input, and reading a name against the working
 // directory instead is how a diagram compiled through the library reaches a
 // file nobody offered it.
@@ -419,7 +526,7 @@ var image = regexp.MustCompile(`<image href="([^"]+)"`)
 // it. The bundler's client follows redirects and declines nothing -- not
 // loopback, not link-local, not a cloud metadata address -- and what comes back
 // is published inside the drawing.
-func references(svg []byte, inputPath string, bundleRemote bool) (local, remote bool, err error) {
+func references(svg []byte, doc document, bundleRemote bool) (local, remote bool, err error) {
 	for _, match := range image.FindAllSubmatch(svg, -1) {
 		href := stdhtml.UnescapeString(string(match[1]))
 
@@ -438,7 +545,7 @@ func references(svg []byte, inputPath string, bundleRemote bool) (local, remote 
 			continue
 		}
 
-		if err := checkLocal(inputPath, href); err != nil {
+		if err := doc.check(href); err != nil {
 			return false, false, fmt.Errorf("references %q: %w", href, err)
 		}
 
