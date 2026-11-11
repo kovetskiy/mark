@@ -95,8 +95,9 @@ func (c *converter) codeMacro(n *node) (string, bool) {
 		return "", false
 	}
 
+	// The info string is outside the code, where "<!--" opens a directive.
 	info, ok := codeInfo(language, options, title)
-	if !ok {
+	if !ok || strings.Contains(info, "<!--") {
 		return "", false
 	}
 
