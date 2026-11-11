@@ -53,16 +53,16 @@ func escapeInline(text string, opts inlineOptions) string {
 			}
 
 		case '<':
-			if !opts.raw && next == '!' {
-				// mark reads "<!--" for its directives -- an include, a
-				// macro, a header -- before goldmark does, wherever it is
-				// outside code, so the backslash goes between the two. A
-				// heading's id, which mark takes from the text as written,
-				// drops both as it would the "<!" alone.
-				b.WriteString(`<\`)
-				continue
-			}
 			if !opts.raw && (unicode.IsLetter(next) || next == '/' || next == '?') {
+				b.WriteRune('\\')
+			}
+
+		case '!':
+			// mark reads "<!--" for its directives -- an include, a macro, a
+			// header -- before goldmark does, wherever it is outside code. A
+			// heading's id, which mark takes from the text as written, drops
+			// the backslash as it does the "<!".
+			if !opts.raw && prev == '<' {
 				b.WriteRune('\\')
 			}
 
