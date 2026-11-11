@@ -21,6 +21,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"testing/fstest"
 
 	"github.com/kovetskiy/mark/v17/attachment"
 	"github.com/kovetskiy/mark/v17/chrome"
@@ -662,4 +663,60 @@ func TestRenderSVGReadsOnlyTheFilesItNamed(t *testing.T) {
 	}
 
 	assert.NotContains(t, string(got.FileBytes), base64.StdEncoding.EncodeToString([]byte("outside")))
+}
+
+// TestRenderHoldsFilesToTheRootsBoundary: an import and an icon are held to
+// the Boundary the document's Root carries, as every other file a document
+// names is, on disk and in an fs.FS alike: with attachment.BoundaryDocument
+// one beside another document is refused, though the default boundary lets it
+// in, and one beside the document still works.
+func TestRenderHoldsFilesToTheRootsBoundary(t *testing.T) {
+	docs, document, _ := importProject(t)
+
+	shared := filepath.Join(filepath.Dir(docs), "shared")
+	require.NoError(t, os.Mkdir(shared, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(shared, "part.d2"), []byte("part\n"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(shared, "icon.png"), onePixelPNG(t), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(docs, "beside.d2"), []byte("beside\n"), 0o600))
+
+	files := fstest.MapFS{
+		"docs/beside.d2":  {Data: []byte("beside\n")},
+		"shared/part.d2":  {Data: []byte("part\n")},
+		"shared/icon.png": {Data: onePixelPNG(t)},
+	}
+
+	for _, place := range []struct {
+		name  string
+		input string
+		root  attachment.Root
+	}{
+		{"on disk", document, attachment.Root{}},
+		{"in an fs.FS", "docs/doc.md", attachment.FSRoot(files)},
+	} {
+		for _, output := range []imageformat.Format{imageformat.SVG, imageformat.PNG} {
+			render := func(source string, boundary attachment.Boundary) error {
+				_, err := Render(context.Background(), "shared", []byte(source), Options{
+					Output: output, Browser: browser, InputPath: place.input, Scale: 1.0,
+					Root: place.root.WithBoundary(boundary),
+				})
+
+				return err
+			}
+
+			sources := []string{"x: @../shared/part\n"}
+			// A PNG on disk leaves a local image to the browser, which reads
+			// nothing: only an SVG, or a PNG in an fs.FS, reads it.
+			if output == imageformat.SVG || place.root.FS() != nil {
+				sources = append(sources, "a: {icon: ../shared/icon.png}\n")
+			}
+
+			for _, source := range sources {
+				require.NoError(t, render(source, ""), "%s %s, the default boundary: %s", place.name, output, source)
+				require.ErrorIs(t, render(source, attachment.BoundaryDocument), attachment.ErrOutsideProject,
+					"%s %s: %s", place.name, output, source)
+			}
+
+			require.NoError(t, render("x: @beside\n", attachment.BoundaryDocument), "%s %s", place.name, output)
+		}
+	}
 }

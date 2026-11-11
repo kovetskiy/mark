@@ -303,6 +303,15 @@ func allowedTemplatePath(base place, includePath string, resolved place) error {
 	)
 }
 
+// includeFrom is where a document in base reads its includes from: root,
+// with includePath, and without the Boundary root may hold the files the
+// document publishes to. An include is a template expanded into the document
+// rather than a file published with it, and --include-path exists to reach
+// outside the document's directory.
+func includeFrom(root attachment.Root, base, includePath string) place {
+	return place{root: root.WithBoundary("").WithIncludePath(includePath), name: base}
+}
+
 // absolute makes a path the key of exactly one file, whatever directory the
 // run was started from. A path that cannot be made absolute is returned as it
 // was: it is still a better key than the bare name, and the read that follows
@@ -344,7 +353,7 @@ func LoadTemplateIn(
 	// same entry as "partial.md" beside another: the first one read was then
 	// served to every document that asked for that name, publishing one page's
 	// fragment onto another's, silently and with no error anywhere.
-	from := place{root: root.WithIncludePath(includePath), name: base}
+	from := includeFrom(root, base, includePath)
 	resolved := resolveTemplatePath(from, path)
 
 	loaded, _, err := loadTemplate(from, includePath, resolved, path, left, right, templates)
@@ -531,7 +540,7 @@ func ProcessIncludesWithWarnings(
 
 // ProcessIncludesIn is ProcessIncludesWithWarnings for a document whose
 // directory, base, is in root: what it includes is read from there, held to
-// root's boundary, or from includePath on disk.
+// root's own limits, or from includePath on disk.
 func ProcessIncludesIn(
 	root attachment.Root,
 	base string,
@@ -541,7 +550,7 @@ func ProcessIncludesIn(
 	stack []string,
 	warnings *report.Warnings,
 ) (*template.Template, []byte, bool, error) {
-	from := place{root: root.WithIncludePath(includePath), name: base}
+	from := includeFrom(root, base, includePath)
 
 	frames := make([]includeFrame, 0, len(stack))
 	for _, name := range stack {

@@ -68,7 +68,9 @@ type Options struct {
 	// linked files, macro attachments, and the includes and macro templates
 	// beside it -- relative to the directory of the path it is compiled as.
 	// The zero Root is the local disk. A d2 diagram's imports and local
-	// images are read from it too.
+	// images are read from it too. The Boundary it carries
+	// (attachment.Root.WithBoundary) holds every one of those files but the
+	// includes and macro templates.
 	Root attachment.Root
 
 	// ResolveLink turns a link target written in the document -- a relative

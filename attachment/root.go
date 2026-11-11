@@ -39,9 +39,13 @@ import (
 // ResolveLocalAttachments, which then also glob and check containment in it.
 //
 // WithIncludePath gives a Root that also reads --include-path, which is on
-// disk whatever the document's Root is.
+// disk whatever the document's Root is. WithBoundary gives one holding the
+// files a document names to a narrower Boundary.
 type Root struct {
 	fsys fs.FS
+
+	// boundary narrows what checkAttachment and CheckReadable allow.
+	boundary Boundary
 
 	// includePath is --include-path as given; includeDir is it made absolute
 	// for a Root reading from an fs.FS, where an absolute name is one under it.
@@ -110,6 +114,30 @@ func (r Root) IncludeName(rel string) (string, bool) {
 // WithIncludePath only.
 func (r Root) OnDisk(name string) bool {
 	return r.fsys == nil || (r.includeDir != "" && filepath.IsAbs(name))
+}
+
+// WithBoundary is r with the files a document names held to b as well as to
+// r's own limits: every attachment ResolveLocalAttachment and
+// ResolveLocalAttachments read through r, and every reference CheckReadable
+// passes. Open, Stat and ReadFile are unchanged, so a caller reading a file
+// that is not the document's to publish, such as another document a link
+// names, reads it as before.
+//
+// BoundaryDocument holds a file to the document's directory, the base those
+// functions are given, in an fs.FS as on disk; a name under --include-path,
+// on disk for a Root reading from an fs.FS, is outside it. A directory b is a
+// directory on disk, so it holds only a Root on the local disk: one reading
+// from an fs.FS refuses every file under it, and is narrowed with fs.Sub
+// instead.
+func (r Root) WithBoundary(b Boundary) Root {
+	r.boundary = b
+
+	return r
+}
+
+// Boundary is the Boundary r holds a document's files to.
+func (r Root) Boundary() Boundary {
+	return r.boundary
 }
 
 // maxLinks is how many symbolic links one name may pass through, as Linux
@@ -331,14 +359,18 @@ func (r Root) ReadFile(name string) ([]byte, error) {
 // same check, and in an fs.FS that reference, joined to base unless it is
 // absolute, stays inside it. An absolute reference is refused, unless
 // WithIncludePath put it on disk, where it has to stay inside the include
-// path.
+// path. Either way, a Boundary from WithBoundary narrows it further.
 func (r Root) CheckReadable(base, reference string) error {
 	if r.fsys == nil {
-		return CheckReadable(base, reference)
+		return r.boundary.checkReadable(base, reference)
 	}
 
 	if r.OnDisk(reference) {
-		return CheckWithin(r.includePath, reference)
+		if err := CheckWithin(r.includePath, reference); err != nil {
+			return err
+		}
+
+		return r.narrow(base, reference, reference)
 	}
 
 	joined := reference
@@ -346,7 +378,11 @@ func (r Root) CheckReadable(base, reference string) error {
 		joined = filepath.Join(base, reference)
 	}
 
-	return r.contain(joined, reference)
+	if err := r.contain(joined, reference); err != nil {
+		return err
+	}
+
+	return r.narrow(base, joined, reference)
 }
 
 // contain refuses a joined name that is not a path inside the fs.FS. named is
@@ -374,21 +410,9 @@ func (r Root) contain(joined, named string) error {
 // that may reach only the one directory, such as a document in an fs.FS
 // reaching --include-path on disk.
 func CheckWithin(dir, path string) error {
-	// Made absolute first, as Within makes them: one resolved while relative
-	// keeps the working directory's own link and reads as outside the other.
-	absDir, err := filepath.Abs(dir)
-	if err != nil {
+	resolved, ok, err := withinDir(dir, path)
+	if err != nil || ok {
 		return err
-	}
-
-	absPath, err := filepath.Abs(path)
-	if err != nil {
-		return err
-	}
-
-	resolved, ok := within([]string{absDir}, absPath)
-	if ok {
-		return nil
 	}
 
 	return fmt.Errorf("%w: %q resolves to %s, which is outside %q", ErrOutsideProject, path, resolved, dir)
@@ -397,10 +421,68 @@ func CheckWithin(dir, path string) error {
 // checkAttachment holds an attachment to r's boundary.
 func (r Root) checkAttachment(base, name string) error {
 	if r.fsys == nil {
-		return checkAttachmentPath(base, name)
+		return r.boundary.checkAttachmentPath(base, name)
 	}
 
-	return r.contain(filepath.Join(base, name), name)
+	joined := filepath.Join(base, name)
+	if err := r.contain(joined, name); err != nil {
+		return err
+	}
+
+	return r.narrow(base, joined, name)
+}
+
+// narrow holds joined, a name r reading from an fs.FS has already found
+// inside it or under its include path, to r's boundary, drawn around a
+// document in base. named is what the document wrote.
+func (r Root) narrow(base, joined, named string) error {
+	switch {
+	case r.boundary == "":
+		return nil
+	case r.boundary.IsDir():
+		return fmt.Errorf(
+			"%w: %q is read from the document's file system, which the attachment root %q, a directory on disk, does not hold",
+			ErrOutsideProject, named, string(r.boundary),
+		)
+	}
+
+	if !r.OnDisk(joined) {
+		dir, dirErr := r.fsName(base)
+		file, fileErr := r.fsName(joined)
+		if dirErr == nil && fileErr == nil {
+			file = r.resolveDeepest(file)
+			if dir = r.resolveDeepest(dir); dir == "." || file == dir || strings.HasPrefix(file, dir+"/") {
+				return nil
+			}
+
+			joined = file
+		}
+	}
+
+	return r.boundary.outside(base, named, filepath.ToSlash(joined))
+}
+
+// resolveDeepest is name, a path inside the fs.FS, with the symbolic links in
+// its longest leading part that exists followed, as fspath.ResolveDeepest
+// does on disk; name as it is when the fs.FS reports no links.
+func (r Root) resolveDeepest(name string) string {
+	links, ok := r.fsys.(linkedFS)
+	if !ok {
+		return name
+	}
+
+	rest := ""
+	for prefix := name; ; prefix = path.Dir(prefix) {
+		if resolved, err := links.resolve(prefix); err == nil {
+			return path.Join(resolved, rest)
+		}
+
+		if prefix == "." {
+			return name
+		}
+
+		rest = path.Join(path.Base(prefix), rest)
+	}
 }
 
 // glob matches pattern under base, as glob does on disk: in an fs.FS too its
