@@ -974,3 +974,30 @@ func TestUnscopedDocumentIsNeverTakenForARename(t *testing.T) {
 	assert.NotEqual(t, before.PageID, after.PageID)
 	assert.True(t, oldKept)
 }
+
+// TestStagedRootRefusesADocumentBeforePublishing: a Document the staged root
+// does not contain is refused before anything is published, as a file is,
+// rather than after the run's files have been.
+func TestStagedRootRefusesADocumentBeforePublishing(t *testing.T) {
+	server, _ := docsSpace(t)
+	dir := t.TempDir()
+	t.Chdir(dir)
+
+	header := "<!-- Space: DOCS -->\n<!-- Parent: Parent -->\n"
+	writeAt(t, dir, "build/docs/a.md", header+"<!-- Title: A -->\n\nA.\n")
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "src"), 0o755))
+
+	config := documentsConfig(server, Document{
+		Path:    "generated/doc.md",
+		Content: []byte(header + "<!-- Title: Generated -->\n\nGenerated.\n"),
+		FS:      fstest.MapFS{},
+	})
+	config.Files = "build/docs/*.md"
+	config.Links = LinkConfig{StagedRoot: "build/docs", SourceRoot: "src"}
+
+	err := Run(context.Background(), config)
+	var linkErr *LinkConfigError
+	require.ErrorAs(t, err, &linkErr)
+	assert.Contains(t, err.Error(), "generated/doc.md")
+	assert.Empty(t, pageIDTitled(t, server, "A"), "nothing is published")
+}
