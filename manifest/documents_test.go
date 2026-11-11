@@ -116,3 +116,28 @@ func TestScopeKeysCoverThePartialRunsScope(t *testing.T) {
 	require.NoError(t, err)
 	assert.False(t, ok)
 }
+
+// TestSurvivorsCountOnlyTheScopesOwnKeys: a key the run takes over from
+// another scope was not the listed scope's before the run, so it does not
+// show that any of the scope's keys are still there.
+func TestSurvivorsCountOnlyTheScopesOwnKeys(t *testing.T) {
+	ctx := t.Context()
+	server := confluencetest.New(t)
+	server.AddSpace("DOCS")
+
+	first := storeFor(server, "", "gen", nil, []string{"a.md", "b.md"})
+	require.NoError(t, first.Record(ctx, "DOCS", "a.md", "1", "A", "a"))
+	require.NoError(t, first.Record(ctx, "DOCS", "b.md", "2", "B", "b"))
+	require.NoError(t, first.Save(ctx))
+	other := storeFor(server, "", "other", nil, []string{"k.md"})
+	require.NoError(t, other.Record(ctx, "DOCS", "k.md", "3", "K", "k"))
+	require.NoError(t, other.Save(ctx))
+
+	partial := storeFor(server, "", "gen", nil, []string{"k.md"})
+	partial.SetPartial(true)
+	partial.SetScopeKeys("gen", []string{"typo.md"})
+	require.NoError(t, partial.Record(ctx, "DOCS", "k.md", "3", "K", "k"))
+
+	assert.Equal(t, []string{"a.md", "b.md"}, partial.Orphans("DOCS"))
+	assert.Zero(t, partial.Survivors("DOCS", "documents://gen"))
+}

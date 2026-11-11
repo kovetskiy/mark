@@ -102,7 +102,7 @@ func handleOrphans(
 			"space %q: %d tracked page(s) had no matching source file in this run: %s",
 			space, len(paths), strings.Join(paths, ", "),
 		)
-		warnGoneKeys(space, paths, globOf)
+		warnGoneKeys(config, space, paths, globOf)
 
 		handled := paths
 		if action != report.OnOrphanReport {
@@ -133,9 +133,9 @@ func handleOrphans(
 
 			// The same, for the run's files and each document scope on its
 			// own: pages one of them published elsewhere in the space say
-			// nothing about the other's. A document scope is held to more,
-			// since a partial run's key list decides what is gone: some key
-			// of it tracked in the space has to still be there.
+			// nothing about the other's. A partial run's document scope is
+			// held to more, since the caller's key list decides what is gone:
+			// some key of it tracked in the space has to still be there.
 			acting := make([]page.Orphan, 0, len(candidates))
 			survivors := map[string]int{}
 			for _, candidate := range candidates {
@@ -153,18 +153,13 @@ func handleOrphans(
 				}
 
 				reason := fmt.Sprintf("nothing under %s was published in space %q in this run", glob, space)
-				if manifest.IsDocumentScope(glob) {
+				if partialKeys(config, glob) {
 					reason = fmt.Sprintf(
 						"no key of %s tracked in space %q before this run is published or named in DocumentKeys, "+
 							"which a failed render or a bad key list looks exactly like", glob, space,
 					)
-					log.Warn().Msgf("space %q: %s, so %s's page is left alone", space, reason, candidate.Path)
-				} else {
-					log.Warn().Msgf(
-						"space %q: nothing under %s was published in this run, so %s's page is left alone",
-						space, glob, candidate.Path,
-					)
 				}
+				log.Warn().Msgf("space %q: %s, so %s's page is left alone", space, reason, candidate.Path)
 
 				if !config.Mode.readOnly() {
 					reportKept(results, candidate, reason)
@@ -216,13 +211,20 @@ func handleOrphans(
 	return nil
 }
 
-// warnGoneKeys says, per document scope, how many of its keys the run takes
-// as gone: a key left out of DocumentKeys by mistake reads exactly as one
-// removed, and --on-orphan acts on it alike.
-func warnGoneKeys(space string, paths []string, globOf map[string]string) {
+// partialKeys reports whether a partial run's DocumentKeys decide which keys
+// of glob are gone: a partial run finds a scope's orphans only when given
+// them.
+func partialKeys(config Config, glob string) bool {
+	return config.Tracking.Partial && manifest.IsDocumentScope(glob)
+}
+
+// warnGoneKeys says, per document scope of a partial run, how many of its
+// keys the run takes as gone: a key left out of DocumentKeys by mistake reads
+// exactly as one removed, and --on-orphan acts on it alike.
+func warnGoneKeys(config Config, space string, paths []string, globOf map[string]string) {
 	gone := map[string][]string{}
 	for _, path := range paths {
-		if glob := globOf[path]; manifest.IsDocumentScope(glob) {
+		if glob := globOf[path]; partialKeys(config, glob) {
 			gone[glob] = append(gone[glob], path)
 		}
 	}

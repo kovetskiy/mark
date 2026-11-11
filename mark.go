@@ -82,10 +82,11 @@ type Config struct {
 	// publishes, finds no orphans and follows no rename, and leaves every
 	// other page of the scope alone and tracked.
 	//
-	// A scope's orphans in a space are archived or deleted only while some key
-	// of it tracked there before the run is still there, published or named in
-	// DocumentKeys; with none, they are only reported, as a failed render or a
-	// bad key list would otherwise empty the scope there.
+	// A scope's orphans in a space are archived or deleted only when the run
+	// published one of its documents there; for a partial run given
+	// DocumentKeys, only while some key of the scope tracked there before the
+	// run is still there, published or listed. Otherwise they are only
+	// reported, as a failed render or a bad key list would empty the scope.
 	//
 	// Empty, documents take part in no orphan handling and no rename
 	// detection: a page is found again by its Key alone, and never reported,
@@ -109,8 +110,10 @@ type Config struct {
 	//     rename or a move, and a page it owns that another document finds by
 	//     title is a conflict to warn of.
 	//
-	// It needs DocumentScope and Tracking.Partial: a run without Partial
-	// already covers the whole scope with its documents alone. A run finds a
+	// Empty is no list, not an empty scope: a caller whose documents are the
+	// whole scope publishes them without Partial. It needs DocumentScope and
+	// Tracking.Partial: a run without Partial already covers the whole scope
+	// with its documents alone. A run finds a
 	// scope's pages only in the spaces it publishes to, so DocumentKeys with
 	// nothing to publish is refused, or under CI only warned about.
 	DocumentKeys []string
