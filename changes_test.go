@@ -206,6 +206,22 @@ func TestDryRunChangesOnlyNoOverwriteReportsAnEditedPageSkipped(t *testing.T) {
 	assert.NotContains(t, out, "<p>From mark.</p>", "a page left alone must not be dumped")
 }
 
+// TestDryRunNoOverwriteReportsAnEditedPageSkipped: a dry run that compares
+// nothing still says a real run would leave an edited page alone, rather
+// than that it would publish over it.
+func TestDryRunNoOverwriteReportsAnEditedPageSkipped(t *testing.T) {
+	server, id, config := noOverwriteFixture(t)
+	server.EditPage(id, "<p>Written by a person.</p>")
+
+	out := previewOf(t, config, "json")
+	assert.NotContains(t, out, "<p>From mark.</p>", "a page left alone must not be dumped")
+
+	got := decodeReport(t, []byte(out))
+	require.Len(t, got.Pages, 1)
+	assert.Equal(t, report.StatusSkipped, got.Pages[0].Status)
+	assert.NotEmpty(t, got.Pages[0].Reason)
+}
+
 // TestDryRunChangesOnlySkippedPageIsNotCompiled keeps the order of a real run:
 // a page that --no-overwrite leaves alone is reported as skipped even when its
 // source could not be compiled.
