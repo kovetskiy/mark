@@ -55,11 +55,16 @@ all work. With `FS` set, `Path` is a slash-separated path inside it. A name
 climbing above its root is refused, except includes found under
 `RenderingConfig.IncludePath`, which stay on disk.
 
-That boundary holds the names a document asks for; what the file system does
-with a name is its own. `os.DirFS` follows a symbolic link out of its
-directory. For a directory whose contents you do not control, such as a pull
-request's checkout, use the file system of an `os.Root` instead, which does
-not:
+The boundary holds through symbolic links too, whenever the file system can
+report them (an `fs.ReadLinkFS`, as `os.DirFS` and `fstest.MapFS` are): each
+name is resolved one link at a time before it is read, and a link to an
+absolute path or above the root is refused like a name climbing out, as is a
+chain of more than 40 links. A file system that cannot report links cannot
+hand one over either.
+
+For a directory whose contents may change while the run reads it, the file
+system of an `os.Root` also keeps out a link swapped in between that check and
+the read:
 
 ```go
 assets, err := os.OpenRoot("assets")
