@@ -1,6 +1,8 @@
 package manifest_test
 
 import (
+	"maps"
+	"slices"
 	"testing"
 
 	"github.com/kovetskiy/mark/v17/confluence"
@@ -179,17 +181,16 @@ func TestRenameSources(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, []string{"b.md"}, keysOf(sources))
 
-	for name, store := range map[string]*manifest.Store{
-		"file":     storeFor(server, "*.md", "gen", []string{"file.md"}, []string{"a.md"}),
-		"no scope": storeFor(server, "", "", nil, []string{"new.md"}),
+	for _, none := range []struct {
+		name, path string
+		store      *manifest.Store
+	}{
+		{"file", "file.md", storeFor(server, "*.md", "gen", []string{"file.md"}, []string{"a.md"})},
+		{"no scope", "new.md", storeFor(server, "", "", nil, []string{"new.md"})},
 	} {
-		path := "new.md"
-		if name == "file" {
-			path = "file.md"
-		}
-		sources, err := store.RenameSources(ctx, "DOCS", path)
-		require.NoError(t, err, name)
-		assert.Empty(t, sources, name)
+		sources, err := none.store.RenameSources(ctx, "DOCS", none.path)
+		require.NoError(t, err, none.name)
+		assert.Empty(t, sources, none.name)
 	}
 
 	partial := storeFor(server, "", "gen", nil, []string{"new.md"})
@@ -205,10 +206,5 @@ func TestRenameSources(t *testing.T) {
 }
 
 func keysOf(entries map[string]manifest.Entry) []string {
-	keys := make([]string, 0, len(entries))
-	for key := range entries {
-		keys = append(keys, key)
-	}
-
-	return keys
+	return slices.Sorted(maps.Keys(entries))
 }

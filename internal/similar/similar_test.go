@@ -161,11 +161,11 @@ func TestMatch(t *testing.T) {
 
 	t.Run("a rival the new one cannot be paired with", func(t *testing.T) {
 		scores := map[string]map[string]float64{"new": {"old": 0.7}}
-		taken, unclear := similar.Match(scores, map[string]float64{"new": 0.65}, threshold, margin)
+		taken, unclear := similar.Match(scores, func(string) float64 { return 0.65 }, threshold, margin)
 		assert.Empty(t, taken, "as alike to a document that still exists")
 		assert.Contains(t, unclear, "new")
 
-		taken, _ = similar.Match(scores, map[string]float64{"new": 0.2}, threshold, margin)
+		taken, _ = similar.Match(scores, func(string) float64 { return 0.2 }, threshold, margin)
 		assert.Contains(t, taken, "new")
 	})
 

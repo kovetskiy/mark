@@ -13,6 +13,7 @@ import (
 	"github.com/kovetskiy/mark/v17/fingerprint"
 	"github.com/kovetskiy/mark/v17/internal/similar"
 	"github.com/kovetskiy/mark/v17/manifest"
+	"github.com/kovetskiy/mark/v17/metadata"
 	"github.com/kovetskiy/mark/v17/report"
 	"github.com/rs/zerolog/log"
 )
@@ -27,10 +28,13 @@ const renameMargin = 0.1
 // at a time.
 type similarRenames struct {
 	threshold float64
-	documents []input
 
 	// spaces holds each space's pairing once made.
 	spaces map[string]*similarPairing
+}
+
+func newSimilarRenames(threshold float64) *similarRenames {
+	return &similarRenames{threshold: threshold, spaces: map[string]*similarPairing{}}
 }
 
 // similarPairing is what a space's documents are taken for, by manifest key.
@@ -43,8 +47,8 @@ type similarPairing struct {
 
 // runText is a document of the run as the pairing sees it.
 type runText struct {
-	key   string
-	words []string
+	key  string
+	text similar.Text
 	// unmatched says no page of its own is found for it: none recorded
 	// under its key, none of its title, and no gone key of the same content.
 	unmatched bool
@@ -60,14 +64,18 @@ func (r *publishRun) resolveRenamed(ctx context.Context, doc *document) (*conflu
 	}
 
 	space, key := doc.meta.Space, manifest.Key(doc.key)
-	pairing, err := r.similar.pairing(ctx, r, space)
-	if err != nil {
-		return nil, fmt.Errorf("unable to compare %q with the documents gone from its scope: %w", doc.file, err)
+	pairing, ok := r.similar.spaces[space]
+	if !ok {
+		pairing, err = r.pairSimilar(ctx, space, key)
+		if err != nil {
+			return nil, fmt.Errorf("unable to compare %q with the documents gone from its scope: %w", doc.file, err)
+		}
+		r.similar.spaces[space] = pairing
 	}
 
-	if close, ok := pairing.unclear[key]; ok {
-		named := make([]string, 0, len(close))
-		for _, pair := range close {
+	if near, ok := pairing.unclear[key]; ok {
+		named := make([]string, 0, len(near))
+		for _, pair := range near {
 			named = append(named, fmt.Sprintf("%s (%.2f)", pair.Old, pair.Score))
 		}
 		doc.warnings.Add(report.WarningRename,
@@ -85,10 +93,10 @@ func (r *publishRun) resolveRenamed(ctx context.Context, doc *document) (*conflu
 		return nil, nil
 	}
 
-	notTaken := func(why string, args ...any) (*confluence.PageInfo, error) {
+	notTaken := func(why string) (*confluence.PageInfo, error) {
 		doc.warnings.Add(report.WarningRename,
 			"%s is %.2f alike to %s but not taken for its rename: %s; a new page is created",
-			append([]any{key, match.Score, match.Old}, fmt.Sprintf(why, args...))...,
+			key, match.Score, match.Old, why,
 		)
 
 		return nil, nil
@@ -107,13 +115,13 @@ func (r *publishRun) resolveRenamed(ctx context.Context, doc *document) (*conflu
 
 	pg, err = r.api.GetPageByID(ctx, entry.PageID)
 	if errors.Is(err, confluence.ErrNotFound) {
-		return notTaken("its page %s no longer exists", entry.PageID)
+		return notTaken(fmt.Sprintf("its page %s no longer exists", entry.PageID))
 	}
 	if err != nil {
 		return nil, fmt.Errorf("unable to load page %s recorded for %q: %w", entry.PageID, match.Old, err)
 	}
 	if r.noOverwrite && pg.Version.Number != entry.Version {
-		return notTaken("its page %s was edited in Confluence since it was compared", pg.ID)
+		return notTaken(fmt.Sprintf("its page %s was edited in Confluence since it was compared", pg.ID))
 	}
 
 	log.Info().Msgf("%s is %.2f alike to %s, published as page %s; treating it as a rename", key, match.Score, match.Old, pg.ID)
@@ -125,55 +133,35 @@ func (r *publishRun) resolveRenamed(ctx context.Context, doc *document) (*conflu
 	return pg, nil
 }
 
-// pairing is the space's pairing, made on first use.
-func (s *similarRenames) pairing(ctx context.Context, r *publishRun, space string) (*similarPairing, error) {
-	if made, ok := s.spaces[space]; ok {
-		return made, nil
-	}
-
-	made, err := s.pair(ctx, r, space)
-	if err != nil {
-		return nil, err
-	}
-	if s.spaces == nil {
-		s.spaces = map[string]*similarPairing{}
-	}
-	s.spaces[space] = made
-
-	return made, nil
-}
-
-// pair compares the space's unmatched documents with the pages of the gone
-// keys of their scope. Pages are read only when there are both.
-func (s *similarRenames) pair(ctx context.Context, r *publishRun, space string) (*similarPairing, error) {
+// pairSimilar pairs the space's unmatched documents with the gone keys of
+// their scope, for the document of key asking first. It reads the run's
+// documents only when some key is gone, and the gone keys' pages only when
+// some document is unmatched too.
+func (r *publishRun) pairSimilar(ctx context.Context, space, key string) (*similarPairing, error) {
 	none := &similarPairing{}
 
-	documents, taken, err := s.texts(ctx, r, space)
-	if err != nil {
-		return nil, err
-	}
-	first := slices.IndexFunc(documents, func(doc runText) bool { return doc.unmatched })
-	if first < 0 {
-		return none, nil
+	gone, err := r.tracker.RenameSources(ctx, space, key)
+	if err != nil || len(gone) == 0 {
+		return none, err
 	}
 
-	gone, err := r.tracker.RenameSources(ctx, space, documents[first].key)
+	documents, taken, err := r.runTexts(ctx, space)
 	if err != nil {
 		return nil, err
+	}
+	if !slices.ContainsFunc(documents, func(doc runText) bool { return doc.unmatched }) {
+		return none, nil
 	}
 
 	keys := make([]string, 0, len(gone))
 	for key, entry := range gone {
-		if !taken[key] && !taken[entry.PageID] {
+		if !taken[entry.PageID] {
 			keys = append(keys, key)
 		}
 	}
-	if len(keys) == 0 {
-		return none, nil
-	}
 	slices.Sort(keys)
 
-	texts := map[string][]string{}
+	texts := map[string]similar.Text{}
 	for _, key := range keys {
 		entry := gone[key]
 		pg, err := r.api.GetPageByIDExpanded(ctx, entry.PageID, "version,body.storage")
@@ -196,40 +184,46 @@ func (s *similarRenames) pair(ctx context.Context, r *publishRun, space string) 
 			continue
 		}
 
-		texts[key] = similar.StorageWords(pg.Body.Storage.Value)
+		texts[key] = similar.Shingles(similar.StorageWords(pg.Body.Storage.Value))
 	}
 
 	scores := map[string]map[string]float64{}
-	rivals := map[string]float64{}
+	textOf := map[string]similar.Text{}
 	for _, doc := range documents {
+		textOf[doc.key] = doc.text
 		if !doc.unmatched {
 			continue
 		}
 
 		scores[doc.key] = map[string]float64{}
 		for key, text := range texts {
-			scores[doc.key][key] = similar.Score(doc.words, text)
-		}
-		for _, other := range documents {
-			if other.key != doc.key {
-				rivals[doc.key] = max(rivals[doc.key], similar.Score(doc.words, other.words))
-			}
+			scores[doc.key][key] = doc.text.Similarity(text)
 		}
 	}
 
-	pairs, unclear := similar.Match(scores, rivals, s.threshold, renameMargin)
+	rival := func(key string) float64 {
+		best := 0.0
+		for _, other := range documents {
+			if other.key != key {
+				best = max(best, textOf[key].Similarity(other.text))
+			}
+		}
+
+		return best
+	}
+
+	pairs, unclear := similar.Match(scores, rival, r.similar.threshold, renameMargin)
 
 	return &similarPairing{taken: pairs, unclear: unclear}, nil
 }
 
-// texts returns the words of the run's documents, saying which of those
-// publishing to space no key, title or exact content finds a page for. Taken
-// holds what the others there go to, which is no longer gone: the key of the
-// same content, or the page of the title.
-func (s *similarRenames) texts(ctx context.Context, r *publishRun, space string) ([]runText, map[string]bool, error) {
+// runTexts returns the texts of the run's documents, saying which of those
+// publishing to space find no page of their own, and the pages the others
+// there find, which are no longer any gone key's to give.
+func (r *publishRun) runTexts(ctx context.Context, space string) ([]runText, map[string]bool, error) {
 	var documents []runText
 	taken := map[string]bool{}
-	for _, in := range s.documents {
+	for _, in := range r.inputs.documents {
 		source, markdown, _, err := in.read()
 		if err != nil {
 			continue
@@ -240,12 +234,16 @@ func (s *similarRenames) texts(ctx context.Context, r *publishRun, space string)
 			continue
 		}
 
-		doc := runText{key: manifest.Key(in.key), words: similar.MarkdownWords(string(markdown))}
+		doc := runText{key: manifest.Key(in.key), text: similar.Shingles(similar.MarkdownWords(string(markdown)))}
 		if meta.Space == space {
-			doc.unmatched, err = s.unmatched(ctx, r, space, doc.key, source, meta.Title, meta.Type, taken)
+			pageID, found, err := r.ownPage(ctx, doc.key, source, meta)
 			if err != nil {
 				return nil, nil, err
 			}
+			if found {
+				taken[pageID] = true
+			}
+			doc.unmatched = !found
 		}
 		documents = append(documents, doc)
 	}
@@ -253,36 +251,28 @@ func (s *similarRenames) texts(ctx context.Context, r *publishRun, space string)
 	return documents, taken, nil
 }
 
-// unmatched reports whether the document of key finds no page of its own, and
-// adds to taken what it finds otherwise.
-func (s *similarRenames) unmatched(
-	ctx context.Context, r *publishRun, space, key string, source []byte, title, kind string, taken map[string]bool,
-) (bool, error) {
-	_, recorded, err := r.tracker.Recorded(ctx, space, key)
+// ownPage is the page the document of key finds at its turn before any
+// similarity is asked: recorded under its key, of the same content as a gone
+// key, or of its title.
+func (r *publishRun) ownPage(ctx context.Context, key string, source []byte, meta *metadata.Meta) (string, bool, error) {
+	entry, recorded, err := r.tracker.Recorded(ctx, meta.Space, key)
 	if err != nil || recorded {
-		return false, err
+		return entry.PageID, recorded, err
 	}
 
-	previous, _, same, err := r.tracker.ResolveRenamedFor(ctx, space, key, fingerprint.SHA1(string(source)))
-	if err != nil {
-		return false, err
-	}
-	if same {
-		taken[previous] = true
-
-		return false, nil
+	_, entry, same, err := r.tracker.ResolveRenamedFor(ctx, meta.Space, key, fingerprint.SHA1(string(source)))
+	if err != nil || same {
+		return entry.PageID, same, err
 	}
 
 	// Memoised, and asked again at the document's own turn.
-	titled, err := r.api.FindPage(ctx, space, title, confluence.ContentType(kind))
+	titled, err := r.api.FindPage(ctx, meta.Space, meta.Title, confluence.ContentType(meta.Type))
 	if err != nil {
-		return false, fmt.Errorf("unable to look up page %q: %w", title, err)
+		return "", false, fmt.Errorf("unable to look up page %q: %w", meta.Title, err)
 	}
 	if titled != nil {
-		taken[titled.ID] = true
-
-		return false, nil
+		return titled.ID, true, nil
 	}
 
-	return true, nil
+	return "", false, nil
 }
