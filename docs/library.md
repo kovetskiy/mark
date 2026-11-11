@@ -114,9 +114,21 @@ run's files, as one hierarchy (see
 A directory that files and documents both lie in is one page. A document named
 `README.md` or `index.md` is its directory's page, and titles it from its
 `Content`, by its `Title` header, its front matter, or its leading heading with
-`TitleFromH1`. A `.pages` file is read only for a directory on disk, one a file
-or a document without `FS` lies in, never for a directory that only documents in
-an `FS` lie in.
+`TitleFromH1`. A directory without a title of its own document takes one from
+its `.pages` file, by the same rules and in the same order as on disk. The file
+is read from where the directory's documents are:
+
+* **On disk** for a directory that a file, or a document without `FS`, lies in,
+  whatever else lies there.
+* **From the `FS`** for a directory that only documents in an `FS` lie in, held
+  to its root as any read of it is: a `.pages` file, or a directory above it,
+  that is a symbolic link out of the `FS` fails the run with
+  `attachment.ErrOutsideProject`. A `.pages` file on disk at the same path is
+  not read.
+* **From the first document's `FS`** when documents from several `FS`s lie in
+  the directory: the first of them, in the order `Documents` gives them, that
+  lies in the directory or below it. Give the document whose `FS` holds the
+  directory's `.pages` file first, or put the file in every `FS`.
 
 A run of documents alone has no `--files` pattern to take the root from, so it
 needs `ParentsFromPathRoot`, and is refused before publishing without it:

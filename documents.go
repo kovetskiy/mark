@@ -77,7 +77,8 @@ type Document struct {
 	// run reads.
 	//
 	// A d2 diagram's imports and local images are read from FS too, under the
-	// same rules.
+	// same rules, and so is the .pages file of a directory only documents in
+	// an FS lie in, under ParentsFromPath.
 	FS fs.FS
 }
 
@@ -280,8 +281,8 @@ func (c Config) checkDocuments() error {
 
 // buildHierarchy lays out the run's files and documents for ParentsFromPath,
 // as one hierarchy. A directory's own document is read as the run reads it, a
-// Document from its Content, and a .pages file is looked for only in a
-// directory on disk: one a file, or a Document without an FS, lies in.
+// Document from its Content, and its .pages file from where the inputs laying
+// it out are read (see directoryRoots).
 func buildHierarchy(config Config, run *runInputs) (*page.Hierarchy, error) {
 	paths := make([]string, 0, len(run.all))
 	for _, in := range run.all {
@@ -296,38 +297,59 @@ func buildHierarchy(config Config, run *runInputs) (*page.Hierarchy, error) {
 
 	titles := page.DirectoryTitleReader(read, titleFromH1, frontmatter)
 	if len(run.documents) > 0 {
-		onDisk := diskDirectories(run.all)
-		withPagesFile, indexOnly := titles, page.IndexTitleReader(read, titleFromH1, frontmatter)
+		roots := directoryRoots(run.all)
+		indexOnly := page.IndexTitleReader(read, titleFromH1, frontmatter)
 		titles = func(directory, indexFile string) (string, error) {
-			if onDisk[directory] {
-				return withPagesFile(directory, indexFile)
+			root, ok := roots[directory]
+			if !ok {
+				return indexOnly(directory, indexFile)
 			}
 
-			return indexOnly(directory, indexFile)
+			return page.DirectoryTitleReaderIn(root, read, titleFromH1, frontmatter)(directory, indexFile)
 		}
 	}
 
 	return page.BuildHierarchy(config.ParentsFromPathRoot, config.Files, paths, titles)
 }
 
-// diskDirectories names the directories the inputs on disk lie in, and every
-// one above them, as the hierarchy names them: slash-separated and clean.
-func diskDirectories(inputs []input) map[string]bool {
-	directories := map[string]bool{}
-	for _, in := range inputs {
-		if in.document && in.root.FS() != nil {
-			continue
-		}
-
-		for dir := filepath.ToSlash(filepath.Dir(filepath.Clean(in.file))); !directories[dir]; dir = path.Dir(dir) {
-			directories[dir] = true
+// directoryRoots gives each directory the inputs lie in, and every one above
+// them, named as the hierarchy names them (slash-separated and clean), the
+// Root its .pages file is read from. A directory a file or a Document without
+// an FS lies in is on disk, whatever else lies there. One only documents in an
+// fs.FS lie in is read from the FS of the first of them in the run's order:
+// fs.FS values cannot be told equal, so documents from several FSs sharing a
+// directory leave the choice to the order the caller gave them in.
+func directoryRoots(inputs []input) map[string]attachment.Root {
+	roots := map[string]attachment.Root{}
+	add := func(in input) {
+		for dir := filepath.ToSlash(filepath.Dir(filepath.Clean(in.file))); ; dir = path.Dir(dir) {
+			if _, ok := roots[dir]; ok {
+				return
+			}
+			roots[dir] = in.root
 			if dir == "." || dir == "/" {
-				break
+				return
 			}
 		}
 	}
 
-	return directories
+	for _, in := range inputs {
+		if !in.inFS() {
+			add(in)
+		}
+	}
+	for _, in := range inputs {
+		if in.inFS() {
+			add(in)
+		}
+	}
+
+	return roots
+}
+
+// inFS reports whether the input's files are read from an fs.FS.
+func (in input) inFS() bool {
+	return in.document && in.root.FS() != nil
 }
 
 // documentDirectoryKeys gives each directory of hierarchy that only the run's
