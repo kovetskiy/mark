@@ -92,6 +92,11 @@ other the way they read in the source tree without that tree being rebuilt on
 disk. A link's target is looked for among the run's documents and files
 first, then in the linking document's `FS`, or on disk without one.
 
+A link written inside a fragment that a document in an `FS` includes from
+`RenderingConfig.IncludePath` is written from where the fragment sits on
+disk, so it is also looked for there, and only inside the include path: one
+climbing out of it is left as written.
+
 ### Documents and files together
 
 `Documents` may be given with or without `Files`. Files are published first,
