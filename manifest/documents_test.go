@@ -78,3 +78,41 @@ func TestResolveRenamedForStaysInScope(t *testing.T) {
 	require.NoError(t, err)
 	assert.False(t, ok)
 }
+
+// TestScopeKeysCoverThePartialRunsScope: a partial run given the scope's
+// other keys finds the key in neither gone, a rename of it and nothing else,
+// and counts what is still there; without them it covers its own keys alone.
+func TestScopeKeysCoverThePartialRunsScope(t *testing.T) {
+	ctx := t.Context()
+	server := confluencetest.New(t)
+	server.AddSpace("DOCS")
+
+	first := storeFor(server, "", "gen", nil, []string{"a.md", "b.md", "c.md"})
+	require.NoError(t, first.Record(ctx, "DOCS", "a.md", "1", "A", "a"))
+	require.NoError(t, first.Record(ctx, "DOCS", "b.md", "2", "B", "same"))
+	require.NoError(t, first.Record(ctx, "DOCS", "c.md", "3", "C", "same"))
+	require.NoError(t, first.Save(ctx))
+
+	partial := func(keys ...string) *manifest.Store {
+		store := storeFor(server, "", "gen", nil, []string{"a.md", "new.md"})
+		store.SetPartial(true)
+		store.SetScopeKeys("gen", keys)
+		require.NoError(t, store.Record(ctx, "DOCS", "a.md", "1", "A", "a"))
+
+		return store
+	}
+
+	listed := partial("c.md")
+	assert.Equal(t, []string{"b.md"}, listed.Orphans("DOCS"))
+	assert.Equal(t, 2, listed.Survivors("DOCS", "documents://gen"), "a.md published, c.md listed")
+	path, _, ok, err := listed.ResolveRenamedFor(ctx, "DOCS", "new.md", "same")
+	require.NoError(t, err)
+	require.True(t, ok, "c.md has the same content, but is listed")
+	assert.Equal(t, "b.md", path)
+
+	unlisted := partial()
+	assert.Empty(t, unlisted.Orphans("DOCS"))
+	_, _, ok, err = unlisted.ResolveRenamedFor(ctx, "DOCS", "new.md", "same")
+	require.NoError(t, err)
+	assert.False(t, ok)
+}
