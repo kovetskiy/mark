@@ -1320,20 +1320,25 @@ func TestAReadOnlyRunReportsItsDocuments(t *testing.T) {
 }
 
 // TestADryRunReportsThePageItWouldPublishTo: a dry run that finds the page
-// names it, as a real run would.
+// names it, as a real run would, and so does a compile given --dry-run too.
 func TestADryRunReportsThePageItWouldPublishTo(t *testing.T) {
-	out, err := runReport(t, report.FormatJSON, map[string]string{
-		"a.md": "<!-- Space: DOCS -->\n<!-- Parent: Home -->\n<!-- Title: Parent -->\n\nText.\n",
-	}, func(config *Config) {
-		config.Mode.DryRun = true
-	})
-	require.NoError(t, err)
+	for mode, status := range map[ModeConfig]report.Status{
+		{DryRun: true}:                    report.StatusWouldPublish,
+		{DryRun: true, CompileOnly: true}: report.StatusCompiled,
+	} {
+		out, err := runReport(t, report.FormatJSON, map[string]string{
+			"a.md": "<!-- Space: DOCS -->\n<!-- Parent: Home -->\n<!-- Title: Parent -->\n\nText.\n",
+		}, func(config *Config) {
+			config.Mode = mode
+		})
+		require.NoError(t, err)
 
-	got := reportAfterHTML(t, out)
-	require.Len(t, got.Pages, 1)
-	assert.Equal(t, report.StatusWouldPublish, got.Pages[0].Status)
-	assert.NotEmpty(t, got.Pages[0].PageID)
-	assert.Contains(t, got.Pages[0].URL, "/display/DOCS/")
+		got := reportAfterHTML(t, out)
+		require.Len(t, got.Pages, 1)
+		assert.Equal(t, status, got.Pages[0].Status)
+		assert.NotEmpty(t, got.Pages[0].PageID, "%+v", mode)
+		assert.Contains(t, got.Pages[0].URL, "/display/DOCS/")
+	}
 }
 
 // TestAReadOnlyRunAnnotatesItsWarnings: the github format annotates the
