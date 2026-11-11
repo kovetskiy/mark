@@ -88,7 +88,11 @@ publish, a new attachment next to the old one. The export fails before writing
 anything if a file it would write is already there, unless `--overwrite` is
 given, and `--no-attachments` writes the document alone, without asking
 Confluence for the page's attachments. The attachments are
-moved into place only once all of them have downloaded. Two whose names would
+moved into place only once all of them have downloaded, and a download that is
+not the attachment fails the export with nothing written: a login page in its
+place, which an HTML answer for a file Confluence records as another type is
+taken to be wherever it came from, or an answer of another size than
+Confluence records. Two whose names would
 share a file -- `a/b.png` and `a_b.png`, or names that differ only in case --
 are told apart by a number, as `a_b-2.png`, and so is one named like the
 document itself, when `--output` names a file in the same directory: a

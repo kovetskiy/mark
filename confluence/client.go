@@ -730,7 +730,7 @@ func loginEvidence(req *http.Request, resp *http.Response, mediaType string, dow
 		}
 	}
 
-	if mediaType == "text/html" || mediaType == "application/xhtml+xml" {
+	if isHTMLMediaType(mediaType) {
 		return "an HTML Content-Type", false
 	}
 
@@ -807,6 +807,12 @@ func contentMediaType(header http.Header) string {
 	}
 
 	return strings.ToLower(strings.TrimSpace(mediaType))
+}
+
+// isHTMLMediaType reports whether a media type, as contentMediaType reads
+// it, is a page for a browser: HTML or XHTML.
+func isHTMLMediaType(mediaType string) bool {
+	return mediaType == "text/html" || mediaType == "application/xhtml+xml"
 }
 
 // isJSONMediaType reports whether a media type is JSON: application/json, or

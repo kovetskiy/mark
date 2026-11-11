@@ -2,6 +2,7 @@ package confluence
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -109,11 +110,28 @@ func sameServer(link, base *url.URL) bool {
 	return errA == nil && errB == nil && x == y
 }
 
+// ErrAttachmentSizeMismatch reports that a download was not the size
+// Confluence records for the attachment: something other than Confluence
+// answered for it, or it changed between being listed and being downloaded.
+var ErrAttachmentSizeMismatch = errors.New("the download is not the size Confluence records for the attachment")
+
 // DownloadAttachment writes the content of an attachment of page pageID to w.
-// An answer that is a login page rather than the attachment -- a redirect to
-// Seraph's /login.action, or Seraph saying it did not authenticate the
-// request -- is an error errors.Is finds ErrLoginPage in, and nothing is
-// written.
+//
+// An answer that is a login page rather than the attachment is an error
+// errors.Is finds ErrLoginPage in, and nothing is written. That is a redirect
+// to Seraph's /login.action, Seraph saying it did not authenticate the
+// request, or -- on any host, so an identity provider's form too -- an HTML
+// answer for an attachment info records as something other than HTML, or one
+// that is not the size info records.
+//
+// Any other answer that is not the size info records is an error errors.Is
+// finds ErrAttachmentSizeMismatch in. When the answer gives its length that
+// is known before anything is written; when it does not, w has been given the
+// whole body by the time the error is returned, and discarding it is up to
+// the caller.
+//
+// info is the attachment as GetAttachments lists it. Neither check is made
+// when it records no media type or no size.
 func (api *API) DownloadAttachment(ctx context.Context, pageID string, info AttachmentInfo, w io.Writer) error {
 	address, err := api.AttachmentURL(pageID, info)
 	if err != nil {
@@ -146,13 +164,18 @@ func (api *API) DownloadAttachment(ctx context.Context, pageID string, info Atta
 		)
 	}
 
-	if evidence, strong := loginEvidence(request, response, contentMediaType(response.Header), true); evidence != "" {
-		return requestError(fmt.Sprintf("download attachment %q", info.Filename), &loginPageError{
-			answer: &reply{
-				StatusCode: response.StatusCode, Status: response.Status, Request: response.Request,
-			},
-			requested: request.URL.Redacted(), evidence: evidence, strong: strong,
-		})
+	mediaType := contentMediaType(response.Header)
+	evidence, strong := loginEvidence(request, response, mediaType, true)
+	if evidence == "" {
+		evidence, strong = recordEvidence(info, mediaType), true
+	}
+	if evidence != "" {
+		return downloadLoginError(info, request, response, evidence, strong)
+	}
+
+	size, sized := recordedSize(info, response)
+	if sized && response.ContentLength >= 0 && response.ContentLength != size {
+		return sizeMismatch(info, request, response, mediaType, response.ContentLength, size)
 	}
 
 	written, err := io.Copy(w, io.LimitReader(response.Body, maxAttachmentDownload+1))
@@ -164,5 +187,70 @@ func (api *API) DownloadAttachment(ctx context.Context, pageID string, info Atta
 		return fmt.Errorf("attachment %q is larger than %d bytes", info.Filename, maxAttachmentDownload)
 	}
 
+	if sized && written != size {
+		return sizeMismatch(info, request, response, mediaType, written, size)
+	}
+
 	return nil
+}
+
+// recordEvidence says why an answer of mediaType is a login page rather than
+// the attachment info describes, or "": Confluence serves an attachment as
+// the type it records for it, so HTML for one it does not record as HTML was
+// put there by something else.
+func recordEvidence(info AttachmentInfo, mediaType string) string {
+	recorded := info.recordedMediaType()
+	if recorded == "" || isHTMLMediaType(recorded) || !isHTMLMediaType(mediaType) {
+		return ""
+	}
+
+	return "an HTML Content-Type for an attachment Confluence records as " + recorded
+}
+
+// recordedSize is the size info records, and whether the answer can be held
+// to it: a body that came encoded and was not decoded on the way is not the
+// file byte for byte. One net/http decoded is, and has no Content-Length.
+func recordedSize(info AttachmentInfo, response *http.Response) (int64, bool) {
+	if info.Extensions.FileSize == nil {
+		return 0, false
+	}
+
+	if encoding := response.Header.Get("Content-Encoding"); !response.Uncompressed &&
+		encoding != "" && !strings.EqualFold(encoding, "identity") {
+		return 0, false
+	}
+
+	return *info.Extensions.FileSize, true
+}
+
+// sizeMismatch is the error for an answer of answered bytes to the download
+// of an attachment Confluence records as recorded bytes. One in HTML is a
+// login page; one in anything else may be the attachment changed since it was
+// listed, or a proxy cutting it short, and no login was asked for.
+func sizeMismatch(
+	info AttachmentInfo, request *http.Request, response *http.Response, mediaType string, answered, recorded int64,
+) error {
+	if isHTMLMediaType(mediaType) {
+		return downloadLoginError(info, request, response, fmt.Sprintf(
+			"an HTML answer of %d bytes for an attachment Confluence records as %d", answered, recorded,
+		), true)
+	}
+
+	return fmt.Errorf(
+		"unable to download attachment %q: %w: %s answered with %d bytes where Confluence records %d; "+
+			"it may have changed since it was listed, or something in front of Confluence answered for it",
+		info.Filename, ErrAttachmentSizeMismatch, request.URL.Redacted(), answered, recorded,
+	)
+}
+
+// downloadLoginError is the error for a download answered with a login page.
+func downloadLoginError(
+	info AttachmentInfo, request *http.Request, response *http.Response, evidence string, strong bool,
+) error {
+	return requestError(fmt.Sprintf("download attachment %q", info.Filename), &loginPageError{
+		answer: &reply{
+			StatusCode: response.StatusCode, Status: response.Status, Request: response.Request,
+		},
+		requested: request.URL.Redacted(), evidence: evidence, strong: strong,
+	})
 }

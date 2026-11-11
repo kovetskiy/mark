@@ -663,6 +663,9 @@ func (api *API) getAttachmentsV2(ctx context.Context, pageID string) ([]Attachme
 		Title        string `json:"title"`
 		Comment      string `json:"comment"`
 		DownloadLink string `json:"downloadLink"`
+		// The media type and the size, which v1 keeps under extensions.
+		MediaType json.RawMessage `json:"mediaType"`
+		FileSize  json.RawMessage `json:"fileSize"`
 	}
 
 	collection, err := api.collectionOfV2(ctx, pageID)
@@ -684,6 +687,8 @@ func (api *API) getAttachmentsV2(ctx context.Context, pageID string) ([]Attachme
 		// The checksum that tells an unchanged attachment apart lives in the
 		// comment, which v2 keeps at the top level rather than under metadata.
 		info.Metadata.Comment = attachment.Comment
+		info.Extensions = extensionsOf(attachment.MediaType, attachment.FileSize)
+		info.Metadata.MediaType = info.Extensions.MediaType
 		// v2 gives the download link without its context; Cloud, which is all
 		// the gateway ever fronts, always serves under /wiki.
 		info.Links.Context = "/wiki"

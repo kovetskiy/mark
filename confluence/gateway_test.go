@@ -152,6 +152,10 @@ func TestGatewayAttachmentsAndLabels(t *testing.T) {
 	assert.Equal(t, "diagram.png", attachments[0].Filename)
 	assert.Equal(t, "[mark] abc123", attachments[0].Metadata.Comment)
 	assert.NotEmpty(t, attachments[0].Links.Download)
+	assert.Equal(t, "image/png", attachments[0].Extensions.MediaType)
+	assert.Equal(t, "image/png", attachments[0].Metadata.MediaType)
+	require.NotNil(t, attachments[0].Extensions.FileSize)
+	assert.Zero(t, *attachments[0].Extensions.FileSize)
 
 	labels, err := api.GetPageLabels(context.Background(), &confluence.PageInfo{ID: page.ID}, "global")
 	require.NoError(t, err)
