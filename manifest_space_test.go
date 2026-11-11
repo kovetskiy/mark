@@ -465,3 +465,27 @@ func TestOnOrphanLeavesAPageWhoseSpaceIsUnknown(t *testing.T) {
 	assert.Equal(t, report.OnOrphanReport, got.Orphans[0].Action)
 	assert.Equal(t, `mark could not tell which space it is in, and space "DOCS"'s page manifest records it`, got.Orphans[0].Reason)
 }
+
+// TestRecordedFolderWhoseSpaceIsUnknownStopsTheRun: a recorded folder that
+// answers with no space is neither used nor replaced by a second folder.
+func TestRecordedFolderWhoseSpaceIsUnknownStopsTheRun(t *testing.T) {
+	server, _, _ := twoSpacesOn(t, false)
+	dir := t.TempDir()
+	file := writeFile(t, dir, "doc.md", markdownInFolder("Guides", "Doc"))
+	require.NoError(t, Run(context.Background(), trackingConfig(server, file)))
+
+	folders := server.Folders()
+	require.Len(t, folders, 1)
+	server.RenameFolder(folders[0].ID, "Guides Renamed")
+	server.SetFail(func(r *http.Request) (int, string, bool) {
+		if r.Method == http.MethodGet && r.URL.Path == "/api/v2/folders/"+folders[0].ID {
+			return http.StatusOK, `{"id":"` + folders[0].ID + `","type":"folder","status":"current","title":"Guides Renamed"}`, true
+		}
+		return 0, "", false
+	})
+
+	err := Run(context.Background(), trackingConfig(server, file))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "unable to tell which space folder "+folders[0].ID)
+	assert.Len(t, server.Folders(), 1, "no second folder")
+}

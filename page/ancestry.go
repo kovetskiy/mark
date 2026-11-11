@@ -286,6 +286,12 @@ func EnsureFolderAncestry(
 					// create it again.
 					options.Warnings.Add(report.WarningMissingPage,
 						"folder %q was recorded as %s, which no longer exists; it will be created again", title, id)
+				case folder.SpaceID == "":
+					// Neither this space's nor another's for certain: guessing
+					// either way splits the hierarchy or reaches outside it.
+					return nil, fmt.Errorf(
+						"unable to tell which space folder %s, recorded for %q, is in", id, title,
+					)
 				case folder.SpaceID != spaceID:
 					// The manifest speaks for this space's folders alone, and
 					// pages created under one elsewhere would land in its space.
