@@ -262,7 +262,19 @@ func (r Root) contain(joined, named string) error {
 // that may reach only the one directory, such as a document in an fs.FS
 // reaching --include-path on disk.
 func CheckWithin(dir, path string) error {
-	resolved, ok := within([]string{dir}, path)
+	// Made absolute first, as Within makes them: one resolved while relative
+	// keeps the working directory's own link and reads as outside the other.
+	absDir, err := filepath.Abs(dir)
+	if err != nil {
+		return err
+	}
+
+	absPath, err := filepath.Abs(path)
+	if err != nil {
+		return err
+	}
+
+	resolved, ok := within([]string{absDir}, absPath)
 	if ok {
 		return nil
 	}
