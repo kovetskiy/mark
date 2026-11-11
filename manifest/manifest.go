@@ -455,8 +455,9 @@ type spaceState struct {
 	// never rebind onto a page another document is publishing to.
 	claimed map[string]bool
 
-	// added records the paths this run recorded that were tracked before it
-	// under neither their own path nor one they moved or were renamed from.
+	// added records the paths this run recorded that were not tracked under
+	// the same pattern or scope before it, under their own path or one they
+	// moved or were renamed from.
 	added map[string]bool
 }
 
@@ -1358,9 +1359,6 @@ func (s *Store) Record(ctx context.Context, spaceKey, path, pageID, title, hash 
 
 	sh := &state.shards[shardFor(path)]
 	existing, ok := sh.pages[path]
-	if !ok && !movedOK {
-		state.added[path] = true
-	}
 	// A document is recorded under its run's scope, partial or not: the
 	// scope names the documents' owner, not a pattern some of them lie in.
 	glob, document := s.documentScopes[path]
@@ -1387,6 +1385,9 @@ func (s *Store) Record(ctx context.Context, spaceKey, path, pageID, title, hash 
 			// covered by no run but one given that very pattern.
 			glob = globpattern.Escape(path)
 		}
+	}
+	if carried := ok && existing.Glob == glob || movedOK && moved.Glob == glob; !carried {
+		state.added[path] = true
 	}
 	if ok && existing.PageID == pageID && existing.Title == title &&
 		existing.Hash == hash && existing.Glob == glob {
@@ -1857,12 +1858,13 @@ func (s *Store) Published(spaceKey string) int {
 // rather than unseen. A run whose documents publish to a space says nothing
 // about its files' pages there, nor one scope's documents about another's.
 //
-// For any glob but a document scope it counts the pages the run's files
-// published. For a document scope it counts the keys of the scope tracked in
-// the space before the run that are still there: published again, followed to
-// a new key, or named by SetScopeKeys. None of them left means every key of
-// the scope there is gone at once, which a failed render or a bad key list
-// looks exactly like, whatever new keys the run published.
+// For any glob but a scope SetScopeKeys listed it counts the pages the run's
+// files, or the scope's documents, published. For a listed scope, where the
+// caller's list decides what is gone, it counts the keys of the scope tracked
+// there before the run that are still there: published again, followed to a
+// new key, or listed. None of them left means every key of the scope there is
+// gone at once, which a failed render or a bad key list looks exactly like,
+// whatever new keys the run published.
 func (s *Store) Survivors(spaceKey, glob string) int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -1873,7 +1875,7 @@ func (s *Store) Survivors(spaceKey, glob string) int {
 	}
 
 	survivors := 0
-	if !IsDocumentScope(glob) {
+	if !s.listed[glob] {
 		for path := range state.seen {
 			if s.sameScope(path, Entry{Glob: glob}) {
 				survivors++

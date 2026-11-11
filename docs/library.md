@@ -59,8 +59,8 @@ The boundary holds through symbolic links too, whenever the file system can
 report them (an `fs.ReadLinkFS`, as `os.DirFS` and `fstest.MapFS` are): each
 name is resolved one link at a time before it is read, and a link to an
 absolute path or above the root is refused like a name climbing out, as is a
-chain of more than 40 links. A file system that cannot report links cannot
-hand one over either.
+chain of more than 40 links. A file system that does not report links is held
+by name alone, so a wrapper around `os.DirFS` should pass `fs.ReadLinkFS` on.
 
 For a directory whose contents may change while the run reads it, the file
 system of an `os.Root` also keeps out a link swapped in between that check and
@@ -120,11 +120,8 @@ Documents have no pattern, so `DocumentScope` names them instead:
 Files published alongside keep their own pattern either way, so a `Files` run
 never takes a document's page for one of its orphans. A scope can never be
 mistaken for a `--files` pattern. Nothing is archived or deleted under a
-pattern that published nothing in that space on the run, nor under a scope
-none of whose keys tracked in that space before the run is still there:
-published again, followed to a new `Key`, or named in `DocumentKeys` (see
-below). Every key of a scope gone at once looks exactly like a failed render
-or a bad key list, so such orphans are only reported.
+pattern or a scope that published nothing in that space on the run; a
+partial run's scope is held to more (see below).
 
 Changing a scope is like changing a `--files` pattern: the pages recorded
 under the old one stay its own, and are never orphans of the new one. Keep a
@@ -195,7 +192,8 @@ with what was left.
 
 `DocumentKeys` needs `Partial` and `DocumentScope`, and is refused without
 them: without `Partial` the run's documents are the whole scope already, and
-those left out would be removed. `Partial` with documents that have no scope
+those left out would be removed. An empty `DocumentKeys` is no list: a caller
+whose documents are all the scope has publishes them without `Partial`. `Partial` with documents that have no scope
 changes nothing for them, since they take part in no orphan handling or
 renames either way, and is warned about when the run has no files.
 

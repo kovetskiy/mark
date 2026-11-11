@@ -29,9 +29,11 @@ import (
 // fstest.MapFS can: every name is resolved one component at a time before it
 // is opened, read, statted or globbed, a link followed only to a relative
 // target that stays inside, and a chain of more than 40 links refused as a
-// loop. An fs.FS that cannot report links cannot hand one over through fs.FS
-// either, so it needs nothing more. A link swapped in between the check and
-// the read is only kept out by an os.Root, which resolves as it opens.
+// loop. An fs.FS that does not report links is held by name alone: one that
+// cannot have links needs nothing more, but a wrapper that opens through
+// os.DirFS without passing ReadLinkFS on follows them as os.DirFS does. A
+// link swapped in between the check and the read is only kept out by an
+// os.Root, which resolves as it opens.
 //
 // A Root is an Opener, for ResolveLocalAttachment and
 // ResolveLocalAttachments, which then also glob and check containment in it.
@@ -49,7 +51,8 @@ func FSRoot(fsys fs.FS) Root {
 }
 
 // FS is what r reads from, or nil for the local disk: for an fs.FS that
-// reports symbolic links, one following them only inside it.
+// reports symbolic links, one following them only inside it, which reports
+// none itself.
 func (r Root) FS() fs.FS {
 	return r.fsys
 }

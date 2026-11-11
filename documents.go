@@ -68,9 +68,10 @@ type Document struct {
 	//
 	// The root holds through symbolic links whenever the FS reports them as
 	// an fs.ReadLinkFS, as os.DirFS and fstest.MapFS do: a link is followed
-	// only to a relative target inside it (see attachment.FSRoot). The FS of
-	// an os.Root, from os.OpenRoot, also keeps out a link swapped in while
-	// the run reads.
+	// only to a relative target inside it (see attachment.FSRoot). A wrapper
+	// that does not pass ReadLinkFS on is held by name alone. The FS of an
+	// os.Root, from os.OpenRoot, also keeps out a link swapped in while the
+	// run reads.
 	//
 	// A d2 diagram in a document with an FS may not name a local file; d2
 	// reads those from disk itself.
