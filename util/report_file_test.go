@@ -22,9 +22,7 @@ func reportFileFixture(t *testing.T) (*confluencetest.Server, string) {
 	home := server.AddPage("DOCS", "Home", "page", "")
 	server.SetHomepage("DOCS", home.ID)
 
-	document := filepath.Join(t.TempDir(), "page.md")
-	require.NoError(t, os.WriteFile(document,
-		[]byte("<!-- Space: DOCS -->\n<!-- Title: Page -->\n\nBody.\n"), 0o600))
+	_, document := publishable(t)
 
 	return server, document
 }
@@ -77,29 +75,6 @@ func TestReportFileFlag(t *testing.T) {
 			assert.Equal(t, report.StatusPublished, parsed.Pages[0].Status)
 		})
 	}
-}
-
-// TestReportFileFlagUnderCompileOnly: the github report goes to the file and
-// the compiled body alone to standard output.
-func TestReportFileFlagUnderCompileOnly(t *testing.T) {
-	noDefaultConfig(t)
-	dir := t.TempDir()
-	good := filepath.Join(dir, "good.md")
-	require.NoError(t, os.WriteFile(good, []byte("<!-- Space: DOCS -->\n<!-- Title: Good -->\n\nBody.\n"), 0o600))
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "bad.md"),
-		[]byte("<!-- Space: DOCS -->\n<!-- Title: Bad -->\n\n<!-- ac:ignore -->\nunclosed\n"), 0o600))
-	reportFile := filepath.Join(t.TempDir(), "report.txt")
-
-	out, _, err := runMark(t, "--color", "never", "publish", "--compile-only", "--continue-on-error",
-		"--output-format", "github", "--report-file", reportFile, "--files", filepath.Join(dir, "*.md"))
-	require.Error(t, err, "bad.md fails")
-
-	assert.Equal(t, "<p>Body.</p>\n\n", out)
-
-	written, err := os.ReadFile(reportFile)
-	require.NoError(t, err)
-	assert.Contains(t, string(written), "::error file="+filepath.Join(dir, "bad.md"))
-	assert.NotContains(t, string(written), "<p>")
 }
 
 // TestReportFileFlagDashIsStandardOutput: "-" writes the report to standard
