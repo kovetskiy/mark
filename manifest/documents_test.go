@@ -141,3 +141,74 @@ func TestSurvivorsCountOnlyTheScopesOwnKeys(t *testing.T) {
 	assert.Equal(t, []string{"a.md", "b.md"}, partial.Orphans("DOCS"))
 	assert.Zero(t, partial.Survivors("DOCS", "documents://gen"))
 }
+
+// TestRenameSources: what a document could have been renamed from is the gone
+// keys of its own scope, whatever their content, and nothing for a file, a
+// document with no scope, or a partial run not given the scope's keys.
+func TestRenameSources(t *testing.T) {
+	ctx := t.Context()
+	server := confluencetest.New(t)
+	server.AddSpace("DOCS")
+
+	first := storeFor(server, "*.md", "gen", []string{"file.md"}, []string{"a.md", "b.md", "c.md"})
+	for i, key := range []string{"file.md", "a.md", "b.md", "c.md"} {
+		require.NoError(t, first.Record(ctx, "DOCS", key, string(rune('1'+i)), key, "hash-"+key))
+	}
+	other := storeFor(server, "", "other", nil, []string{"elsewhere.md"})
+	require.NoError(t, other.Record(ctx, "DOCS", "elsewhere.md", "9", "Elsewhere", ""))
+	require.NoError(t, first.Save(ctx))
+	require.NoError(t, other.Save(ctx))
+
+	full := storeFor(server, "*.md", "gen", []string{"file.md"}, []string{"a.md", "new.md"})
+	sources, err := full.RenameSources(ctx, "DOCS", "new.md")
+	require.NoError(t, err)
+	assert.ElementsMatch(t, []string{"b.md", "c.md"}, keysOf(sources))
+
+	// Recorded asks without marking the key seen, so a.md is still a source
+	// until its own turn.
+	_, ok, err := full.Recorded(ctx, "DOCS", "a.md")
+	require.NoError(t, err)
+	assert.True(t, ok)
+	_, ok, err = full.Recorded(ctx, "DOCS", "new.md")
+	require.NoError(t, err)
+	assert.False(t, ok)
+
+	// A claimed page is no longer a source.
+	require.NoError(t, full.Record(ctx, "DOCS", "a.md", "4", "c.md", ""))
+	sources, err = full.RenameSources(ctx, "DOCS", "new.md")
+	require.NoError(t, err)
+	assert.Equal(t, []string{"b.md"}, keysOf(sources))
+
+	for name, store := range map[string]*manifest.Store{
+		"file":     storeFor(server, "*.md", "gen", []string{"file.md"}, []string{"a.md"}),
+		"no scope": storeFor(server, "", "", nil, []string{"new.md"}),
+	} {
+		path := "new.md"
+		if name == "file" {
+			path = "file.md"
+		}
+		sources, err := store.RenameSources(ctx, "DOCS", path)
+		require.NoError(t, err, name)
+		assert.Empty(t, sources, name)
+	}
+
+	partial := storeFor(server, "", "gen", nil, []string{"new.md"})
+	partial.SetPartial(true)
+	sources, err = partial.RenameSources(ctx, "DOCS", "new.md")
+	require.NoError(t, err)
+	assert.Empty(t, sources, "a partial run not given the scope's keys knows of nothing gone")
+
+	partial.SetScopeKeys("gen", []string{"a.md"})
+	sources, err = partial.RenameSources(ctx, "DOCS", "new.md")
+	require.NoError(t, err)
+	assert.ElementsMatch(t, []string{"b.md", "c.md"}, keysOf(sources))
+}
+
+func keysOf(entries map[string]manifest.Entry) []string {
+	keys := make([]string, 0, len(entries))
+	for key := range entries {
+		keys = append(keys, key)
+	}
+
+	return keys
+}
