@@ -115,8 +115,11 @@ Documents have no pattern, so `DocumentScope` names them instead:
 Files published alongside keep their own pattern either way, so a `Files` run
 never takes a document's page for one of its orphans. A scope can never be
 mistaken for a `--files` pattern. Nothing is archived or deleted under a
-pattern or a scope that published nothing in that space on the run, unless the
-run is partial (see below).
+pattern that published nothing in that space on the run, nor under a scope
+none of whose keys tracked in that space before the run is still there:
+published again, followed to a new `Key`, or named in `DocumentKeys` (see
+below). Every key of a scope gone at once looks exactly like a failed render
+or a bad key list, so such orphans are only reported.
 
 Changing a scope is like changing a `--files` pattern: the pages recorded
 under the old one stay its own, and are never orphans of the new one. Keep a
@@ -131,8 +134,8 @@ at for orphans.
 A run with a scope covers every `Key` recorded under it: one it does not
 publish is an orphan. A program that renders only the documents a change
 touched says so with `Tracking.Partial`, as `--partial` does for files, and
-names in `DocumentKeys` the keys the change removed, and the old key of each
-document it renamed:
+lists in `DocumentKeys` every key of the scope that still exists, which it can
+usually do without rendering anything:
 
 ```go
 err := mark.Run(ctx, mark.Config{
@@ -146,36 +149,49 @@ err := mark.Run(ctx, mark.Config{
     // Rendered from the records the change added or edited, a renamed
     // record under its new key.
     Documents: changed,
-    // The keys of the records the change removed, and the old key of each
-    // record it renamed.
-    DocumentKeys: []string{"adr/0007-use-kafka.md", "adr/0012-old-title.md"},
+    // The key of every record there is now, rendered or not. Keys of
+    // Documents may be among them.
+    DocumentKeys: allKeys,
 })
 ```
 
-The run covers only the keys of the scope it publishes or names:
+The run's documents and `DocumentKeys` are then the scope's whole key set, so
+the caller keeps no history:
 
-* A key in `DocumentKeys` that is still recorded and not published is an
-  orphan, reported and dealt with by `OnOrphan`.
-* A published document with a new `Key` is taken for a rename of a key in
-  `DocumentKeys` with the same content, and its page follows it, its
-  `NoOverwrite` baseline included. A page found by its title for a new `Key`
-  is followed from a named key the same way. Either way the entry keeps the
-  scope.
-* Every other page of the scope is left alone and stays tracked. An orphan the
-  run only reports stays tracked too, for a run publishing the whole scope.
+* A key recorded under the scope and in neither is gone: an orphan, reported
+  and dealt with by `OnOrphan`, as in a run publishing the whole scope. A key
+  left out of the list by mistake is gone too, so the run logs how many keys
+  of each scope it took as gone, and each is in the report's orphans.
+* A published document with a new `Key` is taken for a rename of the one gone
+  key with the same content, and its page follows it, its `NoOverwrite`
+  baseline included. A page found by its title for a new `Key` is followed
+  from a gone key the same way. Either way the entry keeps the scope.
+* A key in `DocumentKeys` is left alone and stays tracked, its baseline
+  unchanged. It is never taken for a rename, so a new document with the same
+  content is a copy with a page of its own, and a page it owns that another
+  document finds by title is reported as shared by both.
+* An orphan the run only reports stays tracked, as for `--partial`.
 
-Nothing is removed because it is absent, so the guard that holds back the
-orphans of a scope that published nothing in a space does not apply to the
-keys a partial run names: it was told to remove them. A run finds a scope's
-pages only in the spaces it publishes to, though, so `DocumentKeys` with no
-`Documents`, `Files` or `Paths` is refused, or under `CI` warned about and does
-nothing: a change that only removes documents is left to a run publishing the
-whole scope, as a change that only deletes files is.
+A scope's orphans in a space are archived or deleted only while some key of
+the scope tracked there before the run is still there: published, followed to
+a new key, or listed. A list naming none of them, beside documents new to the
+scope or none, would read every page of the scope there as gone, so those are
+only reported, with the reason. A run finds a scope's pages only in the spaces
+it publishes to, so `DocumentKeys` with no `Documents`, `Files` or `Paths` is
+refused, or under `CI` warned about and does nothing: the next run publishing
+a document of the scope, given its keys, finds the ones removed.
 
-`DocumentKeys` needs `Partial` and `DocumentScope` too, and is refused without
-them: without `Partial` the run already covers every key of its scope, and
-the documents left out would be removed. `Partial` with documents that have no
-scope changes nothing for them, since they take part in no orphan handling or
+Without `DocumentKeys`, a partial run knows only the keys it publishes. It
+finds no orphans in the scope, takes no document for a rename, and follows a
+document by its own `Key` alone; a moved document whose page it finds by
+title is reported as sharing it with the key it moved from. That is the safe
+choice for a caller that cannot list its scope; a later run that can deals
+with what was left.
+
+`DocumentKeys` needs `Partial` and `DocumentScope`, and is refused without
+them: without `Partial` the run's documents are the whole scope already, and
+those left out would be removed. `Partial` with documents that have no scope
+changes nothing for them, since they take part in no orphan handling or
 renames either way, and is warned about when the run has no files.
 
 Files and documents in one partial run each follow their own rule: `Files` and

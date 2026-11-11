@@ -76,9 +76,16 @@ type Config struct {
 	// run's documents are also only taken for renames, by their content, of
 	// documents recorded under the same scope.
 	//
-	// With Tracking.Partial the run covers only the keys of the scope it
-	// publishes or names in DocumentKeys, and leaves every other page of the
-	// scope alone and tracked.
+	// With Tracking.Partial the run publishes only some of the scope's
+	// documents. Given every other key of the scope in DocumentKeys, it still
+	// covers the whole scope; without them it covers only the keys it
+	// publishes, finds no orphans and follows no rename, and leaves every
+	// other page of the scope alone and tracked.
+	//
+	// A scope's orphans in a space are archived or deleted only while some key
+	// of it tracked there before the run is still there, published or named in
+	// DocumentKeys; with none, they are only reported, as a failed render or a
+	// bad key list would otherwise empty the scope there.
 	//
 	// Empty, documents take part in no orphan handling and no rename
 	// detection: a page is found again by its Key alone, and never reported,
@@ -88,16 +95,24 @@ type Config struct {
 	// scope is never mistaken for a --files pattern.
 	DocumentScope string
 
-	// DocumentKeys names keys of DocumentScope that a run with
-	// Tracking.Partial covers without publishing them, as Paths names
-	// deleted files: the Key of a document removed since, and the Key a
-	// renamed document had. Such a key still tracked is an orphan, and
-	// OnOrphan acts on it, or the previous Key of a document the run
-	// publishes, whose page then follows it. A key of Documents may be named
-	// too. It needs DocumentScope and Tracking.Partial: a run without
-	// Partial already covers every key of its scope. A run finds a scope's
-	// pages only in the spaces it publishes to, so DocumentKeys with nothing
-	// to publish is refused, or under CI only warned about.
+	// DocumentKeys names, for a run with Tracking.Partial, every Key of
+	// DocumentScope that still exists and that the run does not publish, such
+	// as all the keys a caller can list without rendering their documents;
+	// keys of Documents may be named too. With the run's Documents they are
+	// the scope's whole key set, so nothing else has to be remembered:
+	//
+	//   - a key tracked under the scope and in neither is gone: an orphan,
+	//     which OnOrphan acts on, so a key left out by mistake is removed too;
+	//   - a document under a new Key with the content of exactly one gone key
+	//     is that document renamed, and its page follows it;
+	//   - a key named here is left alone and tracked: it is never taken for a
+	//     rename or a move, and a page it owns that another document finds by
+	//     title is a conflict to warn of.
+	//
+	// It needs DocumentScope and Tracking.Partial: a run without Partial
+	// already covers the whole scope with its documents alone. A run finds a
+	// scope's pages only in the spaces it publishes to, so DocumentKeys with
+	// nothing to publish is refused, or under CI only warned about.
 	DocumentKeys []string
 
 	Connection ConnectionConfig
@@ -391,9 +406,10 @@ type TrackingConfig struct {
 	// is left alone; and a page the run records keeps the pattern its entry,
 	// or the entry of the file it was renamed from, was recorded under.
 	//
-	// For Documents with a DocumentScope it does the same by key: the run
-	// covers the keys of its Documents and of DocumentKeys, and leaves the
-	// scope's other pages alone. Documents without a scope take part in no
+	// For Documents with a DocumentScope it says they are some of the scope's.
+	// Given the scope's other existing keys in DocumentKeys, the run covers
+	// the whole scope; without them, only the keys it publishes, and it leaves
+	// the scope's other pages alone. Documents without a scope take part in no
 	// orphan handling either way.
 	Partial bool
 
@@ -1017,7 +1033,7 @@ func Run(ctx context.Context, config Config) (err error) {
 			}
 			tracker.SetRunDocuments(config.DocumentScope, keys)
 		}
-		tracker.SetRunDocumentKeys(config.DocumentScope, config.DocumentKeys)
+		tracker.SetScopeKeys(config.DocumentScope, config.DocumentKeys)
 	}
 
 	// A link is resolved by finding the page it points at, so a document linking

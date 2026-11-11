@@ -4,7 +4,6 @@ import (
 	"context"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 	"testing/fstest"
 
@@ -38,8 +37,8 @@ func partialDocumentsFixture(t *testing.T) (*confluencetest.Server, Config) {
 	return server, full
 }
 
-// partialDocumentsOf is full narrowed to documents and the keys it names,
-// with --on-orphan delete.
+// partialDocumentsOf is full narrowed to documents, with keys the scope's
+// other existing keys, and --on-orphan delete.
 func partialDocumentsOf(full Config, keys []string, documents ...Document) Config {
 	partial := full
 	partial.Documents = documents
@@ -50,53 +49,12 @@ func partialDocumentsOf(full Config, keys []string, documents ...Document) Confi
 	return partial
 }
 
-// TestPartialDocumentsLeaveTheRestOfTheScopeAlone: a partial run publishing
-// some of a scope's documents removes none of the others, and they stay
-// tracked under the scope.
-func TestPartialDocumentsLeaveTheRestOfTheScopeAlone(t *testing.T) {
-	server, full := partialDocumentsFixture(t)
-	bID, cID := mustFind(t, server, "Record b"), mustFind(t, server, "Record c")
+// renameFixture publishes old-name.md and other.md under the adr scope,
+// titled from their names, and returns the server, that run, the document
+// maker and both pages.
+func renameFixture(t *testing.T) (*confluencetest.Server, Config, func(path, body string) Document, string, string) {
+	t.Helper()
 
-	changed := adr("a")
-	changed.Content = append(changed.Content, "Changed.\n"...)
-	require.NoError(t, Run(context.Background(), partialDocumentsOf(full, nil, changed)))
-
-	assert.Contains(t, bodyOfPageTitled(t, server, "Record a"), "Changed.")
-	for _, id := range []string{bID, cID} {
-		assert.False(t, server.Page(id).Trashed)
-	}
-	for _, key := range []string{"b.md", "c.md"} {
-		entry, ok := lookupKey(t, server, key)
-		require.True(t, ok, key)
-		assert.Equal(t, adrScope, entry.Glob)
-	}
-}
-
-// TestPartialDocumentsActOnTheKeysTheyName: a key named in DocumentKeys and
-// not published is an orphan; reported, it stays tracked for the run
-// publishing the whole scope, and with delete its page is trashed.
-func TestPartialDocumentsActOnTheKeysTheyName(t *testing.T) {
-	server, full := partialDocumentsFixture(t)
-	bID, cID := mustFind(t, server, "Record b"), mustFind(t, server, "Record c")
-
-	reporting := partialDocumentsOf(full, []string{"b.md"}, adr("a"))
-	reporting.Tracking.OnOrphan = report.OnOrphanReport
-	logged := captureLog(t, func() { require.NoError(t, Run(context.Background(), reporting)) })
-	assert.Contains(t, logged, "had no matching source file in this run: b.md")
-	_, ok := lookupKey(t, server, "b.md")
-	assert.True(t, ok, "only reported, so still tracked")
-
-	require.NoError(t, Run(context.Background(), partialDocumentsOf(full, []string{"b.md"}, adr("a"))))
-	assert.True(t, server.Page(bID).Trashed)
-	assert.False(t, server.Page(cID).Trashed)
-	_, ok = lookupKey(t, server, "b.md")
-	assert.False(t, ok)
-}
-
-// TestPartialDocumentRenameIsFollowedFromANamedKey: a document under a new
-// Key, its title from the new name, is taken for the named key with the same
-// content, and not for a key the run does not name.
-func TestPartialDocumentRenameIsFollowedFromANamedKey(t *testing.T) {
 	server, _ := docsSpace(t)
 	doc := func(path, body string) Document {
 		return Document{
@@ -110,45 +68,142 @@ func TestPartialDocumentRenameIsFollowedFromANamedKey(t *testing.T) {
 	full.DocumentScope = "adr"
 	full.Page.TitleFromFilename = true
 	require.NoError(t, Run(context.Background(), full))
-	oldID, otherID := mustFind(t, server, "Old Name"), mustFind(t, server, "Other")
 
-	require.NoError(t, Run(context.Background(), partialDocumentsOf(full, []string{"old-name.md"},
-		doc("new-name.md", "Renamed."), doc("copy.md", "Left alone."))))
+	return server, full, doc, mustFind(t, server, "Old Name"), mustFind(t, server, "Other")
+}
+
+// TestPartialDocumentsLeaveTheListedKeysAlone: a partial run publishing some
+// of a scope's documents, given the rest of its keys, removes none of them
+// under delete, and they stay tracked under the scope as they were.
+func TestPartialDocumentsLeaveTheListedKeysAlone(t *testing.T) {
+	server, full := partialDocumentsFixture(t)
+	bID, cID := mustFind(t, server, "Record b"), mustFind(t, server, "Record c")
+	before := map[string]any{}
+	for _, key := range []string{"b.md", "c.md"} {
+		entry, ok := lookupKey(t, server, key)
+		require.True(t, ok)
+		before[key] = entry
+	}
+
+	changed := adr("a")
+	changed.Content = append(changed.Content, "Changed.\n"...)
+	logged := captureLog(t, func() {
+		require.NoError(t, Run(context.Background(), partialDocumentsOf(full, []string{"b.md", "c.md"}, changed)))
+	})
+
+	assert.NotContains(t, logged, "had no matching source file")
+	assert.Contains(t, bodyOfPageTitled(t, server, "Record a"), "Changed.")
+	for _, id := range []string{bID, cID} {
+		assert.False(t, server.Page(id).Trashed)
+	}
+	for _, key := range []string{"b.md", "c.md"} {
+		entry, ok := lookupKey(t, server, key)
+		require.True(t, ok, key)
+		assert.Equal(t, before[key], entry, "%s is left as it was", key)
+		assert.Equal(t, adrScope, entry.Glob)
+	}
+}
+
+// TestPartialDocumentsTakeAKeyLeftOutAsGone: a tracked key of the scope that
+// is neither published nor listed is an orphan, and the run says how many
+// keys it took as gone; reported, it stays tracked, and with delete its page
+// is trashed and the key forgotten.
+func TestPartialDocumentsTakeAKeyLeftOutAsGone(t *testing.T) {
+	server, full := partialDocumentsFixture(t)
+	bID, cID := mustFind(t, server, "Record b"), mustFind(t, server, "Record c")
+
+	reporting := partialDocumentsOf(full, []string{"c.md"}, adr("a"))
+	reporting.Tracking.OnOrphan = report.OnOrphanReport
+	logged := captureLog(t, func() { require.NoError(t, Run(context.Background(), reporting)) })
+	assert.Contains(t, logged, "had no matching source file in this run: b.md")
+	assert.Contains(t, logged, "1 key(s) of documents://adr are neither published nor named in DocumentKeys")
+	_, ok := lookupKey(t, server, "b.md")
+	assert.True(t, ok, "only reported, so still tracked")
+
+	require.NoError(t, Run(context.Background(), partialDocumentsOf(full, []string{"c.md"}, adr("a"))))
+	assert.True(t, server.Page(bID).Trashed)
+	assert.False(t, server.Page(cID).Trashed)
+	_, ok = lookupKey(t, server, "b.md")
+	assert.False(t, ok)
+}
+
+// TestPartialDocumentRenameIsFollowedByContent: a document under a new Key,
+// its title from the new name, is taken for the one gone key with the same
+// content without that key being named anywhere; the page follows it under
+// the scope and nothing is left to orphan.
+func TestPartialDocumentRenameIsFollowedByContent(t *testing.T) {
+	server, full, doc, oldID, otherID := renameFixture(t)
+
+	logged := captureLog(t, func() {
+		require.NoError(t, Run(context.Background(), partialDocumentsOf(full, []string{"other.md"},
+			doc("new-name.md", "Renamed."))))
+	})
 
 	entry, ok := lookupKey(t, server, "new-name.md")
 	require.True(t, ok)
-	assert.Equal(t, oldID, entry.PageID, "the named key's page follows the document")
+	assert.Equal(t, oldID, entry.PageID, "the gone key's page follows the document")
 	assert.Equal(t, adrScope, entry.Glob)
 	assert.Equal(t, "New Name", server.Page(oldID).Title)
+	assert.False(t, server.Page(oldID).Trashed)
 	_, ok = lookupKey(t, server, "old-name.md")
 	assert.False(t, ok, "the old key handed its entry over")
+	assert.NotContains(t, logged, "had no matching source file")
+	assert.Equal(t, "Other", server.Page(otherID).Title)
+}
 
-	assert.Equal(t, "Other", server.Page(otherID).Title, "other.md was not named")
+// TestPartialDocumentCopyOfAListedKeyGetsItsOwnPage: a document under a new
+// Key with the content of a key that still exists is a copy, not a rename: a
+// listed key is never a rename source. Left out of the list, the same key is
+// gone, and the document is its rename.
+func TestPartialDocumentCopyOfAListedKeyGetsItsOwnPage(t *testing.T) {
+	server, full, doc, oldID, otherID := renameFixture(t)
+
+	require.NoError(t, Run(context.Background(), partialDocumentsOf(full, []string{"old-name.md", "other.md"},
+		doc("copy.md", "Left alone."))))
+
+	assert.Equal(t, "Other", server.Page(otherID).Title)
+	otherEntry, ok := lookupKey(t, server, "other.md")
+	require.True(t, ok)
+	assert.Equal(t, otherID, otherEntry.PageID)
 	copyEntry, ok := lookupKey(t, server, "copy.md")
 	require.True(t, ok)
 	assert.NotEqual(t, otherID, copyEntry.PageID)
+	assert.False(t, server.Page(oldID).Trashed)
+
+	require.NoError(t, Run(context.Background(), partialDocumentsOf(full,
+		[]string{"old-name.md", "other.md", "copy.md"}, doc("second-copy.md", "Renamed."))))
+	assert.Equal(t, oldID, mustFind(t, server, "Old Name"), "a listed key is never a rename source")
+
+	require.NoError(t, Run(context.Background(), partialDocumentsOf(full,
+		[]string{"other.md", "copy.md", "second-copy.md"}, doc("renamed.md", "Renamed."))))
+	entry, ok := lookupKey(t, server, "renamed.md")
+	require.True(t, ok)
+	assert.Equal(t, oldID, entry.PageID, "left out of the list, old-name.md is gone and followed")
 }
 
-// TestPartialDocumentMoveKeepsItsScope: a document whose Key changed and
-// whose title did not finds its page by the title; with its old key named the
-// entry moves to the new key under the scope, and without it the run says
-// which key to name.
-func TestPartialDocumentMoveKeepsItsScope(t *testing.T) {
+// TestPartialDocumentMoveFollowsAGoneKey: a document whose Key changed and
+// whose title did not finds its page by the title. From a gone key the entry
+// moves to the new key under the scope; from a listed key it is two
+// documents claiming one page, which is warned about.
+func TestPartialDocumentMoveFollowsAGoneKey(t *testing.T) {
 	server, full := partialDocumentsFixture(t)
 	bID := mustFind(t, server, "Record b")
 
 	moved := adr("b")
 	moved.Path = "moved/b.md"
+	moved.Content = append(moved.Content, "Moved.\n"...)
 
 	logged := captureLog(t, func() {
-		require.NoError(t, Run(context.Background(), partialDocumentsOf(full, nil, moved)))
+		require.NoError(t, Run(context.Background(), partialDocumentsOf(full, []string{"a.md", "b.md", "c.md"}, moved)))
 	})
-	assert.Contains(t, logged, "name the key b.md beside the documents to follow the move")
+	assert.Contains(t, logged, "both publish to page")
+	_, ok := lookupKey(t, server, "b.md")
+	assert.True(t, ok, "a listed key keeps its entry")
 
 	logged = captureLog(t, func() {
-		require.NoError(t, Run(context.Background(), partialDocumentsOf(full, []string{"b.md"}, moved)))
+		require.NoError(t, Run(context.Background(), partialDocumentsOf(full, []string{"a.md", "c.md"}, moved)))
 	})
-	assert.NotContains(t, logged, "both publish to page")
+	assert.NotContains(t, logged, "had no matching source file")
 
 	entry, ok := lookupKey(t, server, "moved/b.md")
 	require.True(t, ok)
@@ -159,6 +214,54 @@ func TestPartialDocumentMoveKeepsItsScope(t *testing.T) {
 	assert.False(t, server.Page(bID).Trashed)
 }
 
+// TestPartialDocumentsKeepTheScopeWhenEveryKeyIsGone: a key list naming no
+// tracked key, beside a document new to the scope, reads every tracked key as
+// gone at once, as a bad list would; they are reported, not removed.
+func TestPartialDocumentsKeepTheScopeWhenEveryKeyIsGone(t *testing.T) {
+	server, full := partialDocumentsFixture(t)
+
+	logged := captureLog(t, func() {
+		require.NoError(t, Run(context.Background(), partialDocumentsOf(full, []string{"typo.md"}, adr("d"))))
+	})
+
+	assert.Contains(t, logged, "3 key(s) of documents://adr are neither published nor named")
+	assert.Contains(t, logged, "a failed render or a bad key list")
+	for _, name := range []string{"a", "b", "c"} {
+		assert.False(t, server.Page(mustFind(t, server, "Record "+name)).Trashed, name)
+		_, ok := lookupKey(t, server, name+".md")
+		assert.True(t, ok, name)
+	}
+}
+
+// TestPartialDocumentsWithoutKeysCoverOnlyTheirOwn: without DocumentKeys a
+// partial run knows only the keys it publishes, so it finds no orphans and
+// follows no rename or move, and says which keys would let it follow a move.
+func TestPartialDocumentsWithoutKeysCoverOnlyTheirOwn(t *testing.T) {
+	server, full := partialDocumentsFixture(t)
+	bID, cID := mustFind(t, server, "Record b"), mustFind(t, server, "Record c")
+
+	moved := adr("b")
+	moved.Path = "moved/b.md"
+	moved.Content = append(moved.Content, "Moved.\n"...)
+	logged := captureLog(t, func() {
+		require.NoError(t, Run(context.Background(), partialDocumentsOf(full, nil, adr("a"), moved)))
+	})
+
+	assert.NotContains(t, logged, "had no matching source file")
+	assert.Contains(t, logged, "name every key of its scope that still exists to follow the move")
+	assert.False(t, server.Page(bID).Trashed)
+	assert.False(t, server.Page(cID).Trashed)
+	for _, key := range []string{"b.md", "c.md"} {
+		entry, ok := lookupKey(t, server, key)
+		require.True(t, ok, key)
+		assert.Equal(t, adrScope, entry.Glob)
+	}
+
+	renames, renameRun, doc, _, otherID := renameFixture(t)
+	require.NoError(t, Run(context.Background(), partialDocumentsOf(renameRun, nil, doc("renamed.md", "Left alone."))))
+	assert.Equal(t, "Other", renames.Page(otherID).Title, "no rename without the scope's keys")
+}
+
 // TestFullScopedRunAfterPartialRuns: what partial runs left tracked is still
 // the scope's, and the run publishing the whole scope deals with a document
 // gone from it.
@@ -166,11 +269,10 @@ func TestFullScopedRunAfterPartialRuns(t *testing.T) {
 	server, full := partialDocumentsFixture(t)
 	cID := mustFind(t, server, "Record c")
 
-	reporting := partialDocumentsOf(full, []string{"c.md"}, adr("a"), adr("d"))
+	reporting := partialDocumentsOf(full, []string{"b.md"}, adr("a"), adr("d"))
 	reporting.Tracking.OnOrphan = report.OnOrphanReport
 	logged := captureLog(t, func() { require.NoError(t, Run(context.Background(), reporting)) })
-	assert.Contains(t, logged, `had no matching source file in this run: c.md"}`,
-		"only the named key, not b.md")
+	assert.Contains(t, logged, `had no matching source file in this run: c.md"}`)
 
 	full.Documents = []Document{adr("a"), adr("b"), adr("d")}
 	full.Tracking.OnOrphan = report.OnOrphanDelete
@@ -185,9 +287,10 @@ func TestFullScopedRunAfterPartialRuns(t *testing.T) {
 	assert.Equal(t, adrScope, entry.Glob, "a document a partial run added is the scope's")
 }
 
-// TestDocumentKeysNeedPartialAndAScope: without Partial a run covers every
-// key of its scope, and would remove the documents left out; without a scope
-// no key is covered. Both are refused before publishing.
+// TestDocumentKeysNeedPartialAndAScope: without Partial a run's documents
+// are its whole scope, and would remove those left out; without a scope no
+// key is covered. Both are refused before publishing, and so are keys with
+// nothing to publish, which name no space to look in.
 func TestDocumentKeysNeedPartialAndAScope(t *testing.T) {
 	server, full := partialDocumentsFixture(t)
 
@@ -201,10 +304,11 @@ func TestDocumentKeysNeedPartialAndAScope(t *testing.T) {
 		require.ErrorContains(t, err, "DocumentKeys requires Tracking.Partial and a DocumentScope", name)
 	}
 
-	// Removals alone publish nothing, so no space is looked in.
-	removalsOnly := partialDocumentsOf(full, []string{"b.md"})
-	require.ErrorContains(t, Run(context.Background(), removalsOnly), "finds no space to look for them in")
-	assert.False(t, server.Page(mustFind(t, server, "Record b")).Trashed)
+	removalsOnly := partialDocumentsOf(full, []string{"a.md"})
+	require.ErrorContains(t, Run(context.Background(), removalsOnly), "finds no space to look for the scope's pages in")
+	for _, name := range []string{"b", "c"} {
+		assert.False(t, server.Page(mustFind(t, server, "Record "+name)).Trashed, name)
+	}
 }
 
 // TestPartialUnscopedDocumentsSayItDoesNothing: documents with no scope take
@@ -225,8 +329,8 @@ func TestPartialUnscopedDocumentsSayItDoesNothing(t *testing.T) {
 }
 
 // TestPartialRunOfFilesAndDocuments: in one partial run files follow the
-// paths it names and documents the keys it names, each removing only what it
-// was told to, though the documents published nothing in the space.
+// paths it names and documents the keys it lists, each removing only what is
+// gone, though the documents published nothing in the space.
 func TestPartialRunOfFilesAndDocuments(t *testing.T) {
 	server, files, dir := partialFixture(t)
 	full := files
@@ -235,18 +339,19 @@ func TestPartialRunOfFilesAndDocuments(t *testing.T) {
 	require.NoError(t, Run(context.Background(), full))
 
 	bID, cID := pageIDTitled(t, server, "Page b"), pageIDTitled(t, server, "Page c")
-	yID, zID := mustFind(t, server, "Record y"), mustFind(t, server, "Record z")
+	xID, yID, zID := mustFind(t, server, "Record x"), mustFind(t, server, "Record y"), mustFind(t, server, "Record z")
 	require.NoError(t, os.Remove(filepath.Join(dir, "b.md")))
 	require.NoError(t, os.Remove(filepath.Join(dir, "c.md")))
 
 	partial := pathsOf(full, dir, "a.md", "b.md")
 	partial.Documents = nil
-	partial.DocumentKeys = []string{"y.md"}
+	partial.DocumentKeys = []string{"x.md", "z.md"}
 	logged := captureLog(t, func() { require.NoError(t, Run(context.Background(), partial)) })
 
 	assert.True(t, server.Page(bID).Trashed, "b.md was named and is gone")
 	assert.False(t, server.Page(cID).Trashed, "c.md was not named")
-	assert.True(t, server.Page(yID).Trashed, "y.md was named and not published")
-	assert.False(t, server.Page(zID).Trashed, "z.md was not named")
-	assert.False(t, strings.Contains(logged, "is left alone"), logged)
+	assert.True(t, server.Page(yID).Trashed, "y.md is in neither list")
+	assert.False(t, server.Page(xID).Trashed, "x.md was listed")
+	assert.False(t, server.Page(zID).Trashed, "z.md was listed")
+	assert.NotContains(t, logged, "is left alone")
 }
