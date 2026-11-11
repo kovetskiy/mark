@@ -410,3 +410,29 @@ func TestSimilarRenameIsNotFollowedIntoAnotherSpace(t *testing.T) {
 	assert.Contains(t, logged, "use-postgres.md is not compared for a rename: its page "+elsewhere.ID+` is in space \"OTHER\"`)
 	assert.Empty(t, renameWarnings(t, &out, "store-orders.md"))
 }
+
+// TestOrphanInAnotherSpaceIsReportedOnce: an orphan in another space whose
+// scope published nothing it had before is left alone for both reasons, and
+// listed once.
+func TestOrphanInAnotherSpaceIsReportedOnce(t *testing.T) {
+	server, docsID, elsewhere := twoSpacesOn(t, false)
+	first := documentsConfig(server, adrDocument("use-postgres.md", "DOCS", "Use PostgreSQL", adrText(t, "adr-0001")))
+	first.DocumentScope = "adr"
+	require.NoError(t, Run(context.Background(), first))
+	repointEntries(t, server, docsID, manifest.PropertyKey(manifest.ShardFor("use-postgres.md")),
+		mustFind(t, server, "Use PostgreSQL"), elsewhere.ID)
+
+	// A partial run whose key list names no key tracked before.
+	second := partialDocumentsOf(first, []string{"untracked.md"}, adrDocument("events.md", "DOCS", "Publish events", adrText(t, "adr-0002")))
+	got := decodeReport(t, []byte(publishJSON(t, second)))
+
+	assertUntouched(t, server, elsewhere)
+	var listed []report.Orphan
+	for _, orphan := range got.Orphans {
+		if orphan.PageID == elsewhere.ID {
+			listed = append(listed, orphan)
+		}
+	}
+	require.Len(t, listed, 1, "%+v", got.Orphans)
+	assert.Equal(t, report.OnOrphanReport, listed[0].Action)
+}
