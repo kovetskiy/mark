@@ -63,8 +63,9 @@ type Document struct {
 	// FS is where the files Content names relative to Path are read from:
 	// images, attachments, linked files, and includes and macro templates
 	// beside it. A name climbing above its root is refused, except includes
-	// under RenderingConfig.IncludePath, which stay on disk. Nil is the local
-	// disk, around Path, under the rules a file is held to.
+	// under RenderingConfig.IncludePath, which stay on disk, as do the files
+	// the links inside such a fragment name, held to the include path. Nil is
+	// the local disk, around Path, under the rules a file is held to.
 	//
 	// The root holds through symbolic links whenever the FS reports them as
 	// an fs.ReadLinkFS, as os.DirFS and fstest.MapFS do: a link is followed
@@ -353,6 +354,48 @@ func (r *publishRun) linkFiles(doc *document) page.LinkFiles {
 	}
 
 	return documentFiles{inputs: r.inputs, root: doc.root}
+}
+
+// includePathFiles is where a link of a document in an fs.FS is looked for
+// when the document includes fragments from --include-path: a fragment's
+// links are written from where it sits on disk, so an absolute name, which
+// only an include-path directory gives, is looked for on disk, and only
+// under dir. Every other name is files'.
+type includePathFiles struct {
+	// dir is --include-path, absolute.
+	dir   string
+	files page.LinkFiles
+}
+
+// onDisk refuses name unless it is under dir, symbolic links followed.
+func (f includePathFiles) onDisk(name string) error {
+	return attachment.CheckWithin(f.dir, name)
+}
+
+func (f includePathFiles) Stat(name string) (fs.FileInfo, error) {
+	info, err := f.files.Stat(name)
+	if err == nil || !filepath.IsAbs(name) {
+		return info, err
+	}
+
+	if err := f.onDisk(name); err != nil {
+		return nil, err
+	}
+
+	return os.Stat(name)
+}
+
+func (f includePathFiles) ReadFile(name string) ([]byte, error) {
+	data, err := f.files.ReadFile(name)
+	if err == nil || !filepath.IsAbs(name) {
+		return data, err
+	}
+
+	if err := f.onDisk(name); err != nil {
+		return nil, err
+	}
+
+	return os.ReadFile(name)
 }
 
 // PublishDocument publishes doc as Publish publishes a file, and checks the

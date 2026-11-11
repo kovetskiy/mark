@@ -349,6 +349,51 @@ func TestDocumentInFSLinksToARunFile(t *testing.T) {
 	assert.NotContains(t, body, "guide.md")
 }
 
+// TestDocumentInFSResolvesLinksOfAnIncludePathFragment: a fragment a document
+// in an fs.FS includes from --include-path on disk writes its links from
+// there, so they are looked for on disk beside it, and nowhere outside
+// --include-path. Neither linked document is one of the run's, so only the
+// disk can answer for them.
+func TestDocumentInFSResolvesLinksOfAnIncludePathFragment(t *testing.T) {
+	for name, relative := range map[string]bool{
+		"absolute include path": false,
+		"relative include path": true,
+	} {
+		t.Run(name, func(t *testing.T) {
+			server, _ := docsSpace(t)
+			server.AddPage("DOCS", "Other", "page", "")
+			server.AddPage("DOCS", "Secret", "page", "")
+
+			dir := t.TempDir()
+			t.Chdir(dir)
+
+			header := "<!-- Space: DOCS -->\n<!-- Parent: Parent -->\n"
+			shared := filepath.Join(dir, "shared")
+			writeAt(t, shared, "fragment.md",
+				"See [the other](other.md) and [the secret](../secret.md).\n")
+			writeAt(t, shared, "other.md", header+"<!-- Title: Other -->\n\nOther.\n")
+			writeAt(t, dir, "secret.md", header+"<!-- Title: Secret -->\n\nSecret.\n")
+
+			includePath := shared
+			if relative {
+				includePath = "shared"
+			}
+
+			config := documentsConfig(server, Document{
+				Path:    "generated/doc.md",
+				Content: []byte(header + "<!-- Title: Generated -->\n\n<!-- Include: fragment.md -->\n"),
+				FS:      fstest.MapFS{},
+			})
+			config.Rendering.IncludePath = includePath
+			require.NoError(t, Run(context.Background(), config))
+
+			body := bodyOfPageTitled(t, server, "Generated")
+			assert.NotContains(t, body, "other.md", "the fragment's link names the other page")
+			assert.Contains(t, body, "../secret.md", "a link out of --include-path is left as written")
+		})
+	}
+}
+
 // TestDocumentReadsFilesFromItsFS: images, declared attachments and includes
 // are read from the document's FS, around its Path, subdirectories and
 // parents inside the FS included.
