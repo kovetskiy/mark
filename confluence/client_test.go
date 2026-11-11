@@ -674,6 +674,8 @@ func TestLoginEvidenceForTheAPIAndForADownload(t *testing.T) {
 		{"another host", "image/png", "", "", "https://media.example.org/file", "redirected to media.example.org", ""},
 		{"redirect to login.action", "application/json", "", "", "https://confluence.example.org/login.action", "redirected to /login.action", "redirected to /login.action"},
 		{"redirect to another host's login.action", "text/html", "", "", "https://sso.example.org/login.action", "redirected to /login.action", "redirected to /login.action"},
+		{"redirect to login.action with a session", "text/html", "", "", "https://confluence.example.org/login.action;jsessionid=ABC?os_destination=x", "redirected to /login.action", "redirected to /login.action"},
+		{"redirect to a page under login.action", "image/png", "", "", "https://confluence.example.org/download/login.action/a.png", "", ""},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			req := httptest.NewRequest(http.MethodGet, "https://confluence.example.org/download/attachments/1/a.png", nil)
@@ -692,11 +694,20 @@ func TestLoginEvidenceForTheAPIAndForADownload(t *testing.T) {
 		})
 	}
 
-	t.Run("an attachment named login.action", func(t *testing.T) {
-		req := httptest.NewRequest(http.MethodGet, "https://confluence.example.org/download/attachments/1/login.action", nil)
-		evidence, _ := loginEvidence(req, &http.Response{Request: req, Header: http.Header{}}, "", true)
-		assert.Empty(t, evidence)
-	})
+	// A proxy that rewrites paths, or a presigned URL that keeps the file's
+	// name, moves an attachment named login.action without it being a login.
+	for _, landed := range []string{
+		"https://confluence.example.org/download/attachments/1/login.action",
+		"https://confluence.example.org/confluence/download/attachments/1/login.action",
+		"https://bucket.s3.example.com/1/login.action?X-Amz-Signature=x",
+	} {
+		t.Run("an attachment named login.action, landing on "+landed, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, "https://confluence.example.org/download/attachments/1/login.action?version=1", nil)
+			resp := &http.Response{Request: httptest.NewRequest(http.MethodGet, landed, nil), Header: http.Header{}}
+			evidence, _ := loginEvidence(req, resp, "", true)
+			assert.Empty(t, evidence)
+		})
+	}
 }
 
 // TestClientStreamsALargeSuccess: a success is decoded as it arrives. Only the

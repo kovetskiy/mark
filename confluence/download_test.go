@@ -301,6 +301,32 @@ func TestDownloadAttachmentRedirects(t *testing.T) {
 	}
 }
 
+// TestDownloadAttachmentThroughTheLoginPage: Seraph may send a download to
+// /login.action and on to an identity provider whose form, on another host,
+// says nothing of Seraph; going through /login.action is what gives it away.
+func TestDownloadAttachmentThroughTheLoginPage(t *testing.T) {
+	idp := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		_, _ = w.Write([]byte("<html>Sign in</html>"))
+	}))
+	t.Cleanup(idp.Close)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/login.action" {
+			http.Redirect(w, r, idp.URL+"/sso", http.StatusFound)
+			return
+		}
+		http.Redirect(w, r, "/login.action?os_destination=x", http.StatusFound)
+	}))
+	t.Cleanup(server.Close)
+
+	var got bytes.Buffer
+	err := NewAPI(server.URL, Options{Username: "user", Password: "token"}).
+		DownloadAttachment(context.Background(), "1", downloadInfo("1", "a.png"), &got)
+	require.ErrorIs(t, err, ErrLoginPage)
+	assert.Contains(t, err.Error(), "redirected to /login.action")
+	assert.Empty(t, got.Bytes())
+}
+
 func TestDownloadAttachmentStatusBeforeAuthentication(t *testing.T) {
 	server := confluencetest.New(t)
 	server.SetFailHeaders(http.Header{"Content-Type": {"text/html"}, "X-Seraph-LoginReason": {"AUTHENTICATED_FAILED"}})
