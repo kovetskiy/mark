@@ -393,10 +393,11 @@ command line. Keep the page address out of a variable a job shares:
 every `mark export` that names no other page on its command line.
 
 The image is published under every release tag, pre-releases included
-(`kovetskiy/mark:v17.1.0`), once the tag's checks pass, and `latest` is the last
-release that is not a pre-release. Pin a
-tag rather than `latest`: the image carries the headless Chrome mark draws
-diagrams in, and a job is easier to reproduce when the two cannot move apart. A
+(`kovetskiy/mark:v17.1.0`), once the tag's checks pass, and `latest` is the
+release tagged most recently that is not a pre-release. Pin a tag rather than
+`latest`: the image carries the headless Chrome mark draws diagrams in, so a
+pinned tag keeps a job on one release of mark and the Chrome it was built
+with. A
 Go program that writes such a job for the mark it links can ask for the image of
 that release with `mark.Image()`, and for the release itself with
 `mark.Version()`; both are `""` for a build of mark that is not a release, such

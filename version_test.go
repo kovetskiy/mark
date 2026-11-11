@@ -9,7 +9,6 @@ import (
 )
 
 func TestVersionOf(t *testing.T) {
-	const path = modulePath
 	const pseudo = "v17.1.1-0.20261021233951-da9c2cc56bfd"
 
 	// A major version changes the path; this package sits at the module root.
@@ -22,12 +21,12 @@ func TestVersionOf(t *testing.T) {
 			Main: debug.Module{Path: "example.com/scaffold", Version: "(devel)"},
 			Deps: []*debug.Module{
 				{Path: "golang.org/x/mod", Version: "v0.42.0"},
-				{Path: path, Version: version, Replace: replace},
+				{Path: modulePath, Version: version, Replace: replace},
 			},
 		}
 	}
 	main := func(version string) *debug.BuildInfo {
-		return &debug.BuildInfo{Main: debug.Module{Path: path, Version: version}}
+		return &debug.BuildInfo{Main: debug.Module{Path: modulePath, Version: version}}
 	}
 
 	for _, test := range []struct {
@@ -42,8 +41,8 @@ func TestVersionOf(t *testing.T) {
 		{"a pseudo-version after a pre-release", dependency("v17.2.0-rc.1.0.20261021233951-da9c2cc56bfd", nil), ""},
 		{"build metadata", dependency("v17.1.0+incompatible", nil), ""},
 		{"a shorthand version", dependency("v17.1", nil), ""},
-		{"replaced by another release of mark", dependency("v17.0.0", &debug.Module{Path: path, Version: "v17.1.0"}), "v17.1.0"},
-		{"replaced by a pseudo-version of mark", dependency("v17.0.0", &debug.Module{Path: path, Version: pseudo}), ""},
+		{"replaced by another release of mark", dependency("v17.0.0", &debug.Module{Path: modulePath, Version: "v17.1.0"}), "v17.1.0"},
+		{"replaced by a pseudo-version of mark", dependency("v17.0.0", &debug.Module{Path: modulePath, Version: pseudo}), ""},
 		{"replaced by a directory", dependency("v17.1.0", &debug.Module{Path: "../mark"}), ""},
 		{"replaced by a fork", dependency("v17.1.0", &debug.Module{Path: "github.com/someone/mark/v17", Version: "v17.1.0"}), ""},
 		{"not a dependency", &debug.BuildInfo{Main: debug.Module{Path: "example.com/scaffold"}}, ""},
