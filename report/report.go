@@ -98,8 +98,9 @@ type Page struct {
 	Reason string `json:"reason,omitempty"`
 
 	// Warnings are what was wrong with a document that was published anyway,
-	// such as a link that does not resolve under --check-links-warn-only;
-	// WarningDetails gives each one's kind.
+	// or compiled or previewed without stopping, such as a link that does not
+	// resolve under --check-links-warn-only; WarningDetails gives each one's
+	// kind. Status, not Warnings, says whether anything was published.
 	//
 	// Kept apart from Reason because they do not say what became of the page:
 	// a document can carry them and still have published perfectly well, which

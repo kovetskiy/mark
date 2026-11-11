@@ -2256,12 +2256,19 @@ func (r *publishRun) preview(ctx context.Context, doc *document) error {
 		return err
 	}
 
-	// Only a dry run asked to tell changed pages from unchanged ones.
-	compare := config.Mode.DryRun && !config.Mode.CompileOnly && config.Update.ChangesOnly
+	// A dry run says what a real run would do; a compile, given --dry-run or
+	// not, only how far the document got. Only a dry run asked to tell
+	// changed pages from unchanged ones compares.
+	dryRun := config.Mode.DryRun && !config.Mode.CompileOnly
+	compare := dryRun && config.Update.ChangesOnly
+	uncompared := report.StatusCompiled
+	if dryRun {
+		uncompared = report.StatusWouldPublish
+	}
 
 	var status report.Status
 	var reason string
-	if compare && r.noOverwrite && previewed != nil && r.tracker != nil && meta != nil {
+	if dryRun && r.noOverwrite && previewed != nil && r.tracker != nil && meta != nil {
 		// Ahead of compiling, as on a real run: a page edited in Confluence
 		// is left alone whatever the source says, and whatever it would fail on.
 		drift, err := hasDrifted(ctx, r.api, r.tracker, meta.Space, file, previewed)
@@ -2281,6 +2288,9 @@ func (r *publishRun) preview(ctx context.Context, doc *document) error {
 		html, status, reason, err = r.previewBody(ctx, doc, found, cfg, compare)
 		if err != nil {
 			return err
+		}
+		if !compare {
+			status = uncompared
 		}
 	}
 
@@ -2396,13 +2406,8 @@ func (r *publishRun) previewBody(
 		}
 	}
 
-	// Nothing compared, so the status only says how far the document got.
 	if !compare {
-		if r.config.Mode.CompileOnly {
-			return html, report.StatusCompiled, "", nil
-		}
-
-		return html, report.StatusWouldPublish, "", nil
+		return html, "", "", nil
 	}
 
 	var relinked bool
