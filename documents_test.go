@@ -1001,3 +1001,27 @@ func TestStagedRootRefusesADocumentBeforePublishing(t *testing.T) {
 	assert.Contains(t, err.Error(), "generated/doc.md")
 	assert.Empty(t, pageIDTitled(t, server, "A"), "nothing is published")
 }
+
+// TestDocumentKeyCannotBeADirectoryKey: a Key spelled like the key a
+// directory of documents is recorded under would be taken for one, so it is
+// refused before anything is published.
+func TestDocumentKeyCannotBeADirectoryKey(t *testing.T) {
+	server, _ := docsSpace(t)
+	t.Chdir(t.TempDir())
+
+	for name, doc := range map[string]Document{
+		"Key":  {Path: "a.md", Key: manifest.DocumentDirectoryKey("s", "guides")},
+		"Path": {Path: "documents:notes/a.md"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			doc.Content = []byte(markdownWithTitle("A"))
+			config := documentsConfig(server, doc)
+			config.DocumentScope = "s"
+
+			err := Run(context.Background(), config)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "documents:")
+			assert.Empty(t, pageIDTitled(t, server, "A"))
+		})
+	}
+}
