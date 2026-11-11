@@ -203,8 +203,7 @@ func expand(opener Opener, base, name string) (matches []string, matched bool, e
 		return []string{name}, false, nil
 	}
 
-	// Any other Opener is the disk, as the zero Root is.
-	root, _ := opener.(Root)
+	root := rootOf(opener)
 
 	found, err := root.glob(base, name)
 	if err != nil {
@@ -376,12 +375,26 @@ func withinAny(path string, roots []string) bool {
 	return false
 }
 
+// rootOf is the Root opener reads from: itself, or the disk, as the zero Root
+// is, for any other Opener.
+func rootOf(opener Opener) Root {
+	switch root := opener.(type) {
+	case Root:
+		return root
+	case *Root:
+		if root != nil {
+			return *root
+		}
+	}
+
+	return Root{}
+}
+
 // prepareAttachement opens the file, reads its content and creates an attachement object
 func prepareAttachment(opener Opener, base, name string) (Attachment, error) {
 	attachmentPath := filepath.Join(base, name)
 
-	// Any other Opener is the disk, as the zero Root is.
-	root, _ := opener.(Root)
+	root := rootOf(opener)
 
 	if err := root.checkAttachment(base, name); err != nil {
 		return Attachment{}, err
