@@ -105,7 +105,7 @@ func TestRoundTripTextLikeDirectives(t *testing.T) {
 			x := escapeXMLText(text)
 			line := escapeXMLText(strings.ReplaceAll(text, "\n", " "))
 
-			for context, storage := range map[string]string{
+			for where, storage := range map[string]string{
 				"paragraph":  "<p>" + x + "</p>",
 				"emphasis":   "<p><strong>" + line + "</strong> and <em>" + line + "</em></p>",
 				"heading":    "<h2>" + line + "</h2>",
@@ -130,16 +130,16 @@ func TestRoundTripTextLikeDirectives(t *testing.T) {
 				storage += "<p>MARKER</p>"
 
 				doc, err := Convert(storage, Options{})
-				require.NoError(t, err, context)
+				require.NoError(t, err, where)
 
 				meta, published := publishBack(t, doc.Markdown, filepath.Join(dir, "page.md"))
 				// The id is mark's own, which the page did not have.
 				published = headingID.ReplaceAllString(published, "<h2>")
 				assert.Equal(t, canonical(t, storage), canonical(t, published),
-					"%s: exported Markdown:\n%s", context, doc.Markdown)
-				assert.NotContains(t, published, "from the file", "%s: nothing is included", context)
-				assert.Empty(t, meta.Title, "%s: no header is read", context)
-				assert.Empty(t, meta.Space, "%s: no header is read", context)
+					"%s: exported Markdown:\n%s", where, doc.Markdown)
+				assert.NotContains(t, published, "from the file", "%s: nothing is included", where)
+				assert.Empty(t, meta.Title, "%s: no header is read", where)
+				assert.Empty(t, meta.Space, "%s: no header is read", where)
 			}
 		})
 	}
@@ -170,6 +170,24 @@ func TestRoundTripDirectiveAcrossElements(t *testing.T) {
 		_, published := publishBack(t, doc.Markdown, filepath.Join(dir, "page.md"))
 		assert.NotContains(t, published, "from the file", "%s: exported Markdown:\n%s", name, doc.Markdown)
 		assert.Contains(t, published, "&lt;!--Include:outside.txt--&gt;", "%s: exported Markdown:\n%s", name, doc.Markdown)
+	}
+}
+
+// TestRoundTripHeadingAnchorIDs: a heading's anchor whose name mark would
+// not read back from {#id} stays in the heading as the anchor it is.
+func TestRoundTripHeadingAnchorIDs(t *testing.T) {
+	for _, name := range []string{"a(b", "a<!b", "x/y"} {
+		storage := `<h2><ac:structured-macro ac:name="anchor"><ac:parameter ac:name="">` + escapeXMLText(name) +
+			`</ac:parameter></ac:structured-macro>Other</h2><p><ac:link ac:anchor="` + escapeAttr(name) + `">` +
+			`<ac:plain-text-link-body><![CDATA[go]]></ac:plain-text-link-body></ac:link></p>`
+
+		doc, err := Convert(storage, Options{})
+		require.NoError(t, err, name)
+
+		published := compile(t, doc.Markdown, filepath.Join(t.TempDir(), "page.md"))
+		assert.NotContains(t, published, "{#", "%s: exported Markdown:\n%s", name, doc.Markdown)
+		assert.Contains(t, published, `<ac:parameter ac:name="">`+escapeXMLText(name)+"</ac:parameter>",
+			"%s: exported Markdown:\n%s", name, doc.Markdown)
 	}
 }
 

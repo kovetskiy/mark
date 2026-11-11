@@ -282,9 +282,7 @@ func (c *converter) heading(n *node) string {
 			if syntax.AnchorKey(name) != syntax.AnchorKey(headingText(n, anchor)) {
 				customID = name
 			}
-			// An id holding "<!--" would open a directive in the heading
-			// line, outside code, so its anchor stays in the heading.
-			if customID == "" || (customHeadingID.MatchString(customID) && !strings.Contains(customID, "<!--")) {
+			if customID == "" || headingIDWritable(customID) {
 				children = without(children, anchor)
 			} else {
 				customID = ""
@@ -321,8 +319,16 @@ func escapeClosingHashes(text string) string {
 	return text
 }
 
-// customHeadingID is an id a heading can be given with {#id}.
-var customHeadingID = regexp.MustCompile(`^[^\s{}#]+$`)
+// headingIDWritable reports whether a heading can be given id with {#id}:
+// whether mark reads the block back as exactly that id. One it would not --
+// "a(b", or "<!--x", which would also open a directive -- keeps its anchor in
+// the heading.
+func headingIDWritable(id string) bool {
+	block := "{#" + id + "}"
+	end, attrs, ok := syntax.AttributeBlock([]byte(block), 0)
+
+	return ok && end == len(block) && len(attrs) == 1 && attrs[0].Name == "id" && attrs[0].Value.Str(nil) == id
+}
 
 // leadingAnchor is the anchor macro mark puts at the front of a heading that a
 // link on the page points at.
