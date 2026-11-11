@@ -77,12 +77,7 @@ func similarly(config Config, threshold float64, out *bytes.Buffer) Config {
 func renameWarnings(t *testing.T, out *bytes.Buffer, file string) []string {
 	t.Helper()
 
-	var run struct {
-		Pages []struct {
-			File           string           `json:"file"`
-			WarningDetails []report.Warning `json:"warningDetails"`
-		} `json:"pages"`
-	}
+	var run report.Report
 	require.NoError(t, json.Unmarshal(out.Bytes(), &run), out.String())
 
 	var messages []string
@@ -115,8 +110,7 @@ func assertFollowed(t *testing.T, server *confluencetest.Server, key, old, pageI
 	assert.False(t, ok, "the old key handed its entry over")
 }
 
-// assertNotFollowed checks that key has a page of its own, and that the old
-// key's page is left where it was.
+// assertNotFollowed checks that key has a page of its own, not pageID.
 func assertNotFollowed(t *testing.T, server *confluencetest.Server, key, pageID string) {
 	t.Helper()
 

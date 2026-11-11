@@ -1255,6 +1255,11 @@ func (s *Store) load(ctx context.Context, spaceKey string) (*spaceState, error) 
 // Calling it marks the path as seen, so a path that is looked up but turns out
 // to have no entry still counts as present for the purposes of Orphans.
 func (s *Store) Lookup(ctx context.Context, spaceKey, path string) (Entry, bool, error) {
+	return s.lookup(ctx, spaceKey, path, true)
+}
+
+// lookup is Lookup, marking path seen only when asked to.
+func (s *Store) lookup(ctx context.Context, spaceKey, path string, see bool) (Entry, bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -1265,7 +1270,9 @@ func (s *Store) Lookup(ctx context.Context, spaceKey, path string) (Entry, bool,
 		return Entry{}, false, err
 	}
 
-	state.seen[path] = true
+	if see {
+		state.seen[path] = true
+	}
 	entry, ok := state.shards[shardFor(path)].pages[path]
 	return entry, ok, nil
 }
@@ -1487,12 +1494,18 @@ func (s *Store) movedOwner(state *spaceState, path, pageID string) (Entry, bool)
 	}
 
 	entry, recorded := state.shards[shardFor(owner)].pages[owner]
-	if !recorded || entry.PageID != pageID || !s.covers(owner, entry) || !s.absent(state, owner) ||
-		!s.sameScope(path, entry) {
+	if !recorded || entry.PageID != pageID || !s.gone(state, path, owner, entry) {
 		return Entry{}, false
 	}
 
 	return entry, true
+}
+
+// gone reports whether candidate's entry is one path could have moved or been
+// renamed from: in path's scope, covered by the run and absent from it.
+// Called with s.mu held.
+func (s *Store) gone(state *spaceState, path, candidate string, entry Entry) bool {
+	return s.sameScope(path, entry) && s.covers(candidate, entry) && s.absent(state, candidate)
 }
 
 // recordsUnder reports whether any entry in the space was recorded under
@@ -1653,8 +1666,7 @@ func (s *Store) RenameSources(ctx context.Context, spaceKey, path string) (map[s
 	sources := map[string]Entry{}
 	for i := range state.shards {
 		for candidate, entry := range state.shards[i].pages {
-			if s.sameScope(path, entry) && s.covers(candidate, entry) &&
-				s.absent(state, candidate) && !state.claimed[entry.PageID] {
+			if s.gone(state, path, candidate, entry) && !state.claimed[entry.PageID] {
 				sources[candidate] = entry
 			}
 		}
@@ -1666,17 +1678,7 @@ func (s *Store) RenameSources(ctx context.Context, spaceKey, path string) (map[s
 // Recorded is Lookup without marking path as seen, for asking about a
 // document before its turn: seen counts what the run published.
 func (s *Store) Recorded(ctx context.Context, spaceKey, path string) (Entry, bool, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	state, err := s.load(ctx, spaceKey)
-	if err != nil {
-		return Entry{}, false, err
-	}
-
-	path = Key(path)
-	entry, ok := state.shards[shardFor(path)].pages[path]
-	return entry, ok, nil
+	return s.lookup(ctx, spaceKey, path, false)
 }
 
 // Forget drops a recorded path: one whose page no longer exists, or an orphan
