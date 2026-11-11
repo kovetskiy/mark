@@ -2264,6 +2264,10 @@ func (r *publishRun) linkResolver(doc *document) (*page.LinkResolver, error) {
 	resolver.ReadMeta = func(markdown []byte, opts metadata.ExtractOptions) (*metadata.Meta, []byte, error) {
 		// The hierarchy places only the run's own files. Another is published
 		// by a run that lays out its own, so its headers are all it says here.
+		// One of the run's is known by the name the run gives it, however
+		// the link found it: an include-path directory is absolute for a
+		// document in an fs.FS.
+		opts.Filename = r.inputs.named(opts.Filename).file
 		hierarchy := r.hierarchy
 		if !hierarchy.Has(opts.Filename) {
 			hierarchy = nil

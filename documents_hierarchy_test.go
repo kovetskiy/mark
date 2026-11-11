@@ -242,3 +242,31 @@ func TestPartialRunLeavesADocumentDirectoryItLaysOut(t *testing.T) {
 	assert.False(t, server.Page(apiID).Trashed, "the directory B still lies in is kept")
 	assert.False(t, server.Page(pageIDTitled(t, server, "B")).Trashed)
 }
+
+// TestIncludePathFragmentLinksToALaidOutFile: a fragment a document in an FS
+// includes from --include-path links to a README the run lays out, found on
+// disk under its absolute name; the link names the page the README is
+// published as, titled by its directory.
+func TestIncludePathFragmentLinksToALaidOutFile(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	writeAt(t, dir, "docs/guides/README.md", space+"\nThe guides.\n")
+	writeAt(t, dir, "docs/guides/setup.md", space+"<!-- Title: Setup -->\n\nSetup.\n")
+	writeAt(t, dir, "shared/fragment.md", "See [the guides](../docs/guides/README.md).\n")
+
+	server := hierarchyServer(t)
+	config := trackingConfig(server, "docs/**/*.md")
+	config.ParentsFromPath = true
+	config.Rendering.IncludePath = "shared"
+	config.Documents = []Document{
+		hierarchyDocument("docs/generated/doc.md", "<!-- Title: Overview -->\n\n<!-- Include: fragment.md -->\n"),
+	}
+	require.NoError(t, Run(context.Background(), config))
+
+	guides := pageIDTitled(t, server, "Guides")
+	require.NotEmpty(t, guides)
+	link, err := confluence.GenerateTinyLink(server.URL, guides)
+	require.NoError(t, err)
+	assert.Contains(t, bodyOfPageTitled(t, server, "Overview"), link,
+		"the fragment's link names the README's page")
+}
