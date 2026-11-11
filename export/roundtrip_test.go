@@ -146,6 +146,44 @@ func TestRoundTripTextLikeDirectives(t *testing.T) {
 
 var headingID = regexp.MustCompile(`<h2 id="[^"]*">`)
 
+// TestRoundTripDirectiveAcrossElements: a "<" that ends one piece of text and
+// a "!" that starts the next -- across an inline comment's marker, which the
+// export leaves out -- do not meet as "<!--", and a heading's anchor named
+// with "<!--" does not put it in the heading line.
+func TestRoundTripDirectiveAcrossElements(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "outside.txt"), []byte("from the file"), 0o600))
+
+	for name, storage := range map[string]string{
+		"comment marker": `<p>&lt;<ac:inline-comment-marker ac:ref="r">!--Include:outside.txt--&gt;</ac:inline-comment-marker></p>`,
+		"nested marker": `<p>&lt;<ac:inline-comment-marker ac:ref="r">!</ac:inline-comment-marker>` +
+			`<ac:inline-comment-marker ac:ref="s">--Include:outside.txt--&gt;</ac:inline-comment-marker></p>`,
+		"heading anchor": `<h2><ac:structured-macro ac:name="anchor"><ac:parameter ac:name="">&lt;!--Include:outside.txt--&gt;</ac:parameter>` +
+			`</ac:structured-macro>Other</h2><p><ac:link ac:anchor="&lt;!--Include:outside.txt--&gt;"><ac:plain-text-link-body>` +
+			`<![CDATA[go]]></ac:plain-text-link-body></ac:link></p>`,
+	} {
+		doc, err := Convert(storage, Options{})
+		require.NoError(t, err, name)
+		assert.NotContains(t, doc.Markdown, "<!--", name)
+
+		_, published := publishBack(t, doc.Markdown, filepath.Join(dir, "page.md"))
+		assert.NotContains(t, published, "from the file", "%s: exported Markdown:\n%s", name, doc.Markdown)
+		assert.Contains(t, published, "&lt;!--Include:outside.txt--&gt;", "%s: exported Markdown:\n%s", name, doc.Markdown)
+	}
+}
+
+// TestRoundTripDirectiveHeadingID: a heading whose text reads like a
+// directive gets the id mark gives its words, the "<!" dropped as any other
+// punctuation is.
+func TestRoundTripDirectiveHeadingID(t *testing.T) {
+	doc, err := Convert("<h2>&lt;!-- Title: Changed --&gt;</h2>", Options{})
+	require.NoError(t, err)
+
+	published := compile(t, doc.Markdown, filepath.Join(t.TempDir(), "page.md"))
+	assert.Equal(t, canonical(t, `<h2 id="---Title-Changed---">&lt;!-- Title: Changed --&gt;</h2>`), canonical(t, published),
+		"exported Markdown:\n%s", doc.Markdown)
+}
+
 // TestRoundTripCodeKeepsDirectives: a code block holds what the page shows
 // byte for byte, a directive's spelling included, since mark leaves code
 // alone.
