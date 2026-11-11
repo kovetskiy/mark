@@ -163,6 +163,22 @@ the `--edit-lock` restriction, and the `Order` of a page among its siblings.
 The restrictions a document declares are compared: a page whose restrictions
 would change is `would-update`.
 
+A run that publishes nothing and compares nothing still lists each document it
+got through, so that its warnings can be read: `compiled` under
+`--compile-only`, and `would-publish` under `--dry-run` without
+`--changes-only`. Such a page has the `space` and `title` its headers give, and
+a `pageId` and `url` only when a dry run found the page it would publish to; a
+compile looks for none. `github` annotates its warnings and writes no notice
+for the status itself, as for `unchanged`, so a pull request gate needs no
+Confluence credentials:
+
+```bash
+mark publish --compile-only --output-format github --files "docs/**/*.md"
+```
+
+Both modes still print each document's HTML, ahead of the report, which
+comes last.
+
 `warnings` lists what was wrong with a document that did not stop it
 publishing, and `warningDetails` says the same with each warning's `kind`, the
 `file` it is about and, where it is about one, the `line`:

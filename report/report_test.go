@@ -201,6 +201,29 @@ func TestGitHubSaysWhatADryRunWouldDo(t *testing.T) {
 		out.String())
 }
 
+// TestGitHubAnnotatesOnlyTheWarningsOfAPageNothingWasPublishedFor: a compile
+// or a dry run that compares nothing did nothing to a page worth a notice, but
+// the warnings it found are what a pull request gate runs it for.
+func TestGitHubAnnotatesOnlyTheWarningsOfAPageNothingWasPublishedFor(t *testing.T) {
+	r := New()
+	r.AddPage(Page{
+		File: "docs/a.md", Status: StatusCompiled, Title: "A",
+		WarningDetails: []Warning{{Kind: WarningStrandedHeader, File: "docs/a.md", Line: 7, Message: "stranded"}},
+	})
+	r.AddPage(Page{
+		File: "docs/b.md", Status: StatusWouldPublish, Title: "B",
+		WarningDetails: []Warning{{Kind: WarningUnknownKey, File: "docs/b.md", Line: 2, Message: "unknown"}},
+	})
+	r.AddPage(Page{File: "docs/c.md", Status: StatusCompiled, Title: "C"})
+
+	var out strings.Builder
+	require.NoError(t, r.Write(&out, FormatGitHub))
+
+	assert.Equal(t,
+		"::warning file=docs/a.md,line=7::stranded\n::warning file=docs/b.md,line=2::unknown\n",
+		out.String())
+}
+
 // TestSetSourcesAnnotatesTheSource: a generated document is annotated against
 // the file it was generated from, orphans included, and against its own file
 // when it has no source; a nil source leaves them alone.

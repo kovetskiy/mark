@@ -2234,7 +2234,8 @@ func (r *publishRun) notePublishes(meta *metadata.Meta) {
 
 // preview is the whole of a compile-only or dry run for one document: it
 // compiles the page, checks it as a real run would, and prints it or, under
-// --changes-only, says whether the page would change.
+// --changes-only, says whether the page would change. Either way the document
+// is recorded in the report, with its warnings.
 func (r *publishRun) preview(ctx context.Context, doc *document) error {
 	config, meta, file := r.config, doc.meta, doc.file
 
@@ -2317,24 +2318,31 @@ func (r *publishRun) preview(ctx context.Context, doc *document) error {
 		return err
 	}
 
-	if status != "" {
-		var target confluence.PageInfo
-		var url string
-		if previewed != nil {
-			target = *previewed
-			// Built as a real run builds it, so CI can link the page.
-			url = r.api.BaseURL() + target.Links.Full
+	// A run that compares nothing still records the document, so that its
+	// warnings reach the report; the status says nothing was published.
+	if status == "" {
+		status = report.StatusWouldPublish
+		if config.Mode.CompileOnly {
+			status = report.StatusCompiled
 		}
-		title := target.Title
-		if meta != nil {
-			title = meta.Title
-		}
-		r.addPage(doc, report.Page{
-			File: file, Status: status, Reason: reason,
-			Space: spaceOf(meta), Title: title,
-			PageID: target.ID, URL: url,
-		})
 	}
+
+	var target confluence.PageInfo
+	var url string
+	if previewed != nil {
+		target = *previewed
+		// Built as a real run builds it, so CI can link the page.
+		url = r.api.BaseURL() + target.Links.Full
+	}
+	title := target.Title
+	if meta != nil {
+		title = meta.Title
+	}
+	r.addPage(doc, report.Page{
+		File: file, Status: status, Reason: reason,
+		Space: spaceOf(meta), Title: title,
+		PageID: target.ID, URL: url,
+	})
 
 	return nil
 }
