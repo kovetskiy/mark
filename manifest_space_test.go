@@ -378,3 +378,35 @@ func TestRetitleFollowedWhenTheSpaceCannotBeReadThroughTheGateway(t *testing.T) 
 	assert.Equal(t, guide.ID, renamed.ID, "no second page")
 	assert.Empty(t, warningsOf(t, out, report.WarningOtherSpace))
 }
+
+// TestSimilarRenameIsNotFollowedIntoAnotherSpace: a gone key whose entry names
+// a page in another space is not compared for a rename by similarity, so a
+// document alike to that page is published by title in its own space.
+func TestSimilarRenameIsNotFollowedIntoAnotherSpace(t *testing.T) {
+	server, docsID, elsewhere := twoSpacesOn(t, false)
+	full := documentsConfig(server,
+		adrDocument("use-postgres.md", "DOCS", "Use PostgreSQL", adrText(t, "adr-0001")),
+		adrDocument("events.md", "DOCS", "Publish events", adrText(t, "adr-0002")),
+		adrDocument("migrations.md", "DOCS", "Run migrations", adrText(t, "adr-0003")),
+	)
+	full.DocumentScope = "adr"
+	require.NoError(t, Run(context.Background(), full))
+
+	oldID := mustFind(t, server, "Use PostgreSQL")
+	server.WritePage(elsewhere.ID, server.Page(oldID).Body)
+	elsewhere = server.Page(elsewhere.ID)
+	repointEntries(t, server, docsID,
+		manifest.PropertyKey(manifest.ShardFor("use-postgres.md")), oldID, elsewhere.ID)
+
+	var out bytes.Buffer
+	logged := captureLog(t, func() {
+		require.NoError(t, Run(context.Background(), similarly(
+			partialDocumentsOf(full, []string{"events.md", "migrations.md"}, storeOrders(t)), 0.6, &out)))
+	})
+
+	assertUntouched(t, server, elsewhere)
+	assertNotFollowed(t, server, "store-orders.md", elsewhere.ID)
+	assert.Equal(t, "DOCS", server.Page(mustFind(t, server, "Store orders in PostgreSQL")).SpaceKey)
+	assert.Contains(t, logged, "use-postgres.md is not compared for a rename: its page "+elsewhere.ID+` is in space \"OTHER\"`)
+	assert.Empty(t, renameWarnings(t, &out, "store-orders.md"))
+}

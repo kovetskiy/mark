@@ -112,12 +112,15 @@ func (r *publishRun) resolveRenamed(ctx context.Context, doc *document) (*conflu
 		return notTaken("another document of the run has taken it since")
 	}
 
-	pg, err = r.api.GetPageByID(ctx, entry.PageID)
+	pg, inSpace, err := recordedPage(ctx, r.api, space, entry.PageID)
 	if errors.Is(err, confluence.ErrNotFound) {
 		return notTaken(fmt.Sprintf("its page %s no longer exists", entry.PageID))
 	}
 	if err != nil {
 		return nil, fmt.Errorf("unable to load page %s recorded for %q: %w", entry.PageID, match.Old, err)
+	}
+	if !inSpace {
+		return notTaken(fmt.Sprintf("its page %s is in %s, not space %q", pg.ID, pageSpace(pg), space))
 	}
 	if r.noOverwrite && pg.Version.Number != entry.Version {
 		return notTaken(fmt.Sprintf("its page %s was edited in Confluence since it was compared", pg.ID))
@@ -163,12 +166,25 @@ func (r *publishRun) pairSimilar(ctx context.Context, space, key string) (*simil
 	texts := map[string]similar.Text{}
 	for _, key := range keys {
 		entry := gone[key]
-		pg, err := r.api.GetPageByIDExpanded(ctx, entry.PageID, "version,body.storage")
+		pg, err := r.api.GetPageByIDExpanded(ctx, entry.PageID, "version,body.storage,space")
 		if errors.Is(err, confluence.ErrNotFound) {
 			continue
 		}
 		if err != nil {
 			return nil, fmt.Errorf("unable to read page %s recorded for %q: %w", entry.PageID, key, err)
+		}
+
+		// A page elsewhere is not this manifest's to publish over, and
+		// compared, it could take a match from a gone key of this space.
+		inSpace, _, err := pageInSpace(ctx, r.api, pg, space)
+		if err != nil {
+			return nil, err
+		}
+		if !inSpace {
+			log.Info().Msgf("%s is not compared for a rename: its page %s is in %s, not space %q",
+				key, pg.ID, pageSpace(pg), space)
+
+			continue
 		}
 
 		// Taking the page would carry the old key's baseline across, and
