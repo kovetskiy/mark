@@ -4,10 +4,15 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"io"
+	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
+	"strings"
 	"testing"
 
+	"github.com/kovetskiy/mark/v17/confluence"
 	"github.com/kovetskiy/mark/v17/confluence/confluencetest"
 	"github.com/kovetskiy/mark/v17/manifest"
 	"github.com/kovetskiy/mark/v17/report"
@@ -15,15 +20,9 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// twoSpaces is DOCS, which the documents publish to, and OTHER, holding the
+// twoSpacesOn is DOCS, which the documents publish to, and OTHER, holding the
 // one page Elsewhere that no document names. It returns what holds DOCS's page
 // manifest: the space on Cloud, its homepage on Data Center.
-func twoSpaces(t *testing.T) (*confluencetest.Server, string, *confluencetest.Page) {
-	t.Helper()
-
-	return twoSpacesOn(t, false)
-}
-
 func twoSpacesOn(t *testing.T, dataCenter bool) (*confluencetest.Server, string, *confluencetest.Page) {
 	t.Helper()
 
@@ -116,8 +115,7 @@ func publishJSON(t *testing.T, config Config) string {
 func warningsOf(t *testing.T, out string, kind report.WarningKind) []report.Warning {
 	t.Helper()
 
-	var got report.Report
-	require.NoError(t, json.Unmarshal([]byte(out), &got))
+	got := decodeReport(t, []byte(out))
 
 	var warnings []report.Warning
 	for _, pg := range got.Pages {
@@ -176,7 +174,7 @@ func TestEntryInAnotherSpaceIsNotPublishedTo(t *testing.T) {
 // entry names a page in another space is published by title, not treated as a
 // rename of that page.
 func TestRenameIsNotFollowedIntoAnotherSpace(t *testing.T) {
-	server, docsID, elsewhere := twoSpaces(t)
+	server, docsID, elsewhere := twoSpacesOn(t, false)
 	dir := t.TempDir()
 
 	old := writeFile(t, dir, "old-name.md", markdownTitledFromFilename())
@@ -200,6 +198,16 @@ func TestRenameIsNotFollowedIntoAnotherSpace(t *testing.T) {
 	require.Len(t, warnings, 1)
 	assert.Contains(t, warnings[0].Message, old)
 	assert.Contains(t, warnings[0].Message, elsewhere.ID)
+
+	// The new page is the document's now: a second rename follows it rather
+	// than finding two entries with its content, publishing a third page and
+	// removing the second as an orphan.
+	published := pageIDTitled(t, server, "New Name")
+	require.NoError(t, os.Rename(filepath.Join(dir, "new-name.md"), filepath.Join(dir, "third-name.md")))
+	require.NoError(t, Run(context.Background(), config))
+	assertUntouched(t, server, elsewhere)
+	assert.Equal(t, "Third Name", server.Page(published).Title, "the second rename is followed")
+	assert.False(t, server.Page(published).Trashed)
 }
 
 // TestOnOrphanLeavesAPageInAnotherSpace: an orphan whose entry names a page in
@@ -239,8 +247,7 @@ func TestOnOrphanLeavesAPageInAnotherSpace(t *testing.T) {
 			assertUntouched(t, server, elsewhere)
 
 			for range 2 {
-				var got report.Report
-				require.NoError(t, json.Unmarshal([]byte(publishJSON(t, config)), &got))
+				got := decodeReport(t, []byte(publishJSON(t, config)))
 
 				assertUntouched(t, server, elsewhere)
 
@@ -269,7 +276,7 @@ func TestOnOrphanLeavesAPageInAnotherSpace(t *testing.T) {
 // TestRenamedParentIsNotFollowedIntoAnotherSpace: a declared parent whose
 // recorded page is in another space keeps the title as written.
 func TestRenamedParentIsNotFollowedIntoAnotherSpace(t *testing.T) {
-	server, docsID, elsewhere := twoSpaces(t)
+	server, docsID, elsewhere := twoSpacesOn(t, false)
 	dir := t.TempDir()
 
 	guide := handMadeParent(t, server, "Guide")
@@ -293,7 +300,7 @@ func TestRenamedParentIsNotFollowedIntoAnotherSpace(t *testing.T) {
 // TestRenamedFolderIsNotFollowedIntoAnotherSpace: a folder whose recorded id
 // is a folder in another space is not used as the parent.
 func TestRenamedFolderIsNotFollowedIntoAnotherSpace(t *testing.T) {
-	server, docsID, elsewhere := twoSpaces(t)
+	server, docsID, elsewhere := twoSpacesOn(t, false)
 	dir := t.TempDir()
 
 	file := writeFile(t, dir, "doc.md", markdownInFolder("Guides", "Doc"))
@@ -318,4 +325,56 @@ func TestRenamedFolderIsNotFollowedIntoAnotherSpace(t *testing.T) {
 	require.Len(t, warnings, 1)
 	assert.Contains(t, warnings[0].Message, `folder "Guides"`)
 	assert.Contains(t, warnings[0].Message, away.ID)
+}
+
+// TestRetitleFollowedWhenTheSpaceCannotBeReadThroughTheGateway: through the
+// gateway a page names its space by id, and its key costs a read of the space.
+// A token refused that read still has a page in the manifest's own space,
+// which is told by its id: the retitle is followed, not published as a
+// second page.
+func TestRetitleFollowedWhenTheSpaceCannotBeReadThroughTheGateway(t *testing.T) {
+	server := confluencetest.New(t)
+	home := server.AddPage("DOCS", "Home", "page", "")
+	server.SetHomepage("DOCS", home.ID)
+	server.SetFail(func(r *http.Request) (int, string, bool) {
+		if strings.Contains(r.URL.Path, "/rest/api/") {
+			return http.StatusUnauthorized, `{"code":401,"message":"Unauthorized; scope does not match"}`, true
+		}
+		if r.Method == http.MethodGet && regexp.MustCompile(`/api/v2/spaces/\d+$`).MatchString(r.URL.Path) {
+			return http.StatusForbidden, `{"errors":[{"status":403,"title":"Forbidden"}]}`, true
+		}
+		return 0, "", false
+	})
+
+	dir := t.TempDir()
+	writeFile(t, dir, "guide.md", "<!-- Space: DOCS -->\n<!-- Title: Guide -->\n\nA guide.\n")
+	config := Config{
+		PublishConfig: PublishConfig{
+			Rendering: RenderingConfig{Features: []string{"mention"}},
+			Output:    io.Discard,
+		},
+		Files: filepath.Join(dir, "*.md"),
+		Connection: ConnectionConfig{
+			BaseURL: server.URL + "/ex/confluence/cloud-id", Username: "user", Password: "token",
+		},
+		Tracking: TrackingConfig{TrackPages: true, ManifestPage: "Home"},
+	}
+	require.NoError(t, Run(context.Background(), config))
+	api := confluence.NewAPI(config.Connection.BaseURL, confluence.Options{Username: "user", Password: "token"})
+	titled := func(title string) *confluence.PageInfo {
+		pg, err := api.FindPage(context.Background(), "DOCS", title, "page")
+		require.NoError(t, err)
+		return pg
+	}
+	guide := titled("Guide")
+	require.NotNil(t, guide)
+
+	writeFile(t, dir, "guide.md", "<!-- Space: DOCS -->\n<!-- Title: Guide Renamed -->\n\nA guide.\n")
+	out := publishJSON(t, config)
+
+	assert.Equal(t, "Guide Renamed", server.Page(guide.ID).Title, "the recorded page is retitled")
+	renamed := titled("Guide Renamed")
+	require.NotNil(t, renamed)
+	assert.Equal(t, guide.ID, renamed.ID, "no second page")
+	assert.Empty(t, warningsOf(t, out, report.WarningOtherSpace))
 }

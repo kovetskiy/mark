@@ -106,15 +106,13 @@ func InScope(ctx context.Context, api *confluence.API, scopeID string, orphan Or
 		return false, fmt.Errorf("unable to read page %s: %w", orphan.PageID, err)
 	}
 
-	return InScopeOf(ctx, api, scopeID, orphan, page)
+	return InScopeOf(ctx, api, scopeID, page)
 }
 
-// InScopeOf is InScope for an orphan whose page the caller has already read
-// with its ancestors, so that the page is not read a second time. A nil page is
-// one already gone, and out of scope.
-func InScopeOf(
-	ctx context.Context, api *confluence.API, scopeID string, orphan Orphan, page *confluence.PageInfo,
-) (bool, error) {
+// InScopeOf is InScope for an orphan's page the caller has already read with
+// its ancestors, so that the page is not read a second time. A nil page is one
+// already gone, and out of scope.
+func InScopeOf(ctx context.Context, api *confluence.API, scopeID string, page *confluence.PageInfo) (bool, error) {
 	if scopeID == "" {
 		return true, nil
 	}
@@ -136,7 +134,7 @@ func InScopeOf(
 		return false, nil
 	}
 
-	chain, err := api.AncestryV2(ctx, orphan.PageID)
+	chain, err := api.AncestryV2(ctx, page.ID)
 	if err != nil {
 		// No v2 to ask, on a platform that could not be identified, or the
 		// page gone since: either way nothing puts it in scope.
@@ -144,7 +142,7 @@ func InScopeOf(
 			return false, nil
 		}
 
-		return false, fmt.Errorf("unable to read the ancestry of page %s: %w", orphan.PageID, err)
+		return false, fmt.Errorf("unable to read the ancestry of page %s: %w", page.ID, err)
 	}
 
 	for _, ancestor := range chain {

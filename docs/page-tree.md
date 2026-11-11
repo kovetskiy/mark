@@ -184,7 +184,10 @@ that space alone. An entry naming one in another space -- a page moved there by
 hand, or a manifest copied from another space or edited -- is not followed: that
 page or folder is not updated, retitled, moved, archived or deleted, and the
 document is published by its title as though nothing had been recorded for it.
-The run warns about it with the `other-space` kind.
+The run warns about it with the `other-space` kind; a page `--on-orphan` would
+have removed is instead listed under `orphans` with a `reason`. The space of a
+recorded page is part of reading it: a page whose space mark cannot tell stops
+the run rather than being passed over and published a second time.
 
 ### What it never does
 

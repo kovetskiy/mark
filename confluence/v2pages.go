@@ -91,6 +91,7 @@ func (api *API) pageInfoV2(content contentV2, pageType ContentType) *PageInfo {
 		Status:     content.Status,
 		ParentID:   content.ParentID,
 		ParentType: content.ParentType,
+		SpaceID:    content.SpaceID,
 	}
 	page.Version.Number = content.Version.Number
 	page.Version.Message = content.Version.Message

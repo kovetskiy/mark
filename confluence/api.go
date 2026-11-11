@@ -342,6 +342,11 @@ type PageInfo struct {
 	ParentID   string      `json:"-"`
 	ParentType ContentType `json:"-"`
 
+	// SpaceID is the id of the page's space as v2 names it, and empty for a
+	// page read through v1. v2 has it with every page, where the key in Space
+	// costs a read of the space that a token may be refused. Never sent.
+	SpaceID string `json:"-"`
+
 	Body struct {
 		Storage struct {
 			Value string `json:"value"`
