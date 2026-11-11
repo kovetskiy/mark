@@ -282,7 +282,9 @@ func (c *converter) heading(n *node) string {
 			if syntax.AnchorKey(name) != syntax.AnchorKey(headingText(n, anchor)) {
 				customID = name
 			}
-			if customID == "" || customHeadingID.MatchString(customID) {
+			// An id holding "<!--" would open a directive in the heading
+			// line, outside code, so its anchor stays in the heading.
+			if customID == "" || (customHeadingID.MatchString(customID) && !strings.Contains(customID, "<!--")) {
 				children = without(children, anchor)
 			} else {
 				customID = ""

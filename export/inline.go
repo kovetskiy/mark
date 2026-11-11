@@ -43,6 +43,13 @@ func (w *inlineWriter) write(s string) {
 	if s == "" {
 		return
 	}
+	// Text ending in "<" and what follows starting with "!" -- across an
+	// inline comment's marker, say -- would meet as "<!", which escapeInline
+	// keeps from opening a directive within one piece of text. "<![" cannot
+	// open one, and the backslash would make an image a link.
+	if strings.HasPrefix(s, "!") && !strings.HasPrefix(s, "![") && strings.HasSuffix(w.b.String(), "<") {
+		s = `\` + s
+	}
 	w.b.WriteString(s)
 	w.afterBreak = false
 }
@@ -368,8 +375,8 @@ func linkTitle(title string) string {
 		return ""
 	}
 
-	// "<!" as a reference keeps "<!--" from being read as a directive.
-	return ` "` + strings.NewReplacer(`\`, `\\`, `"`, `\"`, "<!", "&lt;!").Replace(title) + `"`
+	// "<\!" keeps "<!--" from being read as a directive.
+	return ` "` + strings.NewReplacer(`\`, `\\`, `"`, `\"`, "<!", `<\!`).Replace(title) + `"`
 }
 
 // pathDestination writes the path of a downloaded attachment as a link

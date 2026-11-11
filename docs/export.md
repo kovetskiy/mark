@@ -340,8 +340,9 @@ same:
 Text on the page that reads like one of the HTML comments mark acts on --
 `<!-- Include: ... -->`, `<!-- Macro: ... -->`, a header such as
 `<!-- Title: ... -->`, `<!-- ac:ignore -->` -- comes back as that text: its
-`<!` is written as `&lt;!`, and in a CDATA section `<!--` is split across two
-sections. A code macro whose title holds `<!--` stays a macro. Code itself is
+`<!` is written as `<\!`, and in a CDATA section `<!--` is split across two
+sections. A code macro whose title holds `<!--` stays a macro, as does a
+heading's anchor named with it. Code itself is
 written as it is, since mark leaves code alone.
 
 ## Open Knowledge Format
