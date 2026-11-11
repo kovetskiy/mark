@@ -66,7 +66,6 @@ func BenchmarkRunTexts(b *testing.B) {
 		tracker.SetRunDocuments("adr", keys)
 		run := &publishRun{api: api, tracker: tracker, inputs: inputs}
 		run.titles = &runTitles{inputs: inputs.all}
-		run.titles.texts = true
 		b.StartTimer()
 
 		for i := range spaces {

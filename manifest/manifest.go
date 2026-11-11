@@ -63,7 +63,6 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -463,7 +462,7 @@ type spaceState struct {
 	// entry for each document. It may name a path since dropped or recorded
 	// again with another fingerprint, so what it names is checked against the
 	// entry; every path whose entry has the fingerprint is in it.
-	byHash map[string][]string
+	byHash map[string]map[string]bool
 }
 
 // shard is one property's worth of the mapping.
@@ -950,8 +949,7 @@ func (state *spaceState) buildIndexes() {
 	for i := range state.shards {
 		for path, entry := range state.shards[i].pages {
 			state.byPage[entry.PageID] = path
-			// Each path once: the loaded keys are already distinct.
-			state.byHash[entry.Hash] = append(state.byHash[entry.Hash], path)
+			state.indexHash(path, entry.Hash)
 			if entry.Title == "" {
 				continue
 			}
@@ -966,9 +964,12 @@ func (state *spaceState) buildIndexes() {
 
 // indexHash notes that path is now recorded with hash.
 func (state *spaceState) indexHash(path, hash string) {
-	if !slices.Contains(state.byHash[hash], path) {
-		state.byHash[hash] = append(state.byHash[hash], path)
+	paths := state.byHash[hash]
+	if paths == nil {
+		paths = map[string]bool{}
+		state.byHash[hash] = paths
 	}
+	paths[path] = true
 }
 
 // resolveManifestPage finds the page the manifest was asked to live on: by id
@@ -1193,7 +1194,7 @@ func (s *Store) load(ctx context.Context, spaceKey string) (*spaceState, error) 
 		seen:    map[string]bool{},
 		claimed: map[string]bool{},
 		added:   map[string]bool{},
-		byHash:  map[string][]string{},
+		byHash:  map[string]map[string]bool{},
 	}
 	for i := range state.shards {
 		state.shards[i].pages = map[string]Entry{}
@@ -1679,7 +1680,7 @@ func (s *Store) resolveRenamed(ctx context.Context, spaceKey, path, hash string)
 		foundEntry Entry
 		count      int
 	)
-	for _, candidate := range state.byHash[hash] {
+	for candidate := range state.byHash[hash] {
 		entry, ok := state.shards[shardFor(candidate)].pages[candidate]
 		if !ok || entry.Hash != hash || !s.sameScope(path, entry) || !s.covers(candidate, entry) ||
 			s.runFiles[candidate] || state.claimed[entry.PageID] {

@@ -27,9 +27,7 @@ type runTitles struct {
 	// documents maps a title's key to the documents declaring it; nil until read.
 	documents map[string][]input
 
-	// texts says a read ahead keeps the document's text too, for
-	// RenameSimilarity; ahead holds each read ahead by file.
-	texts bool
+	// ahead holds each read ahead by file.
 	ahead map[string]*readAhead
 
 	// warningsFor gives a document's collector, for a title declared by more
@@ -51,8 +49,9 @@ type readAhead struct {
 	// sourceHash fingerprints the source as read, as the document's turn does.
 	sourceHash string
 	// text is the Markdown after the metadata, as similarity compares it;
-	// kept only when the run asks for texts.
-	text similar.Text
+	// worked out by textOf, only for a run pairing gone keys.
+	text     similar.Text
+	textRead bool
 }
 
 // readAhead reads in, once a run.
@@ -65,12 +64,9 @@ func (r *runTitles) readAhead(in input) *readAhead {
 	if source, markdown, _, err := in.read(); err == nil {
 		ahead.sourceHash = fingerprint.SHA1(string(source))
 
-		meta, markdown, err := documentMeta(r.config, in.file, markdown, r.hierarchy, nil)
+		meta, _, err := documentMeta(r.config, in.file, markdown, r.hierarchy, nil)
 		if err == nil && meta != nil {
 			ahead.meta = meta
-			if r.texts {
-				ahead.text = similar.Shingles(similar.MarkdownWords(string(markdown)))
-			}
 		}
 	}
 
@@ -80,6 +76,25 @@ func (r *runTitles) readAhead(in input) *readAhead {
 	r.ahead[in.file] = ahead
 
 	return ahead
+}
+
+// textOf is the text of in, a document read ahead with metadata, worked out
+// once a run. Read again rather than kept from the read ahead: most runs
+// never compare texts, and the read ahead is kept for every input.
+func (r *runTitles) textOf(in input) similar.Text {
+	ahead := r.readAhead(in)
+	if ahead.textRead {
+		return ahead.text
+	}
+	ahead.textRead = true
+
+	if _, markdown, _, err := in.read(); err == nil {
+		if _, markdown, err := documentMeta(r.config, in.file, markdown, r.hierarchy, nil); err == nil {
+			ahead.text = similar.Shingles(similar.MarkdownWords(string(markdown)))
+		}
+	}
+
+	return ahead.text
 }
 
 // index leaves out any file that cannot be read; processing it reports why.
