@@ -765,21 +765,21 @@ func (s *Store) addScope(scope string) string {
 // of the run's scopes, and under SetPartial only a key the run publishes in
 // it. Given the scope's whole key set by SetScopeKeys, it covers every key but
 // those named as still existing, which are not gone and so neither orphans,
-// renamed nor moved. Called with s.mu held.
+// renamed nor moved. A partial run covers no directory of documents: the
+// keys it is given say nothing of where their documents lie, and one it lays
+// out holds a document of its own, which may never record it. Called with
+// s.mu held.
 func (s *Store) coversDocument(path string, entry Entry) bool {
 	if !s.scopes[entry.Glob] {
 		return false
 	}
 
-	if listed := s.scopeKeys[entry.Glob]; listed != nil {
-		// The keys listed are documents', which say nothing of the
-		// directories they lie in, so a directory is covered only where the
-		// run lays it out.
-		if isDocumentDirectory(path) {
-			scope, ok := s.documentScopes[path]
-			return ok && scope == entry.Glob
-		}
+	listed := s.scopeKeys[entry.Glob]
+	if isDocumentDirectory(path) && (s.partial || listed != nil) {
+		return false
+	}
 
+	if listed != nil {
 		return !listed[path]
 	}
 

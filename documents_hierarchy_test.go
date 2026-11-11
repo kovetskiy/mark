@@ -206,3 +206,39 @@ func TestDocumentDirectoryDoesNotSurviveForItsKeys(t *testing.T) {
 		assert.False(t, server.Page(pageIDTitled(t, server, title)).Trashed, "%s is kept", title)
 	}
 }
+
+// TestPartialRunLeavesADocumentDirectoryItLaysOut: a partial run lays out a
+// directory for a document it publishes, but a document that declares its
+// own parents never records it. The directory's page still holds a listed
+// key's page, so it is neither reported nor warned about as gone.
+func TestPartialRunLeavesADocumentDirectoryItLaysOut(t *testing.T) {
+	t.Chdir(t.TempDir())
+
+	server := hierarchyServer(t)
+	config := documentHierarchyConfig(server, "reference",
+		hierarchyDocument("reference/api/a.md", "<!-- Title: A -->\n\nFirst document.\n"),
+		hierarchyDocument("reference/api/b.md", "<!-- Title: B -->\n\nSecond document.\n"),
+	)
+	config.DocumentScope = "reference"
+	config.Tracking.OnOrphan = report.OnOrphanDelete
+	require.NoError(t, Run(context.Background(), config))
+
+	apiID := pageIDTitled(t, server, "Api")
+	require.NotEmpty(t, apiID)
+
+	config.Documents = []Document{
+		hierarchyDocument("reference/api/a.md", "<!-- Parent: Home -->\n<!-- Title: A -->\n\nFirst document.\n"),
+	}
+	config.Tracking.Partial = true
+	config.DocumentKeys = []string{"reference/api/b.md"}
+	var out bytes.Buffer
+	config.Report.OutputFormat = report.FormatJSON
+	config.Output = &out
+	require.NoError(t, Run(context.Background(), config))
+
+	var reported report.Report
+	require.NoError(t, json.Unmarshal(out.Bytes(), &reported))
+	assert.Empty(t, reported.Orphans)
+	assert.False(t, server.Page(apiID).Trashed, "the directory B still lies in is kept")
+	assert.False(t, server.Page(pageIDTitled(t, server, "B")).Trashed)
+}
