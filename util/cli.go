@@ -293,7 +293,7 @@ func SetUpLogging(cmd *cli.Command) error {
 }
 
 // RunPublish is the action of "mark publish".
-func RunPublish(ctx context.Context, cmd *cli.Command) error {
+func RunPublish(ctx context.Context, cmd *cli.Command) (err error) {
 	creds, err := GetCredentials(
 		ctx,
 		cmd.String("username"),
@@ -324,6 +324,20 @@ func RunPublish(ctx context.Context, cmd *cli.Command) error {
 	outputs, err := imageOutputs(cmd)
 	if err != nil {
 		return err
+	}
+
+	// Opened, and emptied, before the run, so that a report left by an
+	// earlier run is never read as this one's.
+	reportFile, err := createReportFile(cmd.String("report-file"))
+	if err != nil {
+		return err
+	}
+	if reportFile != nil {
+		defer func() {
+			if closeErr := reportFile.Close(); closeErr != nil && err == nil {
+				err = fmt.Errorf("unable to write --report-file: %w", closeErr)
+			}
+		}()
 	}
 
 	config := mark.Config{
@@ -404,6 +418,9 @@ func RunPublish(ctx context.Context, cmd *cli.Command) error {
 		Report: mark.ReportConfig{
 			OutputFormat: report.Format(cmd.String("output-format")),
 		},
+	}
+	if reportFile != nil {
+		config.Report.Output = reportFile
 	}
 
 	// Run shuts the browsers it started down on the way out, however the run
@@ -629,6 +646,21 @@ func splitParents(value, delimiter string) []string {
 	}
 
 	return parents
+}
+
+// createReportFile opens the file --report-file names, or returns nil when the
+// report goes to standard output: no file, or "-".
+func createReportFile(path string) (*os.File, error) {
+	if path == "" || path == "-" {
+		return nil, nil
+	}
+
+	file, err := os.Create(path)
+	if err != nil {
+		return nil, fmt.Errorf("unable to create --report-file: %w", err)
+	}
+
+	return file, nil
 }
 
 // readPaths reads the paths --files-from names, one per line; blank lines are
