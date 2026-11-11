@@ -106,8 +106,38 @@ climbing out of it is left as written.
 then documents, in the order given. Two inputs with the same `Path` or the
 same `Key` are refused before anything is published.
 
-`ParentsFromPath` is refused together with `Documents`: the hierarchy is laid
-out from files on disk, and a document's `Path` need not be one.
+### Parents from the path
+
+With `ParentsFromPath`, documents are laid out by their `Path` together with the
+run's files, as one hierarchy (see
+[Parents from the directory a file is in](page-tree.md#parents-from-the-directory-a-file-is-in)).
+A directory that files and documents both lie in is one page. A document named
+`README.md` or `index.md` is its directory's page, and titles it from its
+`Content`, by its `Title` header, its front matter, or its leading heading with
+`TitleFromH1`. A `.pages` file is read only for a directory on disk, one a file
+or a document without `FS` lies in, never for a directory that only documents in
+an `FS` lie in.
+
+A run of documents alone has no `--files` pattern to take the root from, so it
+needs `ParentsFromPathRoot`, and is refused before publishing without it:
+
+```go
+config.ParentsFromPath = true
+config.ParentsFromPathRoot = "reference" // documents' Paths lie under it
+```
+
+Under `TrackPages`, the page standing for a directory that a file lies in is
+remembered by its path, under the files' pattern, as for a run of files. One
+that only documents lie in is remembered under a key of its own,
+`manifest.DocumentDirectoryKey(DocumentScope, directory)`, in the documents'
+scope. So a directory of files and a directory of documents with the same path
+never share an entry, and the next run of the scope that leaves no document in
+a directory finds its page an orphan. A partial run given `DocumentKeys` never
+takes a directory for gone, since the keys it lists say nothing of where those
+documents lie; the next full run of the scope does.
+
+`Publisher.PublishDocument` lays out no hierarchy, since `ParentsFromPath` is a
+setting of a run.
 
 ### Orphans and renames
 

@@ -881,16 +881,6 @@ func TestDocumentScopeRequiresTrackPages(t *testing.T) {
 	require.Error(t, Run(context.Background(), config))
 }
 
-func TestDocumentsRefuseParentsFromPath(t *testing.T) {
-	server, _ := docsSpace(t)
-	config := documentsConfig(server, Document{Path: "a.md", Content: []byte(markdownWithTitle("A"))})
-	config.ParentsFromPath = true
-
-	err := Run(context.Background(), config)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "ParentsFromPath")
-}
-
 func TestDocumentPathMustBeValidInsideItsFS(t *testing.T) {
 	server, _ := docsSpace(t)
 	config := documentsConfig(server, Document{

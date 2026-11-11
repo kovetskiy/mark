@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"path"
 	"path/filepath"
 	"slices"
 	"time"
@@ -256,9 +257,9 @@ func (c Config) checkDocuments() error {
 		return nil
 	}
 
-	if c.ParentsFromPath {
-		return errors.New("ParentsFromPath cannot place Documents: " +
-			"it lays out the hierarchy from the files on disk, and a Document's Path need not be there")
+	if c.ParentsFromPath && c.ParentsFromPathRoot == "" && !c.namesFiles() {
+		return errors.New("ParentsFromPath (--parents-from-path) with only Documents needs " +
+			"ParentsFromPathRoot (--parents-from-path-root): there is no --files pattern to take the root from")
 	}
 
 	if c.Tracking.Partial && c.DocumentScope == "" && !c.namesFiles() {
@@ -267,6 +268,89 @@ func (c Config) checkDocuments() error {
 	}
 
 	return nil
+}
+
+// buildHierarchy lays out the run's files and documents for ParentsFromPath,
+// as one hierarchy. A directory's own document is read as the run reads it, a
+// Document from its Content, and a .pages file is looked for only in a
+// directory on disk: one a file, or a Document without an FS, lies in.
+func buildHierarchy(config Config, run *runInputs) (*page.Hierarchy, error) {
+	paths := make([]string, 0, len(run.all))
+	for _, in := range run.all {
+		paths = append(paths, in.file)
+	}
+
+	read := func(file string) ([]byte, error) {
+		_, markdown, _, err := run.named(file).read()
+		return markdown, err
+	}
+	titleFromH1, frontmatter := config.Page.TitleFromH1, config.Rendering.enabled("frontmatter")
+
+	titles := page.DirectoryTitleReader(read, titleFromH1, frontmatter)
+	if len(run.documents) > 0 {
+		onDisk := diskDirectories(run.all)
+		withPagesFile := titles
+		indexOnly := page.IndexTitleReader(read, titleFromH1, frontmatter)
+		titles = func(directory, indexFile string) (string, error) {
+			if onDisk[directory] {
+				return withPagesFile(directory, indexFile)
+			}
+
+			return indexOnly(directory, indexFile)
+		}
+	}
+
+	return page.BuildHierarchy(config.ParentsFromPathRoot, config.Files, paths, titles)
+}
+
+// diskDirectories names the directories the inputs on disk lie in, and every
+// one above them, as the hierarchy names them: slash-separated and clean.
+func diskDirectories(inputs []input) map[string]bool {
+	directories := map[string]bool{}
+	for _, in := range inputs {
+		if in.document && in.root.FS() != nil {
+			continue
+		}
+
+		for dir := filepath.ToSlash(filepath.Dir(filepath.Clean(in.file))); !directories[dir]; dir = path.Dir(dir) {
+			directories[dir] = true
+			if dir == "." || dir == "/" {
+				break
+			}
+		}
+	}
+
+	return directories
+}
+
+// documentDirectoryKeys gives each directory of hierarchy that only the run's
+// documents lie in the manifest key its page is recorded under, in scope. A
+// directory a file lies in keeps its path for a key, and one with a document
+// of its own has that document's entry.
+func documentDirectoryKeys(hierarchy *page.Hierarchy, run *runInputs, scope string) map[string]string {
+	if len(run.documents) == 0 {
+		return nil
+	}
+
+	ofFiles := map[string]bool{}
+	for _, in := range run.all {
+		if !in.document {
+			for _, dir := range hierarchy.Directories(in.file) {
+				ofFiles[dir] = true
+			}
+		}
+	}
+
+	keys := map[string]string{}
+	for _, in := range run.documents {
+		for _, dir := range hierarchy.Directories(in.file) {
+			if !ofFiles[dir] && !hierarchy.HasIndex(dir) {
+				keys[dir] = manifest.DocumentDirectoryKey(scope, dir)
+			}
+		}
+	}
+
+	return keys
 }
 
 // namesFiles reports whether the run is given files to publish, by pattern or

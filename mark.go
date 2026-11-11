@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -58,9 +59,10 @@ type Config struct {
 	// instead of them when Files is empty: documents handed over from memory,
 	// each named by its Path and kept in the page manifest under its Key.
 	// They are published after the files, in the order given. They take part
-	// in everything a run does across its files, except ParentsFromPath,
-	// which they are refused with: a run's whole file set lays out the
-	// hierarchy, and a document's Path need not be anywhere on disk.
+	// in everything a run does across its files. Under ParentsFromPath their
+	// Paths are laid out with the files, as one hierarchy, and a document
+	// named like a directory's README or index titles that directory from its
+	// Content; a run of Documents alone needs ParentsFromPathRoot.
 	//
 	// A Files pattern that matches nothing still fails the run, documents or
 	// not, unless CI is set: the pattern's pages would otherwise all read as
@@ -124,7 +126,7 @@ type Config struct {
 
 	// ParentsFromPath places each page under pages standing for the
 	// directories between ParentsFromPathRoot and its file, laid out from the
-	// whole file set.
+	// whole file set, the Documents' Paths included.
 	ParentsFromPath     bool
 	ParentsFromPathRoot string
 
@@ -1100,18 +1102,19 @@ func Run(ctx context.Context, config Config) (err error) {
 	}
 
 	// Where the files sit says where the pages go, when asked. Laid out once
-	// from the run's own files, so that every document's parents, a directory's
-	// title and the pages standing for directories all come from the one list.
+	// from the run's own files and documents, so that every document's
+	// parents, a directory's title and the pages standing for directories all
+	// come from the one list.
 	var hierarchy *page.Hierarchy
 	if config.ParentsFromPath {
-		directoryTitles := page.DirectoryTitleReader(func(file string) ([]byte, error) {
-			_, markdown, _, err := readSource(file)
-			return markdown, err
-		}, config.Page.TitleFromH1, config.Rendering.enabled("frontmatter"))
-
-		hierarchy, err = page.BuildHierarchy(config.ParentsFromPathRoot, config.Files, files, directoryTitles)
+		hierarchy, err = buildHierarchy(config, run)
 		if err != nil {
 			return err
+		}
+
+		pub.directoryKeys = documentDirectoryKeys(hierarchy, run, config.DocumentScope)
+		if tracker != nil && len(pub.directoryKeys) > 0 {
+			tracker.SetRunDocuments(config.DocumentScope, slices.Sorted(maps.Values(pub.directoryKeys)))
 		}
 	}
 
@@ -1834,6 +1837,11 @@ type publishRun struct {
 	results          *report.Report
 	hierarchy        *page.Hierarchy
 	titles           *runTitles
+
+	// directoryKeys names the manifest key of each directory of the
+	// hierarchy that only documents lie in; one not here is keyed by its
+	// path, as a directory of files is.
+	directoryKeys map[string]string
 
 	// noOverwrite is Tracking.NoOverwrite, which needs tracker.
 	noOverwrite bool

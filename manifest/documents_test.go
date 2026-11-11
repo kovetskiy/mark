@@ -208,3 +208,21 @@ func TestRenameSources(t *testing.T) {
 func keysOf(entries map[string]manifest.Entry) []string {
 	return slices.Sorted(maps.Keys(entries))
 }
+
+// TestDocumentDirectoryKeyIsNotAFilePath: the key never names what a file's
+// path does, and Key leaves it as it is, wherever the directory lies and
+// whatever the scope is called.
+func TestDocumentDirectoryKeyIsNotAFilePath(t *testing.T) {
+	for _, dir := range []string{"docs/reference", "../shared/api"} {
+		for _, scope := range []string{"", "reference", "../.."} {
+			key := manifest.DocumentDirectoryKey(scope, dir)
+			assert.Equal(t, key, manifest.Key(key), "Key leaves %q as it is", key)
+			assert.NotEqual(t, manifest.Key(dir), key)
+		}
+	}
+
+	assert.NotEqual(t,
+		manifest.DocumentDirectoryKey("a", "b/c"),
+		manifest.DocumentDirectoryKey("a/b", "c"),
+		"a scope and a directory are told apart")
+}

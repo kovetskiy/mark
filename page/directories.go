@@ -96,28 +96,48 @@ func DirectoryHash(key string) string {
 // The filename is deliberately not consulted. It is "README" in every directory
 // that has one, which is a name for a file rather than for a page.
 func DirectoryTitleReader(read func(file string) ([]byte, error), titleFromH1, frontmatter bool) TitleResolver {
+	index := IndexTitleReader(read, titleFromH1, frontmatter)
+
 	return func(directory, indexFile string) (string, error) {
-		if indexFile != "" {
-			markdown, err := read(indexFile)
-			if err != nil {
-				return "", err
-			}
-
-			meta, _, err := metadata.ExtractMeta(markdown, metadata.ExtractOptions{
-				Filename:    indexFile,
-				TitleFromH1: titleFromH1,
-				FrontMatter: frontmatter,
-			})
-			if err != nil {
-				return "", fmt.Errorf("unable to read the title of %q: %w", indexFile, err)
-			}
-
-			if meta != nil && meta.Title != "" {
-				return meta.Title, nil
-			}
+		title, err := index(directory, indexFile)
+		if err != nil || title != "" {
+			return title, err
 		}
 
 		return directoryTitleFromPagesFile(directory)
+	}
+}
+
+// IndexTitleReader is DirectoryTitleReader without the .pages file: a
+// directory is titled by its own document alone, or named after itself. It is
+// for a directory that is not on disk, such as one only documents a library
+// caller handed over from memory lie in, where a .pages file read from disk
+// would be some other directory's.
+func IndexTitleReader(read func(file string) ([]byte, error), titleFromH1, frontmatter bool) TitleResolver {
+	return func(_, indexFile string) (string, error) {
+		if indexFile == "" {
+			return "", nil
+		}
+
+		markdown, err := read(indexFile)
+		if err != nil {
+			return "", err
+		}
+
+		meta, _, err := metadata.ExtractMeta(markdown, metadata.ExtractOptions{
+			Filename:    indexFile,
+			TitleFromH1: titleFromH1,
+			FrontMatter: frontmatter,
+		})
+		if err != nil {
+			return "", fmt.Errorf("unable to read the title of %q: %w", indexFile, err)
+		}
+
+		if meta != nil {
+			return meta.Title, nil
+		}
+
+		return "", nil
 	}
 }
 

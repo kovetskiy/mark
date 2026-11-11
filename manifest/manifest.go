@@ -59,6 +59,7 @@ import (
 	"errors"
 	"fmt"
 	"hash/fnv"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -659,6 +660,31 @@ func IsDocumentScope(glob string) bool {
 	return strings.HasPrefix(glob, documentScopePrefix)
 }
 
+// documentDirectoryPrefix starts the key of a page standing for a directory
+// that only documents lie in, as DocumentDirectoryKey spells it.
+const documentDirectoryPrefix = "documents:"
+
+// DocumentDirectoryKey is what the page standing for directory is recorded
+// under when only documents of scope lie in it, documents a library caller
+// handed over from memory rather than files: a key of its own, so that it is
+// never the entry of a directory of files with the same path, which belongs
+// to a --files pattern rather than to the scope. Pass it to SetRunDocuments
+// with the run's other keys of the scope.
+//
+// The scope and the directory are each escaped into one path segment, so
+// that Key, which cleans every path it records, leaves the key as it is and
+// no file path can be one: a file path's first segment would have to be
+// "documents:" followed by the scope.
+func DocumentDirectoryKey(scope, directory string) string {
+	return documentDirectoryPrefix + url.PathEscape(scope) + "/" + url.PathEscape(Key(directory))
+}
+
+// isDocumentDirectory reports whether a recorded key is one
+// DocumentDirectoryKey made.
+func isDocumentDirectory(path string) bool {
+	return strings.HasPrefix(path, documentDirectoryPrefix)
+}
+
 // SetRunDocuments adds to the run's paths ones that no --files pattern
 // matched, such as documents a library caller handed over from memory, each
 // recorded under scope rather than the run's pattern. Call it after
@@ -746,6 +772,14 @@ func (s *Store) coversDocument(path string, entry Entry) bool {
 	}
 
 	if listed := s.scopeKeys[entry.Glob]; listed != nil {
+		// The keys listed are documents', which say nothing of the
+		// directories they lie in, so a directory is covered only where the
+		// run lays it out.
+		if isDocumentDirectory(path) {
+			scope, ok := s.documentScopes[path]
+			return ok && scope == entry.Glob
+		}
+
 		return !listed[path]
 	}
 
@@ -1666,6 +1700,9 @@ func (s *Store) RenameSources(ctx context.Context, spaceKey, path string) (map[s
 	sources := map[string]Entry{}
 	for i := range state.shards {
 		for candidate, entry := range state.shards[i].pages {
+			if isDocumentDirectory(candidate) {
+				continue
+			}
 			if s.gone(state, path, candidate, entry) && !state.claimed[entry.PageID] {
 				sources[candidate] = entry
 			}
@@ -1933,6 +1970,11 @@ func (s *Store) Survivors(spaceKey, glob string) int {
 
 	for i := range state.shards {
 		for path, entry := range state.shards[i].pages {
+			// A directory is still there only because a document published
+			// into it is, which says nothing of the keys tracked before.
+			if isDocumentDirectory(path) {
+				continue
+			}
 			if entry.Glob == glob && (state.seen[path] && !state.added[path] || listed[path]) {
 				survivors++
 			}
