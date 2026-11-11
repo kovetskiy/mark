@@ -128,18 +128,18 @@ func ParseIncludeDirective(raw []byte) (*IncludeDirective, error) {
 	return dir, nil
 }
 
-// place is a file or directory an include is read from: on the local disk,
-// where name is an OS path, or in a document's fs.FS, where it is the path
-// inside it. --include-path is always on disk, so one document's includes may
-// come from both.
+// place is a file or directory an include is read from, by the document's
+// Root, which also reads --include-path (attachment.Root.WithIncludePath): on
+// the local disk, where name is an OS path, or in a document's fs.FS, where it
+// is the path inside it. --include-path is always on disk, so one document's
+// includes may come from both.
 type place struct {
 	root attachment.Root
 	name string
 }
 
-func disk(name string) place { return place{name: name} }
-
-func (p place) inFS() bool { return p.root.FS() != nil }
+// inFS reports whether p is read from the document's fs.FS rather than disk.
+func (p place) inFS() bool { return !p.root.OnDisk(p.name) }
 
 // join is the place rel names from p. Joined as paths on disk are: the Root
 // reads such a name as the path inside its fs.FS.
@@ -158,7 +158,7 @@ func (p place) key() place {
 		return place{root: p.root, name: path.Clean(filepath.ToSlash(p.name))}
 	}
 
-	return disk(absolute(p.name))
+	return place{root: p.root, name: absolute(p.name)}
 }
 
 // cacheKey is what p is known by among the templates and the include stack.
@@ -171,8 +171,16 @@ func (p place) cacheKey() string {
 	return p.name
 }
 
+// exists reports whether p names a file. One on disk is looked for without
+// the include path's containment check, so that a name resolving out of it
+// is chosen and then refused by allowedTemplatePath, which says so.
 func (p place) exists() bool {
-	_, err := p.root.Stat(p.name)
+	root := p.root
+	if !p.inFS() {
+		root = attachment.Root{}
+	}
+
+	_, err := root.Stat(p.name)
 
 	return err == nil
 }
@@ -185,14 +193,14 @@ func (p place) String() string { return p.name }
 // the read used to try them in. A name that matches nothing resolves against
 // the document's directory anyway, so the failure to read it names the place
 // the author would look first.
-func resolveTemplatePath(base place, includePath, path string) place {
+func resolveTemplatePath(base place, path string) place {
 	candidate := base.join(path)
 	if candidate.exists() {
 		return candidate.key()
 	}
 
-	if includePath != "" {
-		fallback := disk(filepath.Join(includePath, path))
+	if name, ok := base.root.IncludeName(path); ok {
+		fallback := place{root: base.root, name: name}
 		if fallback.exists() {
 			return fallback.key()
 		}
@@ -211,9 +219,9 @@ func resolveTemplatePath(base place, includePath, path string) place {
 // should have to rewrite, so that is still tried when nothing is beside the
 // fragment. A name that matches nothing resolves beside the fragment, so the
 // failure to read it names the place the author would look first.
-func resolveNestedTemplatePath(base, from place, includePath, path string, warnings *report.Warnings) place {
+func resolveNestedTemplatePath(base, from place, path string, warnings *report.Warnings) place {
 	candidate := from.join(path).key()
-	rootRelative := resolveTemplatePath(base, includePath, path)
+	rootRelative := resolveTemplatePath(base, path)
 
 	rootFound := rootRelative.exists()
 
@@ -261,9 +269,9 @@ func allowedTemplatePath(base place, includePath string, resolved place) error {
 	}
 
 	// The working directory is no root of a document in an fs.FS: on disk it
-	// may read --include-path and nothing else.
+	// may read --include-path and nothing else, which its Root holds it to.
 	if base.inFS() {
-		if includePath != "" && attachment.CheckWithin(includePath, resolved.name) == nil {
+		if resolved.root.CheckReadable(".", resolved.name) == nil {
 			return nil
 		}
 
@@ -336,8 +344,8 @@ func LoadTemplateIn(
 	// same entry as "partial.md" beside another: the first one read was then
 	// served to every document that asked for that name, publishing one page's
 	// fragment onto another's, silently and with no error anywhere.
-	from := place{root: root, name: base}
-	resolved := resolveTemplatePath(from, includePath, path)
+	from := place{root: root.WithIncludePath(includePath), name: base}
+	resolved := resolveTemplatePath(from, path)
 
 	loaded, _, err := loadTemplate(from, includePath, resolved, path, left, right, templates)
 
@@ -533,13 +541,13 @@ func ProcessIncludesIn(
 	stack []string,
 	warnings *report.Warnings,
 ) (*template.Template, []byte, bool, error) {
-	from := place{root: root, name: base}
+	from := place{root: root.WithIncludePath(includePath), name: base}
 
 	frames := make([]includeFrame, 0, len(stack))
 	for _, name := range stack {
 		frames = append(frames, includeFrame{
 			name: name,
-			file: resolveTemplatePath(from, includePath, name).cacheKey(),
+			file: resolveTemplatePath(from, name).cacheKey(),
 		})
 	}
 
@@ -626,9 +634,9 @@ func processIncludes(
 		// A directive in the document names a file from the document's
 		// directory; one inside an included fragment names it from the
 		// fragment's, with the document's still tried after it.
-		resolved := resolveTemplatePath(base, includePath, dir.Template)
+		resolved := resolveTemplatePath(base, dir.Template)
 		if fromFragment {
-			resolved = resolveNestedTemplatePath(base, from, includePath, dir.Template, warnings)
+			resolved = resolveNestedTemplatePath(base, from, dir.Template, warnings)
 		}
 		resolvedKey := resolved.cacheKey()
 

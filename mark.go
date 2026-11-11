@@ -2215,8 +2215,8 @@ func (r *publishRun) linkResolver(doc *document) (*page.LinkResolver, error) {
 	// directory of everything this document includes is worth looking in too.
 	// One level: a fragment that itself includes another is not followed here.
 	base := filepath.Dir(file)
-	inFS := doc.root.FS() != nil
-	searchDirs := includeSearchDirs(base, config.Rendering.IncludePath, doc.markdown, inFS)
+	root := doc.root.WithIncludePath(config.Rendering.IncludePath)
+	searchDirs := includeSearchDirs(base, root, doc.markdown)
 
 	// A staged document's or fragment's links were written beside its source.
 	// Looked for there only after every staged place, so that setting the
@@ -2256,10 +2256,7 @@ func (r *publishRun) linkResolver(doc *document) (*page.LinkResolver, error) {
 	resolver.Offline = config.Mode.Offline
 	resolver.SourceFile = file
 	resolver.Deferrals = r.deferrals
-	resolver.Files = r.linkFiles(doc)
-	if inFS && config.Rendering.IncludePath != "" {
-		resolver.Files = includePathFiles{dir: absPath(config.Rendering.IncludePath), files: resolver.Files}
-	}
+	resolver.Files = r.linkFiles(root)
 	resolver.Warnings = doc.warnings
 	resolver.ReadMeta = func(markdown []byte, opts metadata.ExtractOptions) (*metadata.Meta, []byte, error) {
 		// The hierarchy places only the run's own files. Another is published
@@ -2997,10 +2994,9 @@ func getImageAlign(align string, meta *metadata.Meta) (string, error) {
 // Duplicates are dropped so that a document including several files from one
 // directory does not have it looked in repeatedly.
 //
-// For a document in an fs.FS, a directory under includePath is absolute: it
-// is on disk, and no name inside the FS is absolute, so includePathFiles can
-// tell the two apart.
-func includeSearchDirs(base, includePath string, markdown []byte, inFS bool) []string {
+// A directory under the include path is named as root names it: for a
+// document in an fs.FS, absolute, so that root reads it from disk.
+func includeSearchDirs(base string, root attachment.Root, markdown []byte) []string {
 	var dirs []string
 	seen := map[string]bool{}
 
@@ -3017,15 +3013,14 @@ func includeSearchDirs(base, includePath string, markdown []byte, inFS bool) []s
 
 		// The same fallback LoadTemplate uses when the file is not beside the
 		// document, so a link inside a shared fragment resolves the same way
-		// the fragment itself was found. Spelled like base, absolute or
-		// relative, so that a file found there is recognised as the run's.
-		if includePath != "" {
-			dir := filepath.Dir(filepath.Join(includePath, target))
-			if inFS {
-				add(absPath(dir))
-			} else {
-				add(spelledLike(dir, base))
+		// the fragment itself was found. On disk spelled like base, absolute
+		// or relative, so that a file found there is recognised as the run's.
+		if name, ok := root.IncludeName(target); ok {
+			dir := filepath.Dir(name)
+			if root.FS() == nil {
+				dir = spelledLike(dir, base)
 			}
+			add(dir)
 		}
 	}
 

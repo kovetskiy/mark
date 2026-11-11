@@ -459,49 +459,15 @@ func (i documentInfo) ModTime() time.Time { return time.Time{} }
 func (i documentInfo) IsDir() bool        { return false }
 func (i documentInfo) Sys() any           { return nil }
 
-// linkFiles is where doc's relative links are looked for: its root alone,
-// unless the run has documents of its own to answer for first.
-func (r *publishRun) linkFiles(doc *document) page.LinkFiles {
+// linkFiles is where a document's relative links are looked for: root, the
+// document's own with --include-path, alone, unless the run has documents of
+// its own to answer for first.
+func (r *publishRun) linkFiles(root attachment.Root) page.LinkFiles {
 	if r.inputs == nil {
-		return doc.root
+		return root
 	}
 
-	return documentFiles{inputs: r.inputs, root: doc.root}
-}
-
-// includePathFiles is where a link of a document in an fs.FS is looked for
-// when the document includes fragments from --include-path: a fragment's
-// links are written from where it sits on disk, so an absolute name, which
-// only an include-path directory gives, is looked for on disk, and only
-// under dir. Every other name is files'.
-type includePathFiles struct {
-	// dir is --include-path, absolute.
-	dir   string
-	files page.LinkFiles
-}
-
-func (f includePathFiles) Stat(name string) (fs.FileInfo, error) {
-	return orUnderDir(f, name, f.files.Stat, os.Stat)
-}
-
-func (f includePathFiles) ReadFile(name string) ([]byte, error) {
-	return orUnderDir(f, name, f.files.ReadFile, os.ReadFile)
-}
-
-// orUnderDir asks files for name first, and only then the disk, for an
-// absolute name under f.dir, symbolic links followed.
-func orUnderDir[T any](f includePathFiles, name string, files, disk func(string) (T, error)) (T, error) {
-	found, err := files(name)
-	if err == nil || !filepath.IsAbs(name) {
-		return found, err
-	}
-
-	if err := attachment.CheckWithin(f.dir, name); err != nil {
-		var none T
-		return none, err
-	}
-
-	return disk(name)
+	return documentFiles{inputs: r.inputs, root: root}
 }
 
 // PublishDocument publishes doc as Publish publishes a file, and checks the
