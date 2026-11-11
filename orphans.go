@@ -5,6 +5,8 @@ package mark
 import (
 	"context"
 	"fmt"
+	"maps"
+	"slices"
 	"strings"
 
 	"github.com/kovetskiy/mark/v17/confluence"
@@ -100,6 +102,7 @@ func handleOrphans(
 			"space %q: %d tracked page(s) had no matching source file in this run: %s",
 			space, len(paths), strings.Join(paths, ", "),
 		)
+		warnGoneKeys(space, paths, globOf)
 
 		handled := paths
 		if action != report.OnOrphanReport {
@@ -130,39 +133,41 @@ func handleOrphans(
 
 			// The same, for the run's files and each document scope on its
 			// own: pages one of them published elsewhere in the space say
-			// nothing about the other's. A partial run's document orphans are
-			// keys it named, not keys found absent, so they are not held back.
+			// nothing about the other's. A document scope is held to more,
+			// since a partial run's key list decides what is gone: some key
+			// of it tracked in the space has to still be there.
 			acting := make([]page.Orphan, 0, len(candidates))
-			publishedUnder := map[string]int{}
+			survivors := map[string]int{}
 			for _, candidate := range candidates {
 				glob := globOf[candidate.Path]
-				if config.Tracking.Partial && manifest.IsDocumentScope(glob) {
-					acting = append(acting, candidate)
-
-					continue
-				}
-
-				published, counted := publishedUnder[glob]
+				left, counted := survivors[glob]
 				if !counted {
-					published = tracker.PublishedUnder(space, glob)
-					publishedUnder[glob] = published
+					left = tracker.Survivors(space, glob)
+					survivors[glob] = left
 				}
 
-				if published > 0 {
+				if left > 0 {
 					acting = append(acting, candidate)
 
 					continue
 				}
 
-				log.Warn().Msgf(
-					"space %q: nothing under %s was published in this run, so %s's page is left alone",
-					space, glob, candidate.Path,
-				)
+				reason := fmt.Sprintf("nothing under %s was published in space %q in this run", glob, space)
+				if manifest.IsDocumentScope(glob) {
+					reason = fmt.Sprintf(
+						"no key of %s tracked in space %q before this run is published or named in DocumentKeys, "+
+							"which a failed render or a bad key list looks exactly like", glob, space,
+					)
+					log.Warn().Msgf("space %q: %s, so %s's page is left alone", space, reason, candidate.Path)
+				} else {
+					log.Warn().Msgf(
+						"space %q: nothing under %s was published in this run, so %s's page is left alone",
+						space, glob, candidate.Path,
+					)
+				}
 
 				if !config.Mode.readOnly() {
-					reportKept(results, candidate, fmt.Sprintf(
-						"nothing under %s was published in space %q in this run", glob, space,
-					))
+					reportKept(results, candidate, reason)
 				}
 			}
 
@@ -209,6 +214,25 @@ func handleOrphans(
 	}
 
 	return nil
+}
+
+// warnGoneKeys says, per document scope, how many of its keys the run takes
+// as gone: a key left out of DocumentKeys by mistake reads exactly as one
+// removed, and --on-orphan acts on it alike.
+func warnGoneKeys(space string, paths []string, globOf map[string]string) {
+	gone := map[string][]string{}
+	for _, path := range paths {
+		if glob := globOf[path]; manifest.IsDocumentScope(glob) {
+			gone[glob] = append(gone[glob], path)
+		}
+	}
+
+	for _, glob := range slices.Sorted(maps.Keys(gone)) {
+		log.Warn().Msgf(
+			"space %q: %d key(s) of %s are neither published nor named in DocumentKeys, so they are taken as gone: %s",
+			space, len(gone[glob]), glob, strings.Join(gone[glob], ", "),
+		)
+	}
 }
 
 // reportKept records an orphan --on-orphan asked to remove that was left where

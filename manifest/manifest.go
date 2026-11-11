@@ -336,9 +336,13 @@ type Store struct {
 	// its entry is recorded under in place of runGlob; "" is none.
 	documentScopes map[string]string
 
-	// documentKeys holds, for each key SetRunDocumentKeys named, the scope
-	// it was named in.
-	documentKeys map[string]string
+	// scopeKeys holds, for each key SetScopeKeys named, the scope it still
+	// exists in.
+	scopeKeys map[string]string
+
+	// listed holds the scopes SetScopeKeys gave the whole key set of, as
+	// recorded.
+	listed map[string]bool
 
 	// scopes holds every scope the run publishes or names keys in, as it is
 	// recorded.
@@ -450,6 +454,10 @@ type spaceState struct {
 	// claimed records pages already taken by a file this run, so a rename can
 	// never rebind onto a page another document is publishing to.
 	claimed map[string]bool
+
+	// added records the paths this run recorded that were tracked before it
+	// under neither their own path nor one they moved or were renamed from.
+	added map[string]bool
 }
 
 // shard is one property's worth of the mapping.
@@ -598,7 +606,8 @@ func (s *Store) SetRunFiles(glob string, paths []string) {
 	s.runGlob = Key(glob)
 	s.runFiles = make(map[string]bool, len(paths))
 	s.documentScopes = nil
-	s.documentKeys = nil
+	s.scopeKeys = nil
+	s.listed = nil
 	s.scopes = nil
 	for _, path := range paths {
 		s.runFiles[Key(path)] = true
@@ -667,8 +676,8 @@ func IsDocumentScope(glob string) bool {
 // again only by their own path. A run of files never covers an entry under
 // a scope, nor a run of documents a file's.
 //
-// Under SetPartial a run covers only the keys of a scope it publishes or
-// names with SetRunDocumentKeys, and leaves the scope's other entries alone.
+// Under SetPartial a run covers only the keys of a scope it publishes, and
+// leaves the scope's other entries alone, unless SetScopeKeys names the rest.
 func (s *Store) SetRunDocuments(scope string, paths []string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -685,14 +694,18 @@ func (s *Store) SetRunDocuments(scope string, paths []string) {
 	}
 }
 
-// SetRunDocumentKeys names keys of scope that a partial run covers without
-// publishing them: documents removed, or the keys renamed documents had. Such
-// a key whose entry is under scope is an orphan, or the previous key of a
-// document of the scope the run publishes. It is the documents' counterpart
-// of the deleted paths SetRunPaths names. Without SetPartial the run covers
-// every key of the scope anyway, as SetRunDocuments has it. Call it after
-// SetRunFiles.
-func (s *Store) SetRunDocumentKeys(scope string, keys []string) {
+// SetScopeKeys names, for a partial run, every key of scope that still exists
+// besides those of the documents the run publishes; theirs may be named too.
+// The run then knows the scope's whole key set and covers all of it, as a run
+// without SetPartial does: an entry of the scope under a key neither published
+// nor named is gone, so it is an orphan, the previous key of a document with
+// the same content, or the owner a moved document's page is followed from. A
+// named key is none of those and is left as it is, tracked.
+//
+// Without it a partial run covers only the keys it publishes in a scope, so it
+// finds no orphans there and follows a document by its own key alone. No keys,
+// or no scope, name nothing. Call it after SetRunFiles.
+func (s *Store) SetScopeKeys(scope string, keys []string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -701,12 +714,14 @@ func (s *Store) SetRunDocumentKeys(scope string, keys []string) {
 	}
 
 	glob := s.addScope(scope)
-	if s.documentKeys == nil {
-		s.documentKeys = make(map[string]string, len(keys))
+	if s.scopeKeys == nil {
+		s.scopeKeys = make(map[string]string, len(keys))
+		s.listed = map[string]bool{}
 	}
 
+	s.listed[glob] = true
 	for _, key := range keys {
-		s.documentKeys[Key(key)] = glob
+		s.scopeKeys[Key(key)] = glob
 	}
 }
 
@@ -725,22 +740,26 @@ func (s *Store) addScope(scope string) string {
 }
 
 // coversDocument is covers for an entry recorded under a document scope: one
-// of the run's scopes, and under SetPartial only for a key the run publishes
-// or names in that scope. Called with s.mu held.
+// of the run's scopes, and under SetPartial only a key the run publishes in
+// it, unless SetScopeKeys gave the scope's whole key set. Called with s.mu
+// held.
 func (s *Store) coversDocument(path string, entry Entry) bool {
 	if !s.scopes[entry.Glob] {
 		return false
 	}
 
-	if !s.partial {
+	if !s.partial || s.listed[entry.Glob] {
 		return true
 	}
 
 	scope, ok := s.documentScopes[path]
-	if !ok {
-		scope, ok = s.documentKeys[path]
-	}
+	return ok && scope == entry.Glob
+}
 
+// kept reports whether SetScopeKeys names path as still existing in the
+// scope entry is recorded under. Called with s.mu held.
+func (s *Store) kept(path string, entry Entry) bool {
+	scope, ok := s.scopeKeys[path]
 	return ok && scope == entry.Glob
 }
 
@@ -1120,6 +1139,7 @@ func (s *Store) load(ctx context.Context, spaceKey string) (*spaceState, error) 
 		parents: map[string]string{},
 		seen:    map[string]bool{},
 		claimed: map[string]bool{},
+		added:   map[string]bool{},
 	}
 	for i := range state.shards {
 		state.shards[i].pages = map[string]Entry{}
@@ -1298,8 +1318,8 @@ func (s *Store) Record(ctx context.Context, spaceKey, path, pageID, title, hash 
 				!s.covers(owner, ownerEntry) && s.sameScope(path, ownerEntry) {
 				if IsDocumentScope(ownerEntry.Glob) {
 					hint = fmt.Sprintf(
-						"; if %s moved to %s, name the key %s beside the documents to follow the move",
-						owner, path, owner,
+						"; if %s moved to %s, name every key of its scope that still exists to follow the move",
+						owner, path,
 					)
 				} else {
 					hint = fmt.Sprintf(
@@ -1338,6 +1358,9 @@ func (s *Store) Record(ctx context.Context, spaceKey, path, pageID, title, hash 
 
 	sh := &state.shards[shardFor(path)]
 	existing, ok := sh.pages[path]
+	if !ok && !movedOK {
+		state.added[path] = true
+	}
 	// A document is recorded under its run's scope, partial or not: the
 	// scope names the documents' owner, not a pattern some of them lie in.
 	glob, document := s.documentScopes[path]
@@ -1470,7 +1493,7 @@ func (s *Store) movedOwner(state *spaceState, path, pageID string) (Entry, bool)
 
 	entry, recorded := state.shards[shardFor(owner)].pages[owner]
 	if !recorded || entry.PageID != pageID || !s.covers(owner, entry) || !s.absent(state, owner) ||
-		!s.sameScope(path, entry) {
+		s.kept(owner, entry) || !s.sameScope(path, entry) {
 		return Entry{}, false
 	}
 
@@ -1590,7 +1613,7 @@ func (s *Store) resolveRenamed(ctx context.Context, spaceKey, path, hash string)
 	for i := range state.shards {
 		for candidate, entry := range state.shards[i].pages {
 			if entry.Hash != hash || !s.sameScope(path, entry) || !s.covers(candidate, entry) ||
-				s.runFiles[candidate] || state.claimed[entry.PageID] {
+				s.runFiles[candidate] || s.kept(candidate, entry) || state.claimed[entry.PageID] {
 				continue
 			}
 			foundPath, foundEntry = candidate, entry
@@ -1829,12 +1852,18 @@ func (s *Store) Published(spaceKey string) int {
 	return len(state.seen)
 }
 
-// PublishedUnder is Published counting only the pages published this run
-// on the side of an entry recorded under glob: by the documents of its scope
-// for a document scope, and by the run's files for any other glob. A run whose
-// documents publish to a space says nothing about its files' pages there, nor
-// one scope's documents about another's.
-func (s *Store) PublishedUnder(spaceKey, glob string) int {
+// Survivors is Published narrowed to the side of an entry recorded under
+// glob, the guard against removing its pages when nothing says they are gone
+// rather than unseen. A run whose documents publish to a space says nothing
+// about its files' pages there, nor one scope's documents about another's.
+//
+// For any glob but a document scope it counts the pages the run's files
+// published. For a document scope it counts the keys of the scope tracked in
+// the space before the run that are still there: published again, followed to
+// a new key, or named by SetScopeKeys. None of them left means every key of
+// the scope there is gone at once, which a failed render or a bad key list
+// looks exactly like, whatever new keys the run published.
+func (s *Store) Survivors(spaceKey, glob string) int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -1843,14 +1872,26 @@ func (s *Store) PublishedUnder(spaceKey, glob string) int {
 		return 0
 	}
 
-	published := 0
-	for path := range state.seen {
-		if s.sameScope(path, Entry{Glob: glob}) {
-			published++
+	survivors := 0
+	if !IsDocumentScope(glob) {
+		for path := range state.seen {
+			if s.sameScope(path, Entry{Glob: glob}) {
+				survivors++
+			}
+		}
+
+		return survivors
+	}
+
+	for i := range state.shards {
+		for path, entry := range state.shards[i].pages {
+			if entry.Glob == glob && (state.seen[path] && !state.added[path] || s.kept(path, entry)) {
+				survivors++
+			}
 		}
 	}
 
-	return published
+	return survivors
 }
 
 // Orphans returns the recorded paths this run was looking for and did not find.
@@ -1887,7 +1928,7 @@ func (s *Store) orphans(spaceKey string) []string {
 	var orphans, left []string
 	for i := range state.shards {
 		for path, entry := range state.shards[i].pages {
-			if state.seen[path] {
+			if state.seen[path] || s.kept(path, entry) {
 				continue
 			}
 			if s.leftToOwner(path, entry) {

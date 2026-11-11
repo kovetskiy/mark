@@ -222,22 +222,24 @@ func (c Config) checkDocuments() error {
 	}
 
 	if len(c.DocumentKeys) > 0 {
-		// Without Partial the run covers every key of its scope, so a caller
-		// publishing some documents and naming the rest would remove those it
+		// Without Partial the run's documents are the whole scope, so a
+		// caller publishing some and naming the rest would remove those it
 		// left out.
 		if !c.Tracking.Partial || c.DocumentScope == "" {
 			return errors.New("DocumentKeys requires Tracking.Partial and a DocumentScope: " +
-				"they name the keys of a scope a partial run covers without publishing them")
+				"they name the keys of a scope that still exist besides a partial run's documents")
 		}
 
 		if slices.Contains(c.DocumentKeys, "") {
 			return errors.New("DocumentKeys holds an empty key")
 		}
 
-		// A run finds a scope's pages only in the spaces it publishes to.
+		// A run finds a scope's pages only in the spaces it publishes to, and
+		// learning which spaces a scope lives in would take a manifest read
+		// of every space.
 		if len(c.Documents) == 0 && !c.namesFiles() {
-			msg := "DocumentKeys with nothing to publish finds no space to look for them in: " +
-				"leave a change that only removes documents to a run publishing the whole scope"
+			msg := "DocumentKeys with nothing to publish finds no space to look for the scope's pages in: " +
+				"the next run publishing a document of the scope, given its keys, finds those left out"
 			if !c.CI {
 				return errors.New(msg)
 			}
