@@ -95,7 +95,7 @@ type Document struct {
 // before anything is published. The FS's own root is its boundary, which
 // fs.Sub narrows.
 func (c RenderingConfig) checkDocumentRoot(doc Document) error {
-	if doc.FS == nil || !c.AttachmentRoot.IsDir() {
+	if doc.FS == nil || !c.AttachmentRoot.NamesDirectory() {
 		return nil
 	}
 

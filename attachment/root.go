@@ -439,7 +439,7 @@ func (r Root) narrow(base, joined, named string) error {
 	switch {
 	case r.boundary == "":
 		return nil
-	case r.boundary.IsDir():
+	case r.boundary.NamesDirectory():
 		return fmt.Errorf(
 			"%w: %q is read from the document's file system, which the attachment root %q, a directory on disk, does not hold",
 			ErrOutsideProject, named, string(r.boundary),
