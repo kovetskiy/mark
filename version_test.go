@@ -1,10 +1,8 @@
 package mark
 
 import (
-	"os"
 	"reflect"
 	"runtime/debug"
-	"strings"
 	"testing"
 )
 
@@ -60,28 +58,5 @@ func TestVersionOf(t *testing.T) {
 				t.Errorf("versionOf() = %q, want %q", got, test.want)
 			}
 		})
-	}
-}
-
-func TestImageOf(t *testing.T) {
-	if got, want := imageOf("v17.1.0"), "docker.io/kovetskiy/mark:v17.1.0"; got != want {
-		t.Errorf("imageOf(%q) = %q, want %q", "v17.1.0", got, want)
-	}
-	if got := imageOf(""); got != "" {
-		t.Errorf(`imageOf("") = %q, want ""`, got)
-	}
-}
-
-// Image names the tag CI pushes for each release tag, so the two must name
-// the same repository and the tag must be the Git tag as it is.
-func TestImageMatchesCI(t *testing.T) {
-	workflow, err := os.ReadFile(".github/workflows/ci.yml")
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	repository := strings.TrimPrefix(ImageRepository, "docker.io/")
-	if want := repository + ":${{ github.ref_name }}"; !strings.Contains(string(workflow), want) {
-		t.Errorf(".github/workflows/ci.yml pushes no %s, which Image names", want)
 	}
 }

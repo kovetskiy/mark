@@ -397,11 +397,9 @@ The image is published under every release tag, pre-releases included
 release tagged most recently that is not a pre-release. Pin a tag rather than
 `latest`: the image carries the headless Chrome mark draws diagrams in, so a
 pinned tag keeps a job on one release of mark and the Chrome it was built
-with. A
-Go program that writes such a job for the mark it links can ask for the image of
-that release with `mark.Image()`, and for the release itself with
-`mark.Version()`; both are `""` for a build of mark that is not a release, such
-as a pseudo-version or a local `replace`, which has no image.
+with. A Go program that writes such a job for the mark it links can ask for
+that release with `mark.Version()`, which is `""` for a build of mark that is
+not a release, such as a pseudo-version or a local `replace`.
 
 The following directive tells the CI to run this particular job only if the changes are pushed into the
 `main` branch. It means you can safely push your changes into feature branches without being afraid
