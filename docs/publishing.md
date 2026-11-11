@@ -149,12 +149,10 @@ would be moved under the parent its headers declare, when its labels differ
 from its `Label` headers, or when an attachment -- declared, embedded or
 rendered -- would be uploaded; the `reason` of a `would-update` names any of
 the last three. Only the pages that would change have their HTML printed, and
-only with the default `url` output format or a [`--report-file`](#writing-the-report-to-a-file):
-with `json` or `github` on standard output the report is all that is written,
-so a CI step can parse it. A page `--no-overwrite`
-would leave alone is `skipped`, as it is on a real run, and is not printed
-either. A real run's report only tells a content update apart, so a page
-previewed as `would-update` only for a move, its labels or an attachment is
+only where any dry run's is, as said below. A page
+`--no-overwrite` would leave alone is `skipped`, as it is on a real run, and
+is not printed either. A real run's report only tells a content update apart,
+so a page previewed as `would-update` only for a move, its labels or an attachment is
 reported `unchanged` by the real run that makes that change.
 
 Not compared, so a page differing only in them is `unchanged` although a real
@@ -178,8 +176,20 @@ Confluence credentials:
 mark publish --compile-only --output-format github --files "docs/**/*.md"
 ```
 
-Both modes still print each document's HTML, ahead of the report, which
-comes last.
+`--compile-only` and `--dry-run` print each document's HTML only with the
+default `url` output format, whose report is the addresses of published pages
+and so empty here, or with a [`--report-file`](#writing-the-report-to-a-file),
+which keeps the report apart. With `json` or `github` on standard output the
+report alone is written. HTML ahead of a `json` report would leave it
+unparseable, and a line of a document's HTML on the same output as a `github`
+report is read by GitHub Actions as a workflow command: a code block holding
+`::error file=README.md::...` would add an annotation of the pull request's
+making to the gate, and one holding `::stop-commands::` would hide the gate's
+own. Give `--report-file` to have both:
+
+```bash
+mark publish --compile-only --output-format json --report-file report.json --files "docs/**/*.md" > compiled.html
+```
 
 `warnings` lists what was wrong with a document that did not stop it
 publishing, and `warningDetails` says the same with each warning's `kind`, the

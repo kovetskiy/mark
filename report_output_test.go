@@ -52,7 +52,7 @@ func splitRun(t *testing.T, format report.Format, mode ModeConfig, update Update
 // there in every format and mode, a run that fails included, and
 // PublishConfig.Output keeps the URLs and the compiled bodies. Nothing is lost
 // or said twice: without it, the one stream holds exactly what the two hold
-// apart, less the URLs a json or github report displaces.
+// apart, less the URLs and bodies a json or github report displaces.
 func TestReportOutputSeparatesTheReport(t *testing.T) {
 	modes := []struct {
 		name   string
@@ -116,19 +116,10 @@ func TestReportOutputSeparatesTheReport(t *testing.T) {
 
 				if published {
 					assert.Contains(t, reportOut, "SERVER/display/DOCS/1004", "the report names the page too")
-					assert.Equal(t, reportOut, shared, "the URLs give way to a report on the same stream")
-
-					return
 				}
 
-				if m.update.ChangesOnly {
-					assert.Equal(t, reportOut, shared,
-						"a changes-only dry run prints no bodies ahead of a report on the same stream")
-
-					return
-				}
-
-				assert.Equal(t, out+reportOut, shared, "the bodies come first on the one stream")
+				assert.Equal(t, reportOut, shared,
+					"the URLs and the bodies give way to a report on the same stream")
 			})
 		}
 	}

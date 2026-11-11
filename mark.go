@@ -1669,7 +1669,7 @@ type publishRun struct {
 	// noOverwrite is Tracking.NoOverwrite, which needs tracker.
 	noOverwrite bool
 	// reportShares says a json or github report shares PublishConfig.Output,
-	// so a --changes-only dry run prints none of the bodies it compiles.
+	// so a compile or dry run prints none of the bodies it compiles.
 	reportShares bool
 
 	// pageFile is the file published to Page.PageID, once there is one.
@@ -2294,14 +2294,12 @@ func (r *publishRun) preview(ctx context.Context, doc *document) error {
 		}
 	}
 
-	printHTML := status != report.StatusUnchanged && status != report.StatusSkipped
-	if compare {
-		// A json or github report going to the same stream is for a CI step
-		// to parse; HTML written ahead of it would make it unparseable.
-		printHTML = printHTML && !r.reportShares
-	}
-
-	if printHTML {
+	// A json or github report going to the same stream is for a CI step to
+	// read, so the HTML gives way to it: ahead of json it would not parse,
+	// and ahead of github a line of it could be a workflow command of the
+	// document's own, such as a forged ::error or a ::stop-commands that
+	// hides the report's annotations.
+	if status != report.StatusUnchanged && status != report.StatusSkipped && !r.reportShares {
 		if _, err := fmt.Fprintln(config.output(), html); err != nil {
 			return err
 		}
