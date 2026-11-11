@@ -19,6 +19,7 @@ import (
 	"github.com/kovetskiy/mark/v17/confluence"
 	"github.com/kovetskiy/mark/v17/metadata"
 	"github.com/rs/zerolog/log"
+	"golang.org/x/text/unicode/norm"
 )
 
 // Config says which page Page exports and where to.
@@ -770,9 +771,26 @@ func (l *localNames) reserve(name string) {
 }
 
 // fileKey is what two names that are one file have in common: macOS and
-// Windows ignore case, and Windows drops trailing dots and spaces.
+// Windows ignore case, so ſ is s, macOS ignores how an accent is composed,
+// HFS+ ignores some invisible characters, and Windows drops trailing dots and
+// spaces.
 func fileKey(name string) string {
-	return strings.ToLower(strings.TrimRight(name, ". "))
+	name = strings.Map(func(r rune) rune {
+		if hfsIgnored(r) {
+			return -1
+		}
+		return r
+	}, name)
+
+	return strings.ToLower(strings.ToUpper(norm.NFC.String(strings.TrimRight(name, ". "))))
+}
+
+// hfsIgnored reports whether HFS+ leaves r out when it compares names.
+func hfsIgnored(r rune) bool {
+	return r >= 0x200c && r <= 0x200f ||
+		r >= 0x202a && r <= 0x202e ||
+		r >= 0x206a && r <= 0x206f ||
+		r == 0xfeff
 }
 
 func (l *localNames) of(filename string) string {
@@ -802,7 +820,7 @@ func (l *localNames) of(filename string) string {
 	}
 
 	l.byName[filename] = name
-	l.taken[fileKey(name)] = true
+	l.reserve(name)
 
 	return name
 }
