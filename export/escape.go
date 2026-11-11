@@ -15,6 +15,9 @@ type inlineOptions struct {
 
 	// table is text in a cell of a GFM table, where a pipe ends the cell.
 	table bool
+
+	// after is the character written just before the text, if any.
+	after rune
 }
 
 var entityPattern = regexp.MustCompile(`^&(?:#[0-9]{1,7}|#[xX][0-9a-fA-F]{1,6}|[A-Za-z][A-Za-z0-9]{1,31});`)
@@ -34,7 +37,7 @@ func escapeInline(text string, opts inlineOptions) string {
 	b.Grow(len(text))
 
 	for i, r := range runes {
-		prev, next := rune(0), rune(0)
+		prev, next := opts.after, rune(0)
 		if i > 0 {
 			prev = runes[i-1]
 		}
