@@ -157,7 +157,7 @@ COMMANDS:
    export    export a Confluence page, or a tree of them, to markdown (experimental)
    page      list, move, copy, rename, archive, delete or watch Confluence pages (experimental)
    doctor    check that mark can reach Confluence, log in, and publish to a space
-   metadata  work with Confluence metadata
+   metadata  work with Confluence metadata (experimental)
    help, h   Shows a list of commands or help for one command
 
 GLOBAL OPTIONS:

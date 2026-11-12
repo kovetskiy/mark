@@ -3,6 +3,9 @@
 `mark metadata` provides commands for working with Confluence Cloud metadata.
 It reuses Mark's connection and authentication settings.
 
+> [!WARNING]
+> `mark metadata` is experimental. Its commands, flags, and output may change between releases.
+
 ## Listing labels
 
 `mark metadata labels list` lists labels visible to the authenticated user.

@@ -30,7 +30,7 @@ const (
 func (line *commandLine) metadataCommand() *cli.Command {
 	return &cli.Command{
 		Name:  "metadata",
-		Usage: "work with Confluence metadata",
+		Usage: "work with Confluence metadata (experimental)",
 		Commands: []*cli.Command{
 			{
 				Name:  "labels",
