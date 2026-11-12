@@ -84,7 +84,7 @@ func (c *converter) writeRaw(b *strings.Builder, n *node, mode rawMode) {
 		return
 	}
 
-	if image, ok := c.relativeImg(n); ok {
+	if image, ok := c.relativeImg(n, mode); ok {
 		b.WriteString(image)
 		return
 	}
@@ -109,16 +109,20 @@ func (c *converter) writeRaw(b *strings.Builder, n *node, mode rawMode) {
 // publishing makes of one it finds no file for. Left an <img>, publishing
 // would look beside the document for the file; on the page the address is
 // relative to the page. An align or a style it has is not carried over.
-// An <img> in a <picture> is published as written.
-func (c *converter) relativeImg(n *node) (string, bool) {
+//
+// Publishing looks for no file where it leaves the <img> as written: in a
+// metadata header, and in a <picture> that is part of an HTML block.
+func (c *converter) relativeImg(n *node, mode rawMode) (string, bool) {
 	src := n.attr("src")
-	if !n.is("img") || src == "" || c.opts.Reading || !imageNamesFile(src) {
+	if !n.is("img") || src == "" || c.opts.Reading || mode == rawLine || !imageNamesFile(src) {
 		return "", false
 	}
 
-	for parent := n.parent; parent != nil; parent = parent.parent {
-		if parent.is("picture") {
-			return "", false
+	if mode == rawBlock {
+		for parent := n.parent; parent != nil; parent = parent.parent {
+			if parent.is("picture") {
+				return "", false
+			}
 		}
 	}
 

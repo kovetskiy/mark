@@ -77,6 +77,12 @@ func TestConvertRelativeAddressIsNotAFile(t *testing.T) {
 			storage:   `<div><p>see <img src="chart.png"/> here</p></div>`,
 			published: `<div><p>see <ac:image><ri:url ri:value="chart.png"/></ac:image> here</p></div>`,
 		},
+		{
+			// Publishing leaves a <picture> alone only as an HTML block.
+			name:      "img element in a picture in a list",
+			storage:   `<ul><li>see <picture><img src="chart.png"/></picture> here</li></ul>`,
+			published: `<ul><li>see <picture><ac:image><ri:url ri:value="chart.png"/></ac:image></picture> here</li></ul>`,
+		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			md, published, attached := republishBesideFiles(t, test.storage)
@@ -128,4 +134,16 @@ func TestConvertRelativeAddressToRead(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Equal(t, "see [notes](../notes.txt) and ![](chart.png)\n", doc.Markdown)
+}
+
+// TestConvertRelativeImgInTheSidebar: the sidebar travels in a header, which
+// publishing writes to the page as it is, looking for no file.
+func TestConvertRelativeImgInTheSidebar(t *testing.T) {
+	doc, err := Convert(`<ac:layout><ac:layout-section ac:type="two_right_sidebar">`+
+		`<ac:layout-cell><p>body</p></ac:layout-cell>`+
+		`<ac:layout-cell><p><img src="chart.png" style="float: left"/></p></ac:layout-cell>`+
+		`</ac:layout-section></ac:layout>`, Options{})
+	require.NoError(t, err)
+
+	assert.Equal(t, `<p><img src="chart.png" style="float: left"/></p>`, doc.Sidebar)
 }
