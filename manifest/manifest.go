@@ -59,6 +59,7 @@ import (
 	"errors"
 	"fmt"
 	"hash/fnv"
+	"maps"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -1009,10 +1010,8 @@ func (s *Store) resolveManifestPage(ctx context.Context, spaceKey string) (strin
 // properties as its own and writes them back. Two spaces in a run would each
 // take the other's entries for theirs -- and report them as gone -- and then
 // write the same shard twice, the second write against a version the first
-// has already superseded. That write fails, is warned about as a concurrent
-// run, and the mapping it held is lost with the run still succeeding. Refused
-// when the second space is first touched, before anything is published to it,
-// so the run says so instead.
+// has already superseded. Refused when the second space is first touched,
+// before anything is published to it, so the run says so instead.
 func (s *Store) refuseSharedPage(spaceKey, contentID string) error {
 	for _, other := range s.sortedSpaces() {
 		if other == spaceKey || s.spaces[other].contentID != contentID {
@@ -2200,8 +2199,9 @@ func (s *Store) Save(ctx context.Context) error {
 	defer s.mu.Unlock()
 
 	// Each property describes pages or parents the others say nothing about,
-	// so one that cannot be written keeps no other from being saved, nor is
-	// its failure lost to a later one's.
+	// so one Confluence refuses keeps no other from being saved, nor is its
+	// failure lost to a later one's. A write that got no answer about its
+	// property ends the save: the next would wait as long for the same.
 	var errs []error
 	for _, spaceKey := range s.sortedSpaces() {
 		state := s.spaces[spaceKey]
@@ -2225,6 +2225,9 @@ func (s *Store) Save(ctx context.Context) error {
 			)
 			if err != nil {
 				errs = append(errs, err)
+				if !refused(err) {
+					return errors.Join(errs...)
+				}
 			}
 			state.foldersDirty = !written
 		}
@@ -2237,6 +2240,9 @@ func (s *Store) Save(ctx context.Context) error {
 			)
 			if err != nil {
 				errs = append(errs, err)
+				if !refused(err) {
+					return errors.Join(errs...)
+				}
 			}
 			state.parentsDirty = !written
 		}
@@ -2248,11 +2254,27 @@ func (s *Store) Save(ctx context.Context) error {
 
 			if err := s.saveShard(ctx, spaceKey, state, i); err != nil {
 				errs = append(errs, err)
+				if !refused(err) {
+					return errors.Join(errs...)
+				}
 			}
 		}
 	}
 
 	return errors.Join(errs...)
+}
+
+// refused reports whether err is Confluence's answer about the one property
+// written, which says nothing of the next. Anything else -- no answer at all,
+// or a login that is not accepted -- would meet every later write the same.
+func refused(err error) bool {
+	if errors.Is(err, confluence.ErrUnauthorized) {
+		return false
+	}
+
+	var status *confluence.StatusError
+	return errors.As(err, &status) ||
+		errors.Is(err, confluence.ErrPropertyConflict) || errors.Is(err, confluence.ErrPropertyUnseen)
 }
 
 // saveMapping encodes and writes one of the mappings that covers the whole
@@ -2284,17 +2306,32 @@ func (s *Store) saveShard(ctx context.Context, spaceKey string, state *spaceStat
 	}
 
 	key := PropertyKeyFor(state.prefix, index)
-	if mergeErr := s.mergeShard(ctx, state, index); mergeErr != nil {
+	changed, mergeErr := s.mergeShard(ctx, state, index)
+	if mergeErr != nil {
 		return fmt.Errorf(
 			"manifest shard %s of space %q was not saved: %w",
 			key, spaceKey, errors.Join(err, mergeErr),
 		)
 	}
 
-	log.Info().Msgf(
-		"manifest shard %s of space %q was saved by another run meanwhile; saving this run's mappings over it",
-		key, spaceKey,
-	)
+	if errors.Is(err, confluence.ErrPropertyUnseen) {
+		// Not known to be another run's doing: the shard may have been there
+		// all along, and its pages published as though untracked.
+		log.Warn().Err(err).Msgf(
+			"manifest shard %s of space %q was read again; saving this run's mappings over it",
+			key, spaceKey,
+		)
+	} else {
+		log.Info().Msgf(
+			"manifest shard %s of space %q was saved by another run meanwhile; saving this run's mappings over it",
+			key, spaceKey,
+		)
+	}
+
+	if !changed {
+		state.shards[index].dirty = false
+		return nil
+	}
 
 	if err := s.writeShard(ctx, spaceKey, state, index); err != nil {
 		return fmt.Errorf("manifest shard %s of space %q was not saved: %w", key, spaceKey, err)
@@ -2338,14 +2375,16 @@ func (s *Store) writeShard(ctx context.Context, spaceKey string, state *spaceSta
 // mergeShard reads one shard again and puts this run's changes over what it
 // now holds: the entries this run recorded or changed, and the removal of
 // those it dropped. An entry this run dropped that the other run has since
-// recorded differently is kept, as that run's.
+// recorded differently is kept, as that run's. So is one both runs recorded
+// for a page the other run wrote last: see wroteLater.
 //
 // What this run changed is what differs from the property it read, so nothing
-// has to be kept about each change as it is made.
-func (s *Store) mergeShard(ctx context.Context, state *spaceState, index int) error {
+// has to be kept about each change as it is made. It reports whether the
+// result differs from what the shard now holds, and so is worth writing.
+func (s *Store) mergeShard(ctx context.Context, state *spaceState, index int) (bool, error) {
 	properties, err := state.list(ctx, s.api)
 	if err != nil {
-		return err
+		return false, err
 	}
 
 	var current *confluence.Property
@@ -2366,13 +2405,18 @@ func (s *Store) mergeShard(ctx context.Context, state *spaceState, index int) er
 		}
 	}
 	for path, entry := range sh.pages {
-		if before, ok := read[path]; !ok || before != entry {
-			merged[path] = entry
+		before, ok := read[path]
+		if ok && before == entry {
+			continue
 		}
+		if theirs, saved := merged[path]; saved && (!ok || theirs != before) && wroteLater(theirs, entry) {
+			continue
+		}
+		merged[path] = entry
 	}
 
 	for path, entry := range merged {
-		if _, held := sh.pages[path]; held {
+		if held, ok := sh.pages[path]; ok && held == entry {
 			continue
 		}
 		if _, taken := state.byPage[entry.PageID]; !taken {
@@ -2383,7 +2427,16 @@ func (s *Store) mergeShard(ctx context.Context, state *spaceState, index int) er
 
 	sh.property = current
 	sh.pages = merged
-	return nil
+	return !maps.Equal(merged, shardPages(current)), nil
+}
+
+// wroteLater reports whether theirs records a later write of the page ours
+// records. A page's version only grows, so of two runs that both published a
+// document the one with the higher version wrote last, and its entry is the
+// one that describes the page: saving the lower version over it would have
+// --no-overwrite read the page as edited in Confluence on every later run.
+func wroteLater(theirs, ours Entry) bool {
+	return theirs.PageID == ours.PageID && theirs.Version > ours.Version
 }
 
 // shardPages returns the entries a shard's property holds, as load reads

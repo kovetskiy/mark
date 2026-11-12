@@ -312,7 +312,9 @@ are read in a single request and only the ones that changed are written back.
 
 Two runs that overlap, as two pipelines publishing to one space can, may both
 change the same shard. The second to save it reads it again and saves its own
-changes over what the first wrote, so the pages of both stay tracked. A shard
+changes over what the first wrote, so the pages of both stay tracked. For a
+document both runs published, what is kept is the record of the run that wrote
+the page last, so `--no-overwrite` compares against the version the page is at. A shard
 that is still refused after that is not saved: the run names it among its
 errors and exits non-zero.
 
