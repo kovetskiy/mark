@@ -165,3 +165,46 @@ func TestApplyCollecting_DoesNotReportWhatIsNotAFile(t *testing.T) {
 	assert.Equal(t, `<img src="https://x/a.png"/>`, string(out))
 	assert.Empty(t, names)
 }
+
+// A footnote's or a definition's later paragraph is indented like a code block
+// and is not one, so a macro is expanded there as in the paragraph before it.
+func TestApply_ExpandsInContinuationParagraphs(t *testing.T) {
+	m := Macro{Regexp: regexp.MustCompile(`:x:`), Template: template.Must(template.New("t").Parse(`X`))}
+
+	for name, tc := range map[string]struct{ in, want string }{
+		"footnote": {
+			in:   "Text[^1].\n\n[^1]: first :x:\n\n    second :x: para\n",
+			want: "Text[^1].\n\n[^1]: first X\n\n    second X para\n",
+		},
+		"definition": {
+			in:   "Term\n: first :x:\n\n    second :x: para\n",
+			want: "Term\n: first X\n\n    second X para\n",
+		},
+		"code inside a footnote is still left alone": {
+			in:   "Text[^1].\n\n[^1]: first :x:\n\n        sample :x:\n",
+			want: "Text[^1].\n\n[^1]: first X\n\n        sample :x:\n",
+		},
+		"and so is an indented block": {
+			in:   "first :x:\n\n    sample :x:\n",
+			want: "first X\n\n    sample :x:\n",
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			out, err := m.Apply([]byte(tc.in))
+			require.NoError(t, err)
+			assert.Equal(t, tc.want, string(out))
+		})
+	}
+}
+
+// A macro defined in a footnote's later paragraph is a definition, not a sample
+// of one.
+func TestExtractMacros_TakesDirectivesInContinuationParagraphs(t *testing.T) {
+	contents := []byte("Text[^1].\n\n[^1]: first\n\n    <!-- Macro: :x:\n         Template: #inline\n         inline: \"y\" -->\n")
+
+	macros, remaining, err := ExtractMacros("", "", contents, template.New("test"))
+	require.NoError(t, err)
+
+	assert.Len(t, macros, 1)
+	assert.NotContains(t, string(remaining), "Macro:")
+}

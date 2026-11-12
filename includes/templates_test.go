@@ -290,3 +290,32 @@ func TestIncludeDirectiveAfterStrayOpener(t *testing.T) {
 		})
 	}
 }
+
+// A footnote's or a definition's later paragraph is indented like a code block
+// and is not one, so an include written there is expanded with the others.
+func TestProcessIncludesInContinuationParagraphs(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "part.md"), []byte("PART BODY"), 0o600))
+
+	for name, input := range map[string]string{
+		"footnote":   "Text[^1].\n\n[^1]: first\n\n    <!-- Include: part.md -->\n",
+		"definition": "Term\n: first\n\n    <!-- Include: part.md -->\n",
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, output, _, err := ProcessIncludes(dir, "", []byte(input), template.New("test"))
+			require.NoError(t, err)
+
+			assert.Contains(t, string(output), "PART BODY")
+			assert.NotContains(t, string(output), "Include:")
+		})
+	}
+
+	t.Run("an indented block is still a sample", func(t *testing.T) {
+		input := "Write:\n\n    <!-- Include: part.md -->\n"
+
+		_, output, _, err := ProcessIncludes(dir, "", []byte(input), template.New("test"))
+		require.NoError(t, err)
+
+		assert.Equal(t, input, string(output))
+	})
+}

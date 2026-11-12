@@ -2,6 +2,7 @@ package mdsource
 
 import (
 	"github.com/yuin/goldmark/v2/ast"
+	"github.com/yuin/goldmark/v2/extension"
 	"github.com/yuin/goldmark/v2/parser"
 )
 
@@ -38,10 +39,17 @@ func InCode(regions []Region, offset int) bool {
 // Asking the parser rather than looking for backticks is deliberate: tildes,
 // indented blocks, closing fences longer than their opener and nesting are all
 // easy to get subtly wrong, and goldmark already knows.
+//
+// The parser reads footnotes and definition lists, as the one a document is
+// compiled with always does: both hold their later paragraphs indented by four
+// spaces, which without them is an indented code block.
 func CodeRegions(data []byte) []Region {
 	var regions []Region
 
-	doc := parser.New().Parse(data)
+	doc := parser.New(parser.WithExtensions(
+		extension.NewFootnoteParser(),
+		extension.NewDefinitionListParser(),
+	)).Parse(data)
 
 	_ = ast.Walk(doc, func(node ast.Node, entering bool) (ast.WalkStatus, error) {
 		if !entering {

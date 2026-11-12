@@ -151,3 +151,24 @@ func TestStripIgnoredBlocksSkipsCode(t *testing.T) {
 		assert.NotContains(t, string(out), "GONE")
 	})
 }
+
+// A footnote's or a definition's later paragraph is indented like a code block
+// and is not one, so a region written there is left out like any other.
+func TestStripIgnoredBlocksInContinuationParagraphs(t *testing.T) {
+	for name, tc := range map[string]struct{ in, want string }{
+		"footnote": {
+			in:   "Text[^1].\n\n[^1]: first\n\n    <!-- ac:ignore -->\n    DRAFT\n    <!-- ac:ignore end -->\n\n    last\n",
+			want: "Text[^1].\n\n[^1]: first\n\n\n    last\n",
+		},
+		"definition": {
+			in:   "Term\n: first\n\n    <!-- ac:ignore -->\n    DRAFT\n    <!-- ac:ignore end -->\n\n    last\n",
+			want: "Term\n: first\n\n\n    last\n",
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			out, err := StripIgnoredBlocks([]byte(tc.in))
+			require.NoError(t, err)
+			assert.Equal(t, tc.want, string(out))
+		})
+	}
+}
