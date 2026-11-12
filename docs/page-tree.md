@@ -460,6 +460,12 @@ where the mapping cannot apply -- is a warning.
 * A page in **another space** than the manifest that records it is left alone
   and reported. Its entry is kept, so each run reports it again until the entry
   is corrected or the page is back in the space.
+* The **space homepage** and the **page the manifest is kept on**
+  (`--manifest-page`, or the homepage on Server and Data Center) are left alone
+  and reported, as `mark page delete` and `archive` leave the homepage. A
+  document titled like one of them publishes to it, and removing the document
+  does not remove the page. Run once with `--on-orphan report` to stop
+  tracking it.
 * A document that opted out with `Synchronized: false` still counts as present.
 * `--dry-run` reports what would go and touches nothing.
 

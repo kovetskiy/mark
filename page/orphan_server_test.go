@@ -143,3 +143,91 @@ func TestHandleOrphansTakesATrashedPageAsGoneThroughTheGateway(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, []string{"gone.md"}, handled)
 }
+
+// TestHandleOrphansLeavesTheSpaceHomepage: the homepage holds the whole tree,
+// and is left alone whether the caller names the space or the page is asked.
+func TestHandleOrphansLeavesTheSpaceHomepage(t *testing.T) {
+	for _, action := range []report.OnOrphan{report.OnOrphanDelete, report.OnOrphanArchive} {
+		for _, space := range []string{"DOCS", ""} {
+			for _, how := range []string{"direct", "gateway"} {
+				t.Run(string(action)+"/space "+space+"/"+how, func(t *testing.T) {
+					ctx := t.Context()
+					server := confluencetest.New(t)
+					url := server.URL
+					if how == "gateway" {
+						url += "/ex/confluence/cloud-id"
+					}
+					api := confluence.NewAPI(url, confluence.Options{Username: "user", Password: "token"})
+					home := server.AddPage("DOCS", "Home", "page", "")
+					server.SetHomepage("DOCS", home.ID)
+					other := server.AddPage("DOCS", "Other", "page", "")
+
+					orphans := []page.Orphan{
+						{Path: "home.md", PageID: home.ID, Title: "Home", Space: space},
+						{Path: "other.md", PageID: other.ID, Title: "Other", Space: space},
+					}
+
+					handled, kept, err := page.HandleOrphansKeeping(ctx, api, action, orphans, true)
+					require.NoError(t, err)
+					assert.Equal(t, []string{"other.md"}, handled, "a dry run says the same")
+					assert.Contains(t, kept, "home.md")
+
+					handled, kept, err = page.HandleOrphansKeeping(ctx, api, action, orphans, false)
+					require.NoError(t, err)
+					assert.Equal(t, []string{"other.md"}, handled)
+					assert.Equal(t, map[string]string{
+						"home.md": "it is the homepage of space DOCS, and mark does not remove it",
+					}, kept)
+
+					assert.False(t, server.Page(home.ID).Trashed)
+					assert.False(t, server.Page(home.ID).Archived)
+					if action == report.OnOrphanDelete {
+						assert.True(t, server.Page(other.ID).Trashed, "a page beside the homepage is still removed")
+					} else {
+						assert.True(t, server.Page(other.ID).Archived, "a page beside the homepage is still removed")
+					}
+				})
+			}
+		}
+	}
+}
+
+// TestHandleOrphansRemovesAPageOfASpaceWithoutHomepage: no homepage is nothing
+// to leave alone.
+func TestHandleOrphansRemovesAPageOfASpaceWithoutHomepage(t *testing.T) {
+	ctx := t.Context()
+	api, server := newAPI(t)
+	gone := server.AddPage("DOCS", "Gone", "page", "")
+
+	handled, err := page.HandleOrphans(ctx, api, report.OnOrphanDelete, []page.Orphan{
+		{Path: "gone.md", PageID: gone.ID, Title: "Gone", Space: "DOCS"},
+	}, false)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"gone.md"}, handled)
+	assert.True(t, server.Page(gone.ID).Trashed)
+}
+
+// TestHandleOrphansFailsWhenTheHomepageCannotBeRead: a homepage that could
+// not be asked about is not taken as some other page.
+func TestHandleOrphansFailsWhenTheHomepageCannotBeRead(t *testing.T) {
+	ctx := t.Context()
+	api, server := newAPI(t)
+	server.SetDataCenter()
+	home := server.AddPage("DOCS", "Home", "page", "")
+	server.SetHomepage("DOCS", home.ID)
+
+	server.SetFailHeaders(http.Header{"Retry-After": []string{"0"}})
+	server.SetFail(func(r *http.Request) (int, string, bool) {
+		if r.URL.Path == "/rest/api/space/DOCS" {
+			return http.StatusServiceUnavailable, `{"message":"unavailable"}`, true
+		}
+		return 0, "", false
+	})
+
+	handled, err := page.HandleOrphans(ctx, api, report.OnOrphanDelete, []page.Orphan{
+		{Path: "home.md", PageID: home.ID, Title: "Home", Space: "DOCS"},
+	}, false)
+	require.Error(t, err)
+	assert.Empty(t, handled)
+	assert.False(t, server.Page(home.ID).Trashed)
+}
