@@ -58,7 +58,7 @@ tests, which take minutes. There is currently no `-short` skip.
 | `internal/lazy` | the start-on-first-use, discard and close of a run's browser and mermaid engine; Close cancels a start in flight |
 | `internal/mdsource` | the raw Markdown before goldmark: where the code is, `<!-- ac:ignore -->` regions, CRLF and BOM normalisation |
 | `internal/rendercheck` | the rendering settings' rules (scales, image alignment, feature names) that `mark.Config` validation and the publish flag checks share |
-| `internal/syntax` | what publishing and export must read alike: heading ids and attribute blocks, anchor keys, the `page#anchor` split, code block info strings and language aliases, admonition markers |
+| `internal/syntax` | what publishing and export must read alike: heading ids and attribute blocks, anchor keys, the `page#anchor` split, code block info strings and language aliases, admonition markers, the elements whose text is literal |
 
 Pipeline in `publishRun.processFile`: read → normalise CRLF → extract metadata → resolve relative
 links → resolve restricted users and groups → resolve/create page + ancestry → tighten

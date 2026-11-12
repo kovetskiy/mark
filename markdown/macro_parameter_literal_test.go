@@ -92,6 +92,21 @@ func TestMacroParameterIsLiteral(t *testing.T) {
 
 		assert.Contains(t, out, `<ac:parameter ac:name="v">*a*</ac:parameter>`)
 	})
+
+	// A cell cannot hold a pipe unless it is written "\|", and the table has
+	// read that as a pipe before the parameter is.
+	t.Run("a pipe in a table cell", func(t *testing.T) {
+		out := compileDoc(t, "| a |\n| --- |\n"+
+			`| <ac:structured-macro ac:name="x"><ac:parameter ac:name="v">Guide\|*Notes* C:\x</ac:parameter></ac:structured-macro> y\|z |`+"\n")
+
+		assert.Contains(t, out, `<ac:parameter ac:name="v">Guide|*Notes* C:\x</ac:parameter></ac:structured-macro> y|z</td>`)
+	})
+
+	t.Run("a pipe outside a table", func(t *testing.T) {
+		out := compileDoc(t, `<ac:structured-macro ac:name="x"><ac:parameter ac:name="v">Guide\|Notes</ac:parameter></ac:structured-macro>`+"\n")
+
+		assert.Contains(t, out, `<ac:parameter ac:name="v">Guide\|Notes</ac:parameter>`)
+	})
 }
 
 // What a parameter holds besides text goes out as it did: an element, a CDATA

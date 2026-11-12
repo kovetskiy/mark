@@ -3,8 +3,12 @@ package parser
 import (
 	"bytes"
 	"regexp"
+	"slices"
+	"strings"
 
+	"github.com/kovetskiy/mark/v17/internal/syntax"
 	"github.com/yuin/goldmark/v2/ast"
+	east "github.com/yuin/goldmark/v2/extension/ast"
 	"github.com/yuin/goldmark/v2/parser"
 	"github.com/yuin/goldmark/v2/text"
 	"github.com/yuin/goldmark/v2/util"
@@ -37,8 +41,8 @@ func (s *confluenceTagParser) Parse(parent ast.Node, block text.Reader, pc parse
 		}
 
 		tag := node.(*ast.RawHTML).Value.Bytes(block.Source())
-		if name := literalElementName(tag); name != nil {
-			if closer := s.parseLiteralContent(parent, node, name, block); closer != nil {
+		if name := literalElementName(tag); name != "" {
+			if closer := s.parseLiteralContent(parent, node, name, block, pc); closer != nil {
 				return closer
 			}
 		}
@@ -133,23 +137,22 @@ func (s *confluenceTagParser) parseMultiLineRegexp(reg *regexp.Regexp, block tex
 	return nil
 }
 
-// literalElements hold a string Confluence reads as it stands -- a pattern, a
-// query, a URL, an id -- so what is written between their tags is not
-// Markdown. A macro's ac:rich-text-body is, and is not among them.
-var literalElementRegexp = regexp.MustCompile(`^<(ac:(?:parameter|default-parameter|task-id|task-status))[\s>]`)
-
 // literalElementName returns the name of the literal element tag opens, or
-// nil when tag opens none: another element, or one that closes itself.
-func literalElementName(tag []byte) []byte {
+// "" when tag opens none: another element, or one that closes itself.
+func literalElementName(tag []byte) string {
 	if bytes.HasSuffix(tag, []byte("/>")) {
-		return nil
+		return ""
 	}
 
-	if groups := literalElementRegexp.FindSubmatch(tag); groups != nil {
-		return groups[1]
+	name := string(tag[1:])
+	if end := strings.IndexAny(name, " \t\r\n>"); end >= 0 {
+		name = name[:end]
+	}
+	if syntax.IsLiteralElement(name) {
+		return name
 	}
 
-	return nil
+	return ""
 }
 
 // parseLiteralContent reads on from the opening tag of a literal element to
@@ -161,28 +164,54 @@ func literalElementName(tag []byte) []byte {
 //
 // Without a closing tag in this block it returns nil and appends nothing, and
 // the tag is an opening tag like any other.
-func (s *confluenceTagParser) parseLiteralContent(parent, open ast.Node, name []byte, block text.Reader) ast.Node {
+func (s *confluenceTagParser) parseLiteralContent(
+	parent, open ast.Node, name string, block text.Reader, pc parser.Context,
+) ast.Node {
+	unclosed, _ := pc.Get(unclosedLiteralsKey).(*unclosedLiterals)
+	if unclosed == nil || unclosed.block != parent {
+		unclosed = &unclosedLiterals{block: parent}
+		pc.Set(unclosedLiteralsKey, unclosed)
+	}
+	if slices.Contains(unclosed.names, name) {
+		return nil
+	}
+
+	// A table has already read "\|" as a pipe that does not end the cell.
+	inCell := parent.Kind() == east.KindTableCell
+
 	savedLine, savedSegment := block.Position()
 
-	// Most elements close on the line they open on, which is read where it
-	// stands; only one that does not has the rest of the block gathered.
-	line, _ := block.PeekLine()
-	pieces, consumed := literalContent(line, name)
-	if pieces == nil {
-		var rest []byte
-		for {
-			line, _ := block.PeekLine()
-			if line == nil {
-				break
-			}
-			rest = append(rest, line...)
-			block.AdvanceLine()
+	// The block is gathered a line at a time, and read only once a line
+	// could close the element: most close on the line they open on.
+	var (
+		rest     []byte
+		pieces   [][]byte
+		consumed int
+		closable bool
+	)
+	closer := []byte("</" + name)
+	for pieces == nil {
+		line, _ := block.PeekLine()
+		if line == nil {
+			break
 		}
-		block.SetPosition(savedLine, savedSegment)
+		rest = append(rest, line...)
+		block.AdvanceLine()
 
-		pieces, consumed = literalContent(rest, name)
+		if bytes.Contains(line, closer) {
+			closable = true
+			pieces, consumed = literalContent(rest, name, inCell, false)
+		}
 	}
+	if pieces == nil && closable {
+		pieces, consumed = literalContent(rest, name, inCell, true)
+	}
+
+	block.SetPosition(savedLine, savedSegment)
+
 	if pieces == nil {
+		unclosed.names = append(unclosed.names, name)
+
 		return nil
 	}
 
@@ -198,18 +227,25 @@ func (s *confluenceTagParser) parseLiteralContent(parent, open ast.Node, name []
 
 	parent.AppendChild(open)
 	for _, piece := range pieces[:len(pieces)-1] {
-		parent.AppendChild(rawHTML(piece, savedSegment.Start))
+		parent.AppendChild(rawHTML(piece))
 	}
 
-	return rawHTML(pieces[len(pieces)-1], savedSegment.Start)
+	return rawHTML(pieces[len(pieces)-1])
+}
+
+var unclosedLiteralsKey = parser.NewContextKey()
+
+// unclosedLiterals are the literal elements that the rest of a block was
+// read for a closing tag of and has none, so that a block of many opening
+// tags is read once for each name and not once for each tag.
+type unclosedLiterals struct {
+	block ast.Node
+	names []string
 }
 
 // rawHTML is a node of markup that is not a range of the source.
-func rawHTML(markup []byte, pos int) ast.Node {
-	node := ast.NewRawHTML(text.NewMultiLineValueFromString(string(markup), text.IdentityDecoder))
-	node.SetPos(pos)
-
-	return node
+func rawHTML(markup []byte) ast.Node {
+	return ast.NewRawHTML(text.NewMultiLineValueFromString(string(markup), text.IdentityDecoder))
 }
 
 // literalContent splits what follows the opening tag of the literal element
@@ -219,15 +255,14 @@ func rawHTML(markup []byte, pos int) ast.Node {
 //
 // A Confluence tag, a CDATA section and a comment are each a piece as
 // written: a parameter may hold an <ri:url/> or an <ac:link>. Everything else
-// is text, escaped.
-func literalContent(rest []byte, name []byte) (pieces [][]byte, consumed int) {
-	textStart, depth := 0, 1
-
-	flush := func(end int) {
-		if end > textStart {
-			pieces = append(pieces, escapeLiteral(rest[textStart:end]))
-		}
-	}
+// is text, escaped. The element ends at the first closing tag of its name:
+// the storage format has no literal element inside another of the same name.
+//
+// A section rest does not close is text when rest is the whole of the block.
+// When it is not, the section may close further on and hold what looks like
+// the closing tag, so rest does not close the element yet.
+func literalContent(rest []byte, name string, inCell, whole bool) (pieces [][]byte, consumed int) {
+	textStart := 0
 
 	for i := 0; i < len(rest); {
 		if rest[i] != '<' {
@@ -236,7 +271,10 @@ func literalContent(rest []byte, name []byte) (pieces [][]byte, consumed int) {
 		}
 
 		tail := rest[i:]
-		length := 0
+		section := bytes.HasPrefix(tail, openCDATA) || bytes.HasPrefix(tail, openComment)
+
+		var length int
+		closes := false
 
 		switch {
 		case bytes.HasPrefix(tail, openCDATA):
@@ -246,29 +284,30 @@ func literalContent(rest []byte, name []byte) (pieces [][]byte, consumed int) {
 		default:
 			if groups := closeTagRegexp.FindSubmatch(tail); groups != nil {
 				length = len(groups[0])
-				if sameElement(groups, name) {
-					depth--
-				}
-			} else if groups := openTagRegexp.FindSubmatch(tail); groups != nil {
-				length = len(groups[0])
-				if sameElement(groups, name) && !bytes.HasSuffix(groups[0], []byte("/>")) {
-					depth++
-				}
+				closes = string(groups[1])+":"+string(groups[2]) == name
+			} else {
+				length = len(openTagRegexp.Find(tail))
 			}
 		}
 
 		if length == 0 {
+			if section && !whole {
+				return nil, 0
+			}
+
 			// A "<" that opens nothing: text.
 			i++
 			continue
 		}
 
-		flush(i)
+		if i > textStart {
+			pieces = append(pieces, escapeLiteral(rest[textStart:i], inCell))
+		}
 		pieces = append(pieces, tail[:length])
 		i += length
 		textStart = i
 
-		if depth == 0 {
+		if closes {
 			return pieces, i
 		}
 	}
@@ -289,13 +328,6 @@ func sectionLength(b, closer []byte) int {
 	return 0
 }
 
-// sameElement reports whether a match of openTagRegexp or closeTagRegexp is a
-// tag of the element called name.
-func sameElement(groups [][]byte, name []byte) bool {
-	return len(name) == len(groups[1])+1+len(groups[2]) &&
-		bytes.HasPrefix(name, groups[1]) && bytes.HasSuffix(name, groups[2])
-}
-
 // entityDecoder resolves character references the way goldmark does for the
 // text of a paragraph.
 var entityDecoder = text.NewDecoder()
@@ -303,8 +335,11 @@ var entityDecoder = text.NewDecoder()
 // escapeLiteral is b as markup for the text it spells: a character reference
 // is the character it names, as it is in any text, and nothing else has a
 // meaning -- a backslash stays a backslash, which doubling it tells the
-// decoder.
-func escapeLiteral(b []byte) []byte {
+// decoder. In a table cell "\|" is the pipe the table read it as.
+func escapeLiteral(b []byte, inCell bool) []byte {
+	if inCell {
+		b = bytes.ReplaceAll(b, []byte(`\|`), []byte(`|`))
+	}
 	b = bytes.ReplaceAll(b, []byte(`\`), []byte(`\\`))
 
 	return util.EscapeHTML(entityDecoder.Decode(b))
