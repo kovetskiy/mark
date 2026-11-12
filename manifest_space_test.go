@@ -411,6 +411,40 @@ func TestSimilarRenameIsNotFollowedIntoAnotherSpace(t *testing.T) {
 	assert.Empty(t, renameWarnings(t, &out, "store-orders.md"))
 }
 
+// TestSimilarRenameStopsWhenTheSpaceIsUnknown: a gone key whose page answers
+// with no space stops the run, as a recorded page does, rather than being
+// passed over and its renamed document published a second time.
+func TestSimilarRenameStopsWhenTheSpaceIsUnknown(t *testing.T) {
+	server, _, _ := twoSpacesOn(t, false)
+	full := documentsConfig(server,
+		adrDocument("use-postgres.md", "DOCS", "Use PostgreSQL", adrText(t, "adr-0001")),
+		adrDocument("events.md", "DOCS", "Publish events", adrText(t, "adr-0002")),
+		adrDocument("migrations.md", "DOCS", "Run migrations", adrText(t, "adr-0003")),
+	)
+	full.DocumentScope = "adr"
+	require.NoError(t, Run(context.Background(), full))
+
+	oldID := mustFind(t, server, "Use PostgreSQL")
+	server.SetFail(func(r *http.Request) (int, string, bool) {
+		if r.Method == http.MethodGet && r.URL.Path == "/rest/api/content/"+oldID {
+			return http.StatusOK, `{"id":"` + oldID + `","type":"page","status":"current","title":"Use PostgreSQL","version":{"number":1}}`, true
+		}
+		return 0, "", false
+	})
+
+	var out bytes.Buffer
+	err := Run(context.Background(), similarly(
+		partialDocumentsOf(full, []string{"events.md", "migrations.md"}, storeOrders(t)), 0.6, &out))
+	server.SetFail(nil)
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "unable to tell which space page "+oldID)
+	found, findErr := confluence.NewAPI(server.URL, confluence.Options{Username: "user", Password: "token"}).
+		FindPage(context.Background(), "DOCS", "Store orders in PostgreSQL", "page")
+	require.NoError(t, findErr)
+	assert.Nil(t, found, "no second page")
+}
+
 // TestOrphanInAnotherSpaceIsReportedOnce: an orphan in another space whose
 // scope published nothing it had before is left alone for both reasons, and
 // listed once.

@@ -181,10 +181,9 @@ func (r *publishRun) pairSimilar(ctx context.Context, space, key string) (*simil
 			return nil, err
 		}
 		if !known {
-			log.Info().Msgf("%s is not compared for a rename: mark could not tell which space its page %s is in",
-				key, pg.ID)
-
-			continue
+			// As recordedPage: passed over, the renamed document would be
+			// published a second time.
+			return nil, fmt.Errorf("unable to tell which space page %s, recorded for %q, is in", pg.ID, key)
 		}
 		if !inSpace {
 			log.Info().Msgf("%s is not compared for a rename: its page %s is in %s, not space %q",
