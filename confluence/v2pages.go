@@ -235,6 +235,16 @@ func eachV2[T any](
 	describe string,
 	visit func(result T) (stop bool),
 ) error {
+	return eachV2WithNotFound(ctx, api, path, query, describe, true, visit)
+}
+
+// eachV2Required reads a v2 collection whose first-page 404 is an error.
+func eachV2Required[T any](ctx context.Context, api *API, path []string, query url.Values, describe string, visit func(T) bool) error {
+	return eachV2WithNotFound(ctx, api, path, query, describe, false, visit)
+}
+
+// eachV2WithNotFound applies the caller's missing-collection policy while following cursors.
+func eachV2WithNotFound[T any](ctx context.Context, api *API, path []string, query url.Values, describe string, notFoundEmpty bool, visit func(T) bool) error {
 	var cursor string
 
 	for {
@@ -247,7 +257,7 @@ func eachV2[T any](
 		}
 
 		result, err := get[listing[T]](ctx, api.v2, path, page)
-		if errors.Is(err, ErrNotFound) && cursor == "" {
+		if notFoundEmpty && errors.Is(err, ErrNotFound) && cursor == "" {
 			return nil
 		}
 		if err != nil {

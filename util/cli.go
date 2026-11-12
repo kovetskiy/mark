@@ -84,7 +84,7 @@ func buildCommand(version string, publish, export cli.ActionFunc) *cli.Command {
 			Flags:        exportFlags(config),
 			Action:       line.runExport,
 			OnUsageError: renamedFlagHint,
-		}, line.pageCommand(), line.doctorCommand()},
+		}, line.pageCommand(), line.doctorCommand(), line.metadataCommand()},
 	}
 	trackSources(root)
 
