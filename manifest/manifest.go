@@ -1944,7 +1944,8 @@ type Orphan struct {
 // that means to do something about them rather than only say so.
 //
 // Like Orphans it is not a pure query: it forgets the stale entries whose page
-// another document published this run. See Orphans.
+// another document published this run or another path still records. See
+// Orphans.
 func (s *Store) OrphanEntries(spaceKey string) []Orphan {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -2060,8 +2061,9 @@ func (s *Store) Survivors(spaceKey, glob string) int {
 // way to know what they were in scope of.
 //
 // It is not a pure query. A recorded path that is gone from the run, and whose
-// page another document published this run, is not returned but forgotten:
-// its entry is dropped and its shard marked for writing. The change is in
+// page another document published this run or another path still records, be
+// it under another run's pattern, is not returned but forgotten: its entry is
+// dropped and its shard marked for writing. The change is in
 // memory until Save, so a dry run, whose read-only store never writes, leaves
 // the stored manifest as it was.
 func (s *Store) Orphans(spaceKey string) []string {
@@ -2079,6 +2081,8 @@ func (s *Store) orphans(spaceKey string) []string {
 	if !ok || state.untracked {
 		return nil
 	}
+
+	held := s.heldPages(state)
 
 	var orphans, left []string
 	for i := range state.shards {
@@ -2114,6 +2118,20 @@ func (s *Store) orphans(spaceKey string) []string {
 				}
 				continue
 			}
+			// Nor a page another path still records: that path's run publishes
+			// it, and is the one to say when it is gone. This entry is stale
+			// like the one above, and forgotten on the same terms.
+			if holder, ok := held[entry.PageID]; ok {
+				if !s.runFiles[path] {
+					log.Info().Msgf(
+						"%s is gone and its page %s is still tracked under %s; forgetting it",
+						path, entry.PageID, holder,
+					)
+					delete(state.shards[i].pages, path)
+					state.shards[i].dirty = true
+				}
+				continue
+			}
 			orphans = append(orphans, path)
 		}
 	}
@@ -2130,6 +2148,28 @@ func (s *Store) orphans(spaceKey string) []string {
 
 	sort.Strings(orphans)
 	return orphans
+}
+
+// heldPages returns the pages recorded under a path this run does not take as
+// gone, each with the first such path: one the run publishes or saw, or one it
+// does not cover, which is another run's to look for. Called with s.mu held.
+func (s *Store) heldPages(state *spaceState) map[string]string {
+	held := map[string]string{}
+	for i := range state.shards {
+		for path, entry := range state.shards[i].pages {
+			if entry.PageID == "" {
+				continue
+			}
+			if s.absent(state, path) && s.covers(path, entry) && !s.leftToOwner(path, entry) {
+				continue
+			}
+			if holder, ok := held[entry.PageID]; !ok || path < holder {
+				held[entry.PageID] = path
+			}
+		}
+	}
+
+	return held
 }
 
 // Spaces returns the space keys this store has loaded, sorted.

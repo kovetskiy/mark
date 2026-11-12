@@ -475,6 +475,10 @@ where the mapping cannot apply -- is a warning.
   does not remove the page. So is every page of a space whose homepage Mark
   could not read, since any of them may be it. A run with `--on-orphan report`
   stops tracking such a page, as it does every page it reports.
+* A page **another tracked file still publishes** is not an orphan, whichever
+  `--files` pattern recorded that file: a file moved from one run's pattern
+  into another's keeps its page. The run whose pattern it left stops tracking
+  the old path and says so in its log, without reporting it.
 * A document that opted out with `Synchronized: false` still counts as present.
 * `--dry-run` reports what would go and touches nothing.
 
