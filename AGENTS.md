@@ -122,7 +122,10 @@ of these.
 contain raw `<ac:...>` XML that goldmark would escape or mangle — particularly inside
 table cells. `macro.ExtractMacros` and `includes.ProcessIncludes` run on the raw bytes in
 `CompileMarkdown` before the converter is built. Do not move this work into an AST
-transformer without understanding why it was moved out of one.
+transformer without understanding why it was moved out of one. The include and macro
+transformers that pick up what that pass left read a directive from one raw HTML node,
+and apply a macro to one piece of text: text joined across nodes loses what stood
+between the pieces, and is not what the author wrote.
 
 **4. Parsers and transformers run by priority; renderers have none, and the last one
 registered for a node kind wins.** mark is on goldmark v2.

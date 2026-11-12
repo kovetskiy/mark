@@ -55,17 +55,15 @@ func (t *IncludeTransformer) Transform(doc *ast.Document, reader text.Reader, pc
 // TransformWithModified transforms the AST and returns true if any modifications were made.
 func (t *IncludeTransformer) TransformWithModified(doc *ast.Document, reader text.Reader, pc parser.Context) bool {
 	type includeTarget struct {
-		startNode      ast.Node
-		nodesToRemove  []ast.Node
-		fullRawContent []byte
-		lineNum        int
+		node       ast.Node
+		rawContent []byte
+		lineNum    int
 	}
 
 	var targets []includeTarget
-	visited := make(map[ast.Node]bool)
 
 	_ = ast.Walk(doc, func(node ast.Node, entering bool) (ast.WalkStatus, error) {
-		if !entering || visited[node] {
+		if !entering {
 			return ast.WalkContinue, nil
 		}
 
@@ -76,34 +74,17 @@ func (t *IncludeTransformer) TransformWithModified(doc *ast.Document, reader tex
 			return ast.WalkSkipChildren, nil
 		}
 
-		rawContent := ExtractDirectiveContent(node, reader.Source())
+		rawContent := directiveSource(node, reader.Source())
+		if rawContent == nil {
+			return ast.WalkContinue, nil
+		}
 
-		dir, _ := includes.ParseIncludeDirective(rawContent)
-		if dir != nil {
-			target := includeTarget{
-				startNode:      node,
-				nodesToRemove:  []ast.Node{node},
-				fullRawContent: rawContent,
-				lineNum:        getNodeLineNumber(node, reader.Source()),
-			}
-			visited[node] = true
-
-			if !bytes.Contains(rawContent, []byte("-->")) {
-				var combined bytes.Buffer
-				combined.Write(rawContent)
-				for sibling := node.NextSibling(); sibling != nil; sibling = sibling.NextSibling() {
-					sibContent := ExtractDirectiveContent(sibling, reader.Source())
-					combined.Write(sibContent)
-					target.nodesToRemove = append(target.nodesToRemove, sibling)
-					visited[sibling] = true
-					if bytes.Contains(sibContent, []byte("-->")) {
-						break
-					}
-				}
-				target.fullRawContent = combined.Bytes()
-			}
-
-			targets = append(targets, target)
+		if dir, _ := includes.ParseIncludeDirective(rawContent); dir != nil {
+			targets = append(targets, includeTarget{
+				node:       node,
+				rawContent: rawContent,
+				lineNum:    getNodeLineNumber(node, reader.Source()),
+			})
 		}
 
 		return ast.WalkContinue, nil
@@ -115,7 +96,7 @@ func (t *IncludeTransformer) TransformWithModified(doc *ast.Document, reader tex
 
 	modified := false
 	for _, target := range targets {
-		tmpl, expanded, _, err := includes.ProcessIncludesIn(t.Root, t.BaseDir, t.IncludePath, target.fullRawContent, t.Templates, nil, t.Warnings)
+		tmpl, expanded, _, err := includes.ProcessIncludesIn(t.Root, t.BaseDir, t.IncludePath, target.rawContent, t.Templates, nil, t.Warnings)
 		if err != nil {
 			t.Err = err
 			log.Error().
@@ -125,7 +106,7 @@ func (t *IncludeTransformer) TransformWithModified(doc *ast.Document, reader tex
 				Msg("unable to process include")
 			return false
 		}
-		if bytes.Equal(expanded, target.fullRawContent) {
+		if bytes.Equal(expanded, target.rawContent) {
 			continue
 		}
 		t.Templates = tmpl
@@ -141,22 +122,11 @@ func (t *IncludeTransformer) TransformWithModified(doc *ast.Document, reader tex
 			return false
 		}
 
-		parent := target.startNode.Parent()
-		if parent == nil {
+		if target.node.Parent() == nil {
 			continue
 		}
 
-		for subDoc.FirstChild() != nil {
-			child := subDoc.FirstChild()
-			subDoc.RemoveChild(child)
-			parent.InsertBefore(target.startNode, child)
-		}
-
-		for _, n := range target.nodesToRemove {
-			if n.Parent() != nil {
-				n.Parent().RemoveChild(n)
-			}
-		}
+		replaceWith(target.node, subDoc)
 
 		modified = true
 	}
