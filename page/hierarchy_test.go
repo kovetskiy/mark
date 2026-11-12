@@ -210,6 +210,10 @@ func TestClaimIsPerSpaceAndIgnoresCase(t *testing.T) {
 	assert.True(t, taken)
 	assert.Equal(t, "a.md", previous)
 
+	previous, taken = h.Claim("docs", "Overview", "b.md")
+	assert.True(t, taken, "a space key names its space whatever its case")
+	assert.Equal(t, "a.md", previous)
+
 	_, taken = h.Claim("OTHER", "Overview", "c.md")
 	assert.False(t, taken, "the constraint is per space")
 

@@ -84,6 +84,19 @@ func TestFolderCachesAreSeparate(t *testing.T) {
 	assert.Equal(t, "1", id, "a second run's cache does not touch the first's")
 }
 
+func TestFolderCacheReadsASpaceKeyWithoutRegardToCase(t *testing.T) {
+	cache := NewFolderCache()
+
+	cache.store("DOCS", "parent", "title", "1")
+
+	id, ok := cache.lookup("docs", "parent", "title")
+	assert.True(t, ok, "docs and DOCS are one space")
+	assert.Equal(t, "1", id)
+
+	_, ok = cache.lookup("OTHER", "parent", "title")
+	assert.False(t, ok)
+}
+
 // stubFolderTracker is a FolderTracker holding a fixed mapping.
 type stubFolderTracker struct {
 	folders  map[string]string

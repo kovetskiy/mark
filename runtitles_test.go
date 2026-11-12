@@ -70,6 +70,10 @@ func TestRunTitlesDeclaredBy(t *testing.T) {
 	_, ok = titles.declaredBy("DOCS", "page", "Missing")
 	assert.False(t, ok)
 
+	in, ok = titles.declaredBy("docs", "page", "Other")
+	assert.True(t, ok, "a space key names its space whatever its case")
+	assert.Equal(t, other, in.file)
+
 	_, ok = titles.declaredBy("OTHER", "page", "Other")
 	assert.False(t, ok, "a title is declared in its own space")
 

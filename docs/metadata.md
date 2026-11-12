@@ -126,6 +126,10 @@ It is left in the page for the include expander to find.
 There can be any number of `Parent` headers, if Mark can't find specified
 parent by title, Mark creates it.
 
+A space key names its space whatever its case, as it does in Confluence:
+documents headed `Space: DOCS` and `Space: docs` publish to one space, which
+has one [page manifest](page-tree.md) and holds one page of a title.
+
 ### Writing metadata from a program
 
 A comment header has no escape: its value runs from the first colon to the

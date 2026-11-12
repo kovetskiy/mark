@@ -63,13 +63,15 @@ func (r *publishRun) resolveRenamed(ctx context.Context, doc *document) (*conflu
 	}
 
 	space, key := doc.meta.Space, manifest.Key(doc.key)
-	pairing, ok := r.similar.spaces[space]
+	// One pairing per space, however its documents spell the key.
+	paired := strings.ToLower(space)
+	pairing, ok := r.similar.spaces[paired]
 	if !ok {
 		pairing, err = r.pairSimilar(ctx, space, key)
 		if err != nil {
 			return nil, fmt.Errorf("unable to compare %q with the documents gone from its scope: %w", doc.file, err)
 		}
-		r.similar.spaces[space] = pairing
+		r.similar.spaces[paired] = pairing
 	}
 
 	if near, ok := pairing.unclear[key]; ok {

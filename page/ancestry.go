@@ -40,8 +40,9 @@ func NewFolderCache() *FolderCache {
 	return &FolderCache{}
 }
 
+// folderCacheKey folds the space key's case, as Confluence reads it.
 func folderCacheKey(space, contextID, title string) string {
-	return space + "\x00" + contextID + "\x00" + title
+	return strings.ToLower(space) + "\x00" + contextID + "\x00" + title
 }
 
 func (c *FolderCache) store(space, contextID, title, id string) {

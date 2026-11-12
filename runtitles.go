@@ -37,8 +37,9 @@ type runTitles struct {
 }
 
 func runTitleKey(space, kind, title string) string {
-	// Case folds as in FindPage; the type is keyed because a blog post is not a parent.
-	return space + "\x00" + kind + "\x00" + strings.ToLower(title)
+	// Space key and title fold case as in FindPage; the type is keyed because a
+	// blog post is not a parent.
+	return strings.ToLower(space) + "\x00" + kind + "\x00" + strings.ToLower(title)
 }
 
 // readAhead is what is read of a document before its turn.
