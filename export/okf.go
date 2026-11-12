@@ -238,13 +238,3 @@ func okfIndexes(root, heading string, plan []planned) map[string]string {
 func indexText(title string) string {
 	return escapeInline(strings.Join(strings.Fields(title), " "), inlineOptions{})
 }
-
-// okfName is name, as an OKF attachment is written: an attachment ending in
-// .md would be read as a concept that has no front matter, so it gets .txt
-// after it.
-func okfName(name string) string {
-	if strings.EqualFold(filepath.Ext(name), ".md") {
-		return name + ".txt"
-	}
-	return name
-}

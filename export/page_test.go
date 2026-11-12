@@ -69,11 +69,10 @@ func TestNumberedNameIsCapped(t *testing.T) {
 	assert.True(t, strings.HasSuffix(numbered, "-2.png"), "%q", numbered)
 }
 
-// An OKF attachment ending in .md is written as .txt even when its name has
-// to be cut.
-func TestOKFNameIsCapped(t *testing.T) {
+// An attachment ending in .md is written as .txt even when its name has to be
+// cut.
+func TestMarkdownNameIsCapped(t *testing.T) {
 	names := newLocalNames()
-	names.okf = true
 
 	name := names.of(strings.Repeat("文", 100) + ".md")
 	assertFits(t, name)
@@ -107,13 +106,44 @@ func TestLocalNamesKeepClearOfGit(t *testing.T) {
 		".env":           ".env",
 		".github":        ".github",
 		"git":            "git",
+		"HEAD":           "HEAD-2",
+		"head":           "head-2",
+		"HEAD.txt":       "HEAD.txt",
+		"config":         "config",
 	} {
 		assert.Equal(t, want, newLocalNames().of(filename), "%q", filename)
 	}
+}
 
-	okf := newLocalNames()
-	okf.okf = true
-	assert.Equal(t, ".git-2", okf.of(".git"))
+// A name publishing would read as something other than the one attachment is
+// written under one it reads as that file; other names are kept.
+func TestLocalName(t *testing.T) {
+	for filename, want := range map[string]string{
+		"chart.png":        "chart.png",
+		"a/b.png":          "a_b.png",
+		`a\b.png`:          "a_b.png",
+		"..":               "_..",
+		"[n]otes.txt":      "_n_otes.txt",
+		"report*.txt":      "report_.txt",
+		"a?.txt":           "a_.txt",
+		"{a,b}.txt":        "_a,b_.txt",
+		"report (2024).p!": "report (2024).p!",
+		"notes.md":         "notes.md.txt",
+		"Notes.MD":         "Notes.MD.txt",
+		"notes.md.txt":     "notes.md.txt",
+		"notes.mdx":        "notes.mdx",
+		".md":              ".md.txt",
+		"a/.md":            "a_.md.txt",
+	} {
+		assert.Equal(t, want, localName(filename), "%q", filename)
+	}
+
+	// Two names written alike still get a file each.
+	names := newLocalNames()
+	assert.Equal(t, "notes.md.txt", names.of("notes.md"))
+	assert.Equal(t, "notes.md-2.txt", names.of("notes.md.txt"))
+	assert.Equal(t, "a_.txt", names.of("a?.txt"))
+	assert.Equal(t, "a_-2.txt", names.of("a*.txt"))
 }
 
 // Names a filesystem takes as one file are numbered; names that only full

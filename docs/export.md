@@ -98,22 +98,40 @@ Confluence records. Two whose names would
 share a file -- `a/b.png` and `a_b.png`, or names that differ only in case --
 are told apart by a number, as `a_b-2.png`, and so is one named like the
 document itself, when `--output` names a file in the same directory: a
-`README.md` attachment written beside `-o README.md` becomes `README-2.md`.
+`notes.txt` attachment written beside `-o notes.txt` becomes `notes-2.txt`.
 With the document on standard output there is no file of its name, and an
-attachment called `README.md` keeps that name. An export usually goes into a
+attachment called `notes.txt` keeps that name. An export usually goes into a
 git working tree, so an attachment is never written under a name git keeps
-for itself in any directory -- `.git`, `.gitattributes`, `.gitignore` and
-`.gitmodules`, in any case, with any trailing dots or spaces, or with the
-invisible characters HFS+ ignores -- and gets
+for itself in any directory -- `.git`, `.gitattributes`, `.gitignore`,
+`.gitmodules` and `HEAD`, in any case, with any trailing dots or spaces, or
+with the invisible characters HFS+ ignores -- and gets
 a number instead, as `.git-2`; published back, it is uploaded under that name.
 Page titles never come out as such names, since a page's directory or
-concept name has only letters, digits and dashes. An attachment the page refers to
+concept name has only letters, digits and dashes.
+
+An attachment is also written under another name where publishing the export
+back would read its own as something other than that one file:
+
+* A name ending in `.md`, in any case, gets `.txt` after it, `notes.md`
+  becoming `notes.md.txt`. The documents are then the only `.md` files an
+  export writes, so a glob such as `docs/**/*.md` publishes the pages and
+  nothing else; an attachment under its own name would be published as a
+  document, with whatever headers it holds.
+* `*`, `?`, `[`, `]`, `{` and `}` are each written as `_`, `report[2024].pdf`
+  becoming `report_2024_.pdf`. An `Attachment` header holding one of them is
+  [a pattern](attachments.md#declaring-attachments), which can match other files beside the document.
+
+The document links to and declares the name written, and published back the
+attachment is uploaded under it, a new attachment next to the one the page
+had.
+
+An attachment the page refers to
 but no longer has is reported, and left out of the `Attachment` headers;
 with `--no-attachments` there is no telling, so every one is declared.
 
 Most filesystems take a file name of at most 255 bytes, and Confluence allows
 longer attachment names. An attachment whose name would be longer, with the
-number or the `.txt` of an OKF export added, is written under a shorter one:
+number or the `.txt` after `.md` added, is written under a shorter one:
 the part before the extension is cut on a character's boundary, and a name
 too long for a file also gets a dash and eight hexadecimal digits from a hash
 of its name in Confluence, so that two names that only differ past the cut
@@ -232,7 +250,11 @@ docs/guides/setup/tuning/index.md     Guides > Setup > Tuning
 Every page gets a directory of its own, named after its title in lower case
 with a dash for anything that is not a letter or digit, cut to 200 bytes so
 that a long title still makes a name the file system takes, and its
-attachments go beside it there. A directory of its own is what keeps two pages' `image.png`
+attachments go beside it there. The directories of the pages beneath it are
+there too, so an attachment named like one of them gets a number, as one
+named like the document does: `setup` beside a page titled Setup is written
+as `setup-2`. The `index.md` files are the tree's documents and its only
+`.md` files, which is what lets `**/*.md` name them. A directory of its own is what keeps two pages' `image.png`
 apart: mark names an attachment after its path, so two pages sharing a
 directory would share their attachments' names too. A title that comes out like
 a sibling's, as `C++` and `C` do, or two long titles alike up to the cut, has

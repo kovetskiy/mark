@@ -153,7 +153,7 @@ var ErrNoAttachmentsDir = errors.New("the document goes to Stdout and the page h
 // With FormatOKF it is written as an Open Knowledge Format concept instead:
 // the same body below OKF front matter, for reading rather than publishing.
 func Page(ctx context.Context, api *confluence.API, cfg Config) (*Result, error) {
-	export, err := preparePage(ctx, api, cfg)
+	export, err := preparePage(ctx, api, cfg, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -191,7 +191,10 @@ func (e *pageExport) targets() []string {
 
 // preparePage reads and converts the page cfg names and works out every file
 // its export writes, without writing any.
-func preparePage(ctx context.Context, api *confluence.API, cfg Config) (*pageExport, error) {
+//
+// beside are the directories a tree puts in the document's own, for the pages
+// beneath it.
+func preparePage(ctx context.Context, api *confluence.API, cfg Config, beside []string) (*pageExport, error) {
 	format, spelling, err := parseOptions(cfg)
 	if err != nil {
 		return nil, err
@@ -234,11 +237,14 @@ func preparePage(ctx context.Context, api *confluence.API, cfg Config) (*pageExp
 	}
 
 	names := newLocalNames()
-	names.okf = okf
 	// An attachment named like the document would be written over it, or it
 	// over the attachment; on macOS and Windows, also when only case differs.
+	// One named like a directory beside the document could not be written.
 	if output != "" && sameDir(outputDir, attachmentsDir) {
 		names.reserve(filepath.Base(output))
+		for _, name := range beside {
+			names.reserve(name)
+		}
 	}
 	// Worked out only for a page that has attachments: on Windows there is no
 	// relative path to another drive.
@@ -728,16 +734,27 @@ func sameDir(a, b string) bool {
 	return strings.EqualFold(absoluteA, absoluteB)
 }
 
-// localName is the name an attachment is written under: its own, unless that
-// would reach into another directory.
+// localName is the name an attachment is written under: its own, unless
+// publishing the export back would read that name as something else. A
+// separator would reach into another directory, and * ? [ ] { } make the
+// Attachment header declaring it a pattern, so each is an underscore. A name
+// ending in .md would be picked up by the glob that names the documents, and
+// read by OKF as a concept without front matter, so it gets .txt after it.
 func localName(filename string) string {
-	name := strings.NewReplacer("/", "_", "\\", "_").Replace(filename)
+	name := localNameReplacer.Replace(filename)
 	if name == "." || name == ".." {
 		name = "_" + name
+	}
+	if strings.EqualFold(filepath.Ext(name), ".md") {
+		name += ".txt"
 	}
 
 	return name
 }
+
+var localNameReplacer = strings.NewReplacer(
+	"/", "_", "\\", "_", "*", "_", "?", "_", "[", "_", "]", "_", "{", "_", "}", "_",
+)
 
 // localNames gives every attachment a file of its own. Names that flatten to
 // the same local name, or differ only in case or by trailing dots and spaces
@@ -747,15 +764,15 @@ func localName(filename string) string {
 type localNames struct {
 	byName map[string]string
 	taken  map[string]bool
-	okf    bool
 }
 
 // gitNames are the names git reads, in any directory of a working tree, as
-// its own rather than as files it tracks: the repository itself, and the
-// files that set attributes, what is ignored and the submodules. An export
-// usually goes into a working tree, so an attachment is never written under
-// one of them.
-var gitNames = []string{".git", ".gitattributes", ".gitignore", ".gitmodules"}
+// its own rather than as files it tracks: the repository itself, the files
+// that set attributes, what is ignored and the submodules, and HEAD, which
+// beside directories called objects and refs -- as two pages' can be -- makes
+// the directory a repository of its own. An export usually goes into a
+// working tree, so an attachment is never written under one of them.
+var gitNames = []string{".git", ".gitattributes", ".gitignore", ".gitmodules", "HEAD"}
 
 func newLocalNames() *localNames {
 	l := &localNames{byName: map[string]string{}, taken: map[string]bool{}}
@@ -799,9 +816,6 @@ func (l *localNames) of(filename string) string {
 	}
 
 	name := localName(filename)
-	if l.okf {
-		name = okfName(name)
-	}
 	extension := filepath.Ext(name)
 	stem := strings.TrimSuffix(name, extension)
 	// A name that starts with its only dot, as .gitignore, has no extension.

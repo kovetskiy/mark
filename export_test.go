@@ -792,13 +792,13 @@ func TestExportGivesEveryAttachmentAFile(t *testing.T) {
 // document, or like it but for case, which is one file on macOS and Windows,
 // gets a name of its own rather than replacing the document under --overwrite.
 func TestExportKeepsAttachmentsOffTheDocument(t *testing.T) {
-	server, id := exportPage(t, `<p><ac:link><ri:attachment ri:filename="page.md"/></ac:link>`+
-		`<ac:link><ri:attachment ri:filename="Page.md"/></ac:link></p>`)
-	server.AddAttachmentData(id, "page.md", []byte("lower"))
-	server.AddAttachmentData(id, "Page.md", []byte("upper"))
+	server, id := exportPage(t, `<p><ac:link><ri:attachment ri:filename="page.txt"/></ac:link>`+
+		`<ac:link><ri:attachment ri:filename="Page.txt"/></ac:link></p>`)
+	server.AddAttachmentData(id, "page.txt", []byte("lower"))
+	server.AddAttachmentData(id, "Page.txt", []byte("upper"))
 
 	dir := t.TempDir()
-	out := filepath.Join(dir, "page.md")
+	out := filepath.Join(dir, "page.txt")
 	_, err := Export(context.Background(), ExportConfig{
 		Connection: ConnectionConfig{BaseURL: server.URL, Username: "user", Password: "token"}, PageID: id, Output: out, Overwrite: true,
 	})
@@ -807,10 +807,10 @@ func TestExportKeepsAttachmentsOffTheDocument(t *testing.T) {
 	exported, err := os.ReadFile(out)
 	require.NoError(t, err)
 	assert.Contains(t, string(exported), "<!-- Title: Page -->")
-	assert.Contains(t, string(exported), "(page-2.md)")
-	assert.Contains(t, string(exported), "(Page-3.md)")
+	assert.Contains(t, string(exported), "(page-2.txt)")
+	assert.Contains(t, string(exported), "(Page-3.txt)")
 
-	for file, content := range map[string]string{"page-2.md": "lower", "Page-3.md": "upper"} {
+	for file, content := range map[string]string{"page-2.txt": "lower", "Page-3.txt": "upper"} {
 		data, err := os.ReadFile(filepath.Join(dir, file))
 		require.NoError(t, err, file)
 		assert.Equal(t, content, string(data), file)
@@ -1590,4 +1590,226 @@ func TestExportTreeKeepsClearOfGit(t *testing.T) {
 			assert.Equal(t, first, files(), "exporting again writes the same files")
 		})
 	}
+}
+
+// exportedFiles are the files beneath dir, by their slash-separated path
+// inside it.
+func exportedFiles(t *testing.T, dir string) map[string]string {
+	t.Helper()
+
+	found := map[string]string{}
+	require.NoError(t, filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return err
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		rel, err := filepath.Rel(dir, path)
+		if err != nil {
+			return err
+		}
+		found[filepath.ToSlash(rel)] = string(data)
+		return nil
+	}))
+	return found
+}
+
+// attachTo gives a page a body linking to attachments of these names, each
+// holding its own name.
+func attachTo(server *confluencetest.Server, id string, names ...string) {
+	body := ""
+	for _, name := range names {
+		body += `<p><ac:link><ri:attachment ri:filename="` + name + `"/></ac:link></p>`
+		server.AddAttachmentData(id, name, []byte(name))
+	}
+	server.EditPage(id, body)
+}
+
+// TestExportTreeDocumentsAreItsOnlyMarkdown: publishing an exported tree back
+// names its documents with a glob, so the pages' documents are the only files
+// in it that end in .md: an attachment named so is written as text.
+func TestExportTreeDocumentsAreItsOnlyMarkdown(t *testing.T) {
+	server := confluencetest.New(t)
+	server.AddSpace("DOCS")
+	home := server.AddPage("DOCS", "Home", "page", "")
+	server.SetHomepage("DOCS", home.ID)
+	guide := server.AddPage("DOCS", "Guide", "page", home.ID)
+	setup := server.AddPage("DOCS", "Setup", "page", guide.ID)
+	// Read as a document, the attachment would publish a page of its own.
+	const other = "<!-- Space: DOCS -->\n<!-- Title: Other -->\n\nOther.\n"
+	server.EditPage(guide.ID, `<p><ac:link><ri:attachment ri:filename="notes.md"/></ac:link></p>`+
+		`<p><ac:image><ri:attachment ri:filename="chart.png"/></ac:image></p>`)
+	server.AddAttachmentData(guide.ID, "notes.md", []byte(other))
+	server.AddAttachmentData(guide.ID, "chart.png", []byte("chart.png"))
+	attachTo(server, setup.ID, "Notes.MD", "index.md")
+
+	out := filepath.Join(t.TempDir(), "guide")
+	require.NoError(t, exportTree(t, server, guide.ID, out, 0, false))
+
+	files := exportedFiles(t, out)
+	assert.Equal(t, map[string]string{
+		"index.md":           files["index.md"],
+		"notes.md.txt":       other,
+		"chart.png":          "chart.png",
+		"setup/index.md":     files["setup/index.md"],
+		"setup/Notes.MD.txt": "Notes.MD",
+		"setup/index.md.txt": "index.md",
+	}, files)
+	assert.Contains(t, files["index.md"], "(notes.md.txt)")
+	assert.Contains(t, files["setup/index.md"], "(Notes.MD.txt)")
+
+	matched, err := filepath.Glob(filepath.Join(out, "*.md"))
+	require.NoError(t, err)
+	assert.Equal(t, []string{filepath.Join(out, "index.md")}, matched)
+
+	// Published back with the glob that names the tree's documents, the two
+	// pages are all that is published.
+	require.NoError(t, Run(context.Background(), Config{
+		PublishConfig: PublishConfig{Output: io.Discard, Rendering: RenderingConfig{AttachReferenced: true}},
+		Files:         filepath.Join(out, "**", "*.md"),
+		Connection:    ConnectionConfig{BaseURL: server.URL, Username: "user", Password: "token"},
+	}))
+	api := confluence.NewAPI(server.URL, confluence.Options{Username: "user", Password: "token"})
+	found, err := api.FindPage(context.Background(), "DOCS", "Other", confluence.ContentPage)
+	require.NoError(t, err)
+	assert.Nil(t, found, "an attachment is not published as a page")
+
+	var uploaded []string
+	for _, a := range server.Attachments(guide.ID) {
+		uploaded = append(uploaded, a.Filename)
+	}
+	assert.Contains(t, uploaded, "notes.md.txt", "the attachment is uploaded under the name it was written as")
+}
+
+// TestExportWritesPatternCharactersAsUnderscores: publishing reads * ? [ and {
+// in an Attachment header as a pattern, so a name holding one is written, and
+// declared, with an underscore in its place: the header then names the one
+// file the page's attachment was written to.
+func TestExportWritesPatternCharactersAsUnderscores(t *testing.T) {
+	written := map[string]string{
+		"[n]otes.txt": "_n_otes.txt", "report*.txt": "report_.txt", "a?.txt": "a_.txt", "{a,b}.txt": "_a,b_.txt",
+		"plain (1).txt": "plain (1).txt",
+	}
+
+	// A reference kept as storage format is declared by an Attachment header.
+	body := `<table><tbody><tr><td colspan="2">`
+	for name := range written {
+		body += `<ac:link><ri:attachment ri:filename="` + name + `"/></ac:link>`
+	}
+	server, id := exportPage(t, body+`</td></tr></tbody></table>`)
+	for name := range written {
+		server.AddAttachmentData(id, name, []byte(name))
+	}
+
+	dir := t.TempDir()
+	// A file the first name, read as a pattern, matches.
+	writeFile(t, dir, "notes.txt", "beside")
+	out := filepath.Join(dir, "page.md")
+	_, err := Export(context.Background(), ExportConfig{
+		Connection: ConnectionConfig{BaseURL: server.URL, Username: "user", Password: "token"}, PageID: id, Output: out,
+	})
+	require.NoError(t, err)
+
+	files := exportedFiles(t, dir)
+	for name, file := range written {
+		assert.Equal(t, name, files[file], file)
+		assert.Contains(t, files["page.md"], "<!-- Attachment: "+file+" -->")
+	}
+	assert.Equal(t, len(written), strings.Count(files["page.md"], "<!-- Attachment:"))
+
+	require.NoError(t, Run(context.Background(), Config{
+		PublishConfig: PublishConfig{Output: io.Discard},
+		Files:         out,
+		Connection:    ConnectionConfig{BaseURL: server.URL, Username: "user", Password: "token"},
+	}))
+	var uploaded []string
+	for _, a := range server.Attachments(id) {
+		uploaded = append(uploaded, a.Filename)
+	}
+	assert.NotContains(t, uploaded, "notes.txt", "a file the page does not name is not uploaded")
+	for _, file := range written {
+		assert.Contains(t, uploaded, file)
+	}
+}
+
+// TestExportTreeKeepsAttachmentsOffChildDirectories: a page's attachments and
+// the directories of the pages beneath it share a directory, so an attachment
+// named like one of them is numbered, as one named like the document is.
+func TestExportTreeKeepsAttachmentsOffChildDirectories(t *testing.T) {
+	server := confluencetest.New(t)
+	server.AddSpace("DOCS")
+	home := server.AddPage("DOCS", "Home", "page", "")
+	server.SetHomepage("DOCS", home.ID)
+	guide := server.AddPage("DOCS", "Guide", "page", home.ID)
+	server.AddPage("DOCS", "Notes", "page", guide.ID)
+	server.AddPage("DOCS", "Release 2", "page", guide.ID)
+	attachTo(server, guide.ID, "notes", "Release-2", "other")
+
+	check := func(t *testing.T, out string) {
+		t.Helper()
+		files := exportedFiles(t, out)
+		assert.Equal(t, map[string]string{
+			"index.md":           files["index.md"],
+			"notes-2":            "notes",
+			"Release-2-2":        "Release-2",
+			"other":              "other",
+			"notes/index.md":     files["notes/index.md"],
+			"release-2/index.md": files["release-2/index.md"],
+		}, files)
+		assert.Contains(t, files["index.md"], "(notes-2)")
+	}
+
+	t.Run("page", func(t *testing.T) {
+		out := filepath.Join(t.TempDir(), "guide")
+		require.NoError(t, exportTree(t, server, guide.ID, out, 0, false))
+		check(t, out)
+		require.NoError(t, exportTree(t, server, guide.ID, out, 0, true), "exporting again writes the same files")
+		check(t, out)
+	})
+
+	// With the levels beneath left out there is no directory to keep clear of.
+	t.Run("depth", func(t *testing.T) {
+		out := filepath.Join(t.TempDir(), "guide")
+		require.NoError(t, exportTree(t, server, guide.ID, out, 1, false))
+		assert.Equal(t, "notes", exportedFiles(t, out)["notes"])
+	})
+
+	// A space's home page shares its directory with every top-level page.
+	t.Run("space", func(t *testing.T) {
+		attachTo(server, home.ID, "guide")
+		out := filepath.Join(t.TempDir(), "docs")
+		_, err := ExportTree(context.Background(), ExportConfig{
+			Connection: ConnectionConfig{BaseURL: server.URL, Username: "user", Password: "token"},
+			Space:      "DOCS", Output: out,
+		}, export.TreeOptions{})
+		require.NoError(t, err)
+		files := exportedFiles(t, out)
+		assert.Equal(t, "guide", files["guide-2"])
+		assert.Contains(t, files, "guide/index.md")
+	})
+}
+
+// TestExportTreeIsNotARepository: git takes a directory holding HEAD, objects
+// and refs for a repository of its own, wherever it is in a working tree, so
+// no attachment is written as HEAD.
+func TestExportTreeIsNotARepository(t *testing.T) {
+	server := confluencetest.New(t)
+	server.AddSpace("DOCS")
+	home := server.AddPage("DOCS", "Home", "page", "")
+	server.SetHomepage("DOCS", home.ID)
+	guide := server.AddPage("DOCS", "Guide", "page", home.ID)
+	server.AddPage("DOCS", "Objects", "page", guide.ID)
+	server.AddPage("DOCS", "Refs", "page", guide.ID)
+	attachTo(server, guide.ID, "HEAD", "config")
+
+	out := filepath.Join(t.TempDir(), "guide")
+	require.NoError(t, exportTree(t, server, guide.ID, out, 0, false))
+
+	files := exportedFiles(t, out)
+	assert.NotContains(t, files, "HEAD")
+	assert.Equal(t, "HEAD", files["HEAD-2"])
+	assert.Equal(t, "config", files["config"], "a name git reads only inside a repository is kept")
+	assert.Contains(t, files["index.md"], "(HEAD-2)")
 }

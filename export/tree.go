@@ -49,7 +49,9 @@ type TreeOptions struct {
 // every page beneath it to index.md in a directory of its own named after its
 // title, inside its parent's: mark names an attachment after its path, so two
 // pages sharing a directory would also share, and overwrite, an image of the
-// same name. A top-level page other than the home page gets a directory
+// same name. An attachment named like the directory of a page beneath its
+// own is numbered, as one named like the document is. A top-level page other
+// than the home page gets a directory
 // beside the home page's children. Each document carries the headers that
 // publish it back where it was, whichever directory it is in.
 //
@@ -130,7 +132,7 @@ func Tree(ctx context.Context, api *confluence.API, cfg Config, options TreeOpti
 			Metadata:       spelling,
 			Generator:      cfg.Generator,
 			Documents:      documents,
-		})
+		}, p.beside)
 		if err != nil {
 			return nil, fmt.Errorf("unable to export page %s: %w", p.id, err)
 		}
@@ -207,6 +209,9 @@ type planned struct {
 	id     string
 	title  string
 	output string
+	// beside are the directories, in the document's own, of the pages
+	// beneath it: none in an OKF bundle, where attachments are kept apart.
+	beside []string
 }
 
 // branch is a page to plan below a directory, and how many levels of it.
@@ -290,6 +295,9 @@ func planSpace(ctx context.Context, api *confluence.API, l layout, space, dir st
 	if err := planBranches(ctx, api, l, branches, dir, taken, &plan); err != nil {
 		return nil, err
 	}
+	if home != nil && !l.okf {
+		plan[0].beside = slices.Sorted(maps.Keys(taken))
+	}
 
 	// An OKF bundle has no document of its own for the home page to be, so it
 	// is a top-level page like the others: where Confluence lists it, or last
@@ -312,6 +320,7 @@ func planTree(
 	if err := checkPageID(page.ID); err != nil {
 		return err
 	}
+	own := len(*plan)
 	*plan = append(*plan, planned{id: page.ID, title: page.Title, output: output})
 	if depth == 1 {
 		return nil
@@ -327,7 +336,15 @@ func planTree(
 		branches[i] = branch{Child: child, depth: below(depth)}
 	}
 
-	return planBranches(ctx, api, l, branches, dir, l.names(false), plan)
+	taken := l.names(false)
+	if err := planBranches(ctx, api, l, branches, dir, taken, plan); err != nil {
+		return err
+	}
+	if !l.okf {
+		(*plan)[own].beside = slices.Sorted(maps.Keys(taken))
+	}
+
+	return nil
 }
 
 // planBranches plans each branch under a name of its own inside dir: its
