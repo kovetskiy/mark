@@ -2064,6 +2064,9 @@ func (s *Store) Survivors(spaceKey, glob string) int {
 // its entry is dropped and its shard marked for writing. The change is in
 // memory until Save, so a dry run, whose read-only store never writes, leaves
 // the stored manifest as it was.
+//
+// A document the run looked up or recorded in another space is not returned
+// either: it changed space and is not gone. See ForgetMoved.
 func (s *Store) Orphans(spaceKey string) []string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -2114,6 +2117,11 @@ func (s *Store) orphans(spaceKey string) []string {
 				}
 				continue
 			}
+			// A document this run publishes into another space is not gone: it
+			// changed space, and the page it left here is left behind.
+			if _, ok := s.publishedElsewhere(spaceKey, path); ok {
+				continue
+			}
 			orphans = append(orphans, path)
 		}
 	}
@@ -2130,6 +2138,66 @@ func (s *Store) orphans(spaceKey string) []string {
 
 	sort.Strings(orphans)
 	return orphans
+}
+
+// ForgetMoved drops from spaceKey the entry of each document the run recorded
+// in another space, so the page it left behind is said once and not looked
+// for again. It is for a space the run speaks for: the same path recorded in
+// two spaces is also what two runs publishing one tree to a space each leave,
+// and there each entry is its own run's.
+//
+// Like Forget, the change is in memory until Save.
+func (s *Store) ForgetMoved(spaceKey string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	spaceKey = s.loadedKey(spaceKey)
+	state, ok := s.spaces[spaceKey]
+	if !ok || state.untracked {
+		return
+	}
+
+	for i := range state.shards {
+		for path, entry := range state.shards[i].pages {
+			// What orphans passes over for another reason is not this one's.
+			if state.seen[path] || !s.covers(path, entry) || state.claimed[entry.PageID] {
+				continue
+			}
+
+			other, ok := s.publishedElsewhere(spaceKey, path)
+			if !ok {
+				continue
+			}
+			if _, recorded := s.spaces[other].shards[shardFor(path)].pages[path]; !recorded {
+				continue
+			}
+
+			log.Info().Msgf(
+				"%s now publishes to space %q; its page %s in space %q is left behind and no longer tracked",
+				path, other, entry.PageID, spaceKey,
+			)
+			delete(state.shards[i].pages, path)
+			state.shards[i].dirty = true
+		}
+	}
+}
+
+// publishedElsewhere returns the space other than spaceKey in which this run
+// looked up or recorded path, one of the documents it publishes. Not a
+// directory, which has a page in every space its documents publish to. Called
+// with s.mu held.
+func (s *Store) publishedElsewhere(spaceKey, path string) (string, bool) {
+	if !s.runFiles[path] || isDocumentDirectory(path) {
+		return "", false
+	}
+
+	for _, other := range s.sortedSpaces() {
+		if other != spaceKey && s.spaces[other].seen[path] {
+			return other, true
+		}
+	}
+
+	return "", false
 }
 
 // Spaces returns the space keys this store has loaded, sorted.

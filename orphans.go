@@ -39,6 +39,16 @@ func handleOrphans(
 	results *report.Report,
 ) error {
 	for _, space := range tracker.Spaces() {
+		// The space a run is given is the one it speaks for. Another is in the
+		// run only because a document's Space header names it, which says
+		// where that document goes and nothing of the other pages tracked
+		// there: they and their entries stay as they are, for a run given
+		// that space or none.
+		own := config.Page.Space == "" || strings.EqualFold(config.Page.Space, space)
+		if own && !hadErrors && !config.Mode.readOnly() {
+			tracker.ForgetMoved(space)
+		}
+
 		orphans := tracker.OrphanEntries(space)
 		if len(orphans) == 0 {
 			continue
@@ -52,6 +62,14 @@ func handleOrphans(
 				"space %q has %d unpublished tracked pages, not reported because this run had errors",
 				space, len(orphans),
 			)
+
+			continue
+		}
+
+		// Before any scope is resolved: --orphan-under names a place in the
+		// run's own space.
+		if !own {
+			leaveOtherSpace(config, space, orphans, results)
 
 			continue
 		}
@@ -269,6 +287,32 @@ func handleOrphans(
 	}
 
 	return nil
+}
+
+// leaveOtherSpace says which tracked pages of a space other than the run's own
+// had no source file in the run, and lists them as left where they are,
+// whatever --on-orphan was to do with them.
+func leaveOtherSpace(config Config, space string, orphans []manifest.Orphan, results *report.Report) {
+	paths := make([]string, 0, len(orphans))
+	for _, orphan := range orphans {
+		paths = append(paths, orphan.Path)
+	}
+
+	reason := fmt.Sprintf("space %q is not the run's space, %q", space, config.Page.Space)
+	log.Warn().Msgf(
+		"space %q: %d tracked page(s) had no matching source file in this run and are left alone, still tracked, since %s: %s",
+		space, len(paths), reason, strings.Join(paths, ", "),
+	)
+
+	if config.Mode.readOnly() {
+		return
+	}
+
+	for _, orphan := range orphans {
+		reportKept(results, page.Orphan{
+			Path: orphan.Path, PageID: orphan.Entry.PageID, Title: orphan.Entry.Title,
+		}, reason)
+	}
 }
 
 // listedScope reports whether the orphans of glob are keys a partial run's
