@@ -185,46 +185,20 @@ func (e *Engine) start(life context.Context) (mermaid.Renderer, error) {
 	// startup, so it deliberately carries no deadline, which would close the
 	// browser mid-run. A launch that overruns is cancelled instead.
 	ctx, cancel := context.WithCancel(life)
+	timer := time.AfterFunc(startupTimeout, cancel)
 
-	type launched struct {
-		engine *mermaid.RenderEngine
-		err    error
-	}
+	// NewRenderEngine prepends chromedp.DefaultExecAllocatorOptions itself, so
+	// only the additional options are passed here. Without them Chrome fails to
+	// start wherever the sandbox is unavailable -- the same failure the d2
+	// renderer hits, since both drive Chrome through chromedp.
+	engine, err := mermaid.NewRenderEngine(ctx, []string{uncapDiagramWidth},
+		slices.Concat(chrome.AllocatorOptions(), e.extraOptions)...)
 
-	started := make(chan launched, 1)
-
-	go func() {
-		// NewRenderEngine prepends chromedp.DefaultExecAllocatorOptions itself, so
-		// only the additional options are passed here. Without them Chrome fails to
-		// start wherever the sandbox is unavailable -- the same failure the d2
-		// renderer hits, since both drive Chrome through chromedp.
-		engine, err := mermaid.NewRenderEngine(ctx, []string{uncapDiagramWidth},
-			slices.Concat(chrome.AllocatorOptions(), e.extraOptions)...)
-		started <- launched{engine, err}
-	}()
-
-	timer := time.NewTimer(startupTimeout)
-	defer timer.Stop()
-
-	var engine *mermaid.RenderEngine
-
-	select {
-	case result := <-started:
-		if result.err != nil {
-			cancel()
-
-			return nil, result.err
-		}
-
-		engine = result.engine
-
-	case <-timer.C:
-		cancel()
-
-		// Waited for, since chromedp may still be reaping the Chrome it was
-		// starting; an engine that finished starting meanwhile is stopped.
-		if result := <-started; result.err == nil {
-			result.engine.Cancel()
+	if !timer.Stop() {
+		// An engine that finished starting just as the bound passed is on a
+		// cancelled context, so it is stopped rather than handed out.
+		if err == nil {
+			engine.Cancel()
 		}
 
 		return nil, fmt.Errorf(
@@ -232,6 +206,12 @@ func (e *Engine) start(life context.Context) (mermaid.Renderer, error) {
 				"which usually means the machine is too loaded or too small to run it",
 			startupTimeout,
 		)
+	}
+
+	if err != nil {
+		cancel()
+
+		return nil, err
 	}
 
 	engine.SetRenderTimeout(renderTimeout)

@@ -61,7 +61,7 @@ func await(t *testing.T, got <-chan error, limit time.Duration) error {
 	case err := <-got:
 		return err
 	case <-time.After(limit):
-		t.Fatal("the render was still waiting for the browser to start")
+		t.Fatal("the render had not come back")
 
 		return nil
 	}
@@ -85,18 +85,21 @@ func TestStartupIsBounded(t *testing.T) {
 }
 
 // TestRenderAfterAStartupThatTimedOut: the next diagram launches a browser of
-// its own, and that one outlives the startup bound it was started under.
+// its own, and the diagram after that is drawn in the same one.
 func TestRenderAfterAStartupThatTimedOut(t *testing.T) {
 	engine, _ := useEngine(t, EngineChrome)
 	silentBrowser(t, engine)
+
+	usual := startupTimeout
+
 	shortStartup(t, 500*time.Millisecond)
 
 	require.Error(t, await(t, renderResult(t, engine), 20*time.Second))
 
 	engine.extraOptions = nil
-	startupTimeout = time.Minute
+	startupTimeout = usual
 
-	require.NoError(t, await(t, renderResult(t, engine), 2*time.Minute))
+	require.NoError(t, await(t, renderResult(t, engine), 2*usual))
 
 	// No start could finish within this, so drawing again shows the browser
 	// already started is the one in use.
@@ -105,8 +108,8 @@ func TestRenderAfterAStartupThatTimedOut(t *testing.T) {
 	assert.NoError(t, await(t, renderResult(t, engine), 2*time.Minute))
 }
 
-// TestCloseDuringASilentStartReturnsAtOnce: Close ends a launch that is still
-// inside its startup bound rather than waiting the bound out.
+// TestCloseDuringASilentStartReturnsAtOnce: Close ends a real launch that is
+// still inside its startup bound rather than waiting the bound out.
 func TestCloseDuringASilentStartReturnsAtOnce(t *testing.T) {
 	engine, _ := useEngine(t, EngineChrome)
 	silentBrowser(t, engine)
@@ -120,10 +123,5 @@ func TestCloseDuringASilentStartReturnsAtOnce(t *testing.T) {
 	engine.Close()
 	assert.Less(t, time.Since(began), 5*time.Second)
 
-	select {
-	case err := <-got:
-		require.ErrorIs(t, err, errClosed)
-	case <-time.After(5 * time.Second):
-		t.Fatal("the render was not released by Close")
-	}
+	require.ErrorIs(t, await(t, got, 5*time.Second), errClosed)
 }
