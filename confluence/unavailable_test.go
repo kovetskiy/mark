@@ -703,10 +703,31 @@ func TestRestrictPageUpdatesGivesUpAfterMaxAttempts(t *testing.T) {
 	api, server, page := newRestrictUnavailableAPI(t, maxAttempts)
 
 	err := api.RestrictPageUpdates(context.Background(), page, "")
-	require.Error(t, err)
+	var status *StatusError
+	require.ErrorAs(t, err, &status)
+	assert.Equal(t, http.StatusInternalServerError, status.StatusCode)
 	assert.Contains(t, err.Error(), "500")
 	assert.Empty(t, server.Page(page.ID).UpdateRestrictedTo)
 	assert.Equal(t, maxAttempts, server.CountRequests(http.MethodPost, "/restriction"))
+}
+
+// A restriction that cannot be read is no reason to leave the page unlocked:
+// the lock is sent as it would be without the read. The page is locked
+// already, so the POST goes out only because the read failed.
+func TestRestrictPageUpdatesLocksWhenTheRestrictionCannotBeRead(t *testing.T) {
+	api, server, page := newRestrictUnavailableAPI(t, 0)
+	server.SetRestrictions(page.ID, RestrictUpdate, []string{"acct-me"}, nil)
+	failWhen(server, false, func(r *http.Request) (int, string, bool) {
+		if r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/restriction/byOperation") {
+			return http.StatusForbidden, `{"message":"not permitted"}`, true
+		}
+		return 0, "", false
+	})
+
+	require.NoError(t, api.RestrictPageUpdates(context.Background(), page, ""))
+	assert.Equal(t, []string{"acct-me"}, server.Page(page.ID).UpdateRestrictedTo)
+	assert.Equal(t, 1, server.CountRequests(http.MethodGet, "/restriction/byOperation"))
+	assert.Equal(t, 1, server.CountRequests(http.MethodPost, "/restriction"))
 }
 
 // A 503 on the lock is already marked unavailable, with the Retry-After it
@@ -722,4 +743,20 @@ func TestRestrictPageUpdatesWaitsForRetryAfter(t *testing.T) {
 	require.NoError(t, api.RestrictPageUpdates(context.Background(), &PageInfo{ID: stored.ID, Title: stored.Title}, ""))
 	assert.Equal(t, []string{"acct-me"}, server.Page(stored.ID).UpdateRestrictedTo)
 	assert.Equal(t, []string{"7"}, waited)
+}
+
+// Only a 5xx is sent again: a 4xx says what was asked is wrong, and would
+// be answered the same way every time.
+func TestRestrictPageUpdatesDoesNotSendAgainAfterA4xx(t *testing.T) {
+	api, server, page := newRestrictUnavailableAPI(t, 0)
+	failWhen(server, false, func(r *http.Request) (int, string, bool) {
+		if isPost("/restriction")(r) {
+			return http.StatusBadRequest, `{"message":"bad"}`, true
+		}
+		return 0, "", false
+	})
+
+	err := api.RestrictPageUpdates(context.Background(), page, "")
+	assert.Equal(t, http.StatusBadRequest, statusOf(err))
+	assert.Equal(t, 1, server.CountRequests(http.MethodPost, "/restriction"))
 }
