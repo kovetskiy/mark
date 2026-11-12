@@ -163,7 +163,11 @@ string: `ac:default-parameter`, `ac:task-id` and `ac:task-status`.
 The text is still escaped for the storage format, so `&` and `<` are safe to
 write, and a character reference such as `&amp;` or `&#42;` is the character it
 names. An `<ac:...>` or `<ri:...>` element, a CDATA section and a comment inside
-a parameter are kept as they are; any other tag there is text.
+a parameter are kept as they are; any other tag there is text. In a table cell
+a pipe is written `\|`, as it is anywhere in a cell, and published as `|`.
+
+The opening and the closing tag have to stand in one paragraph: a value with a
+blank line in it is read as Markdown, as is one whose closing tag is missing.
 
 `<ac:rich-text-body>` is not such an element: a macro's body is read as
 Markdown, as before.
