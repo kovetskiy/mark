@@ -63,6 +63,23 @@ func TestOrphansLeaveOutADocumentRecordedInAnotherSpace(t *testing.T) {
 	assert.Equal(t, "3", entry.PageID)
 }
 
+// TestForgetMovedReadsASpaceKeyWithoutRegardToCase: the space a document left
+// stops tracking it however the caller spells that space's key.
+func TestForgetMovedReadsASpaceKeyWithoutRegardToCase(t *testing.T) {
+	ctx := t.Context()
+	server := spaceChangeServer(t)
+
+	next := runStore(t, server, "keep.md", "moved.md")
+	require.NoError(t, next.Record(ctx, "ONE", "keep.md", "1", "Keep", "k"))
+	require.NoError(t, next.Record(ctx, "TWO", "moved.md", "3", "Moved", "m"))
+
+	next.ForgetMoved("one")
+
+	_, known, err := next.Recorded(ctx, "ONE", "moved.md")
+	require.NoError(t, err)
+	assert.False(t, known)
+}
+
 // TestOrphansKeepADocumentOnlyLookedUpInAnotherSpace: until the document is
 // recorded where it now publishes, the space it left keeps its entry.
 func TestOrphansKeepADocumentOnlyLookedUpInAnotherSpace(t *testing.T) {

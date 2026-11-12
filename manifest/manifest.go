@@ -2151,6 +2151,7 @@ func (s *Store) ForgetMoved(spaceKey string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	spaceKey = s.loadedKey(spaceKey)
 	state, ok := s.spaces[spaceKey]
 	if !ok || state.untracked {
 		return
