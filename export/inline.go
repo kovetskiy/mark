@@ -303,8 +303,55 @@ func plainAttrs(n *node, allowed ...string) bool {
 	return true
 }
 
+// plainLink reports whether an <a> can be written as a Markdown link: it says
+// nothing a link cannot, and publishing reads its address as written.
 func (w *inlineWriter) plainLink(n *node) bool {
-	return plainAttrs(n, "href", "title")
+	if !plainAttrs(n, "href", "title") {
+		return false
+	}
+
+	href := n.attr("href")
+	if w.c.opts.Reading || !linkNamesFile(href) {
+		return true
+	}
+
+	_, _, exported := w.exportedPage(href)
+
+	return exported
+}
+
+// linkNamesFile reports whether publishing would look beside the document
+// for what a link's address names: a document to link to as a page, a file to
+// attach, or with "ac:" a page by its title. On the page the address is
+// relative to the page, so it is kept as the <a> it was, which publishing
+// leaves alone.
+func linkNamesFile(href string) bool {
+	if href == "" || strings.Contains(href, "://") {
+		return false
+	}
+
+	for _, prefix := range []string{"#", "/", "mailto:"} {
+		if strings.HasPrefix(href, prefix) {
+			return false
+		}
+	}
+
+	return true
+}
+
+// imageNamesFile is linkNamesFile for an image's address. Publishing looks
+// beside the document for any image that names no host.
+func imageNamesFile(src string) bool {
+	return !strings.Contains(src, "://")
+}
+
+// exportedPage is the file of the exported page a URL on the page points at.
+func (w *inlineWriter) exportedPage(href string) (path, title string, ok bool) {
+	if w.c.opts.PageURLPath == nil {
+		return "", "", false
+	}
+
+	return w.c.opts.PageURLPath(href)
 }
 
 // link writes an <a>, as an autolink when it shows its own address.
@@ -319,11 +366,7 @@ func (w *inlineWriter) link(n *node) {
 	text := n.textContent()
 
 	dest := destination(href)
-	var path, pageTitle string
-	var exported bool
-	if w.c.opts.PageURLPath != nil {
-		path, pageTitle, exported = w.c.opts.PageURLPath(href)
-	}
+	path, pageTitle, exported := w.exportedPage(href)
 	if exported {
 		dest = destination(pathDestination(path))
 		// A link showing its own address would go on showing the old URL; it
@@ -685,6 +728,11 @@ func (w *inlineWriter) imageMarkdown(n *node, use bool) (string, bool) {
 	case target.is("ri:url") && plainAttrs(target, "ri:value"):
 		src = target.attr("ri:value")
 		if src == "" {
+			return "", false
+		}
+		// Kept as storage format, which publishing leaves alone: on the
+		// page the address is relative to the page.
+		if !w.c.opts.Reading && imageNamesFile(src) {
 			return "", false
 		}
 	default:
