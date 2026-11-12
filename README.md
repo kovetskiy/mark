@@ -37,6 +37,7 @@ The reference is split by topic under [`docs/`](docs/):
 * [Page metadata](docs/metadata.md): YAML front matter and header comments,
   layout and appearance, restrictions, page titles, labels and content
   properties.
+* [Confluence metadata commands](docs/metadata_cli.md): using `mark metadata`.
 * [Where pages go](docs/page-tree.md): parents and folders, parents from the
   directory tree, tracking pages across renames, removing pages whose files
   are gone, and listing, moving, copying, renaming, removing and watching pages
@@ -152,11 +153,12 @@ DESCRIPTION:
    Mark is a tool to update Atlassian Confluence pages from markdown. Documentation is available here: https://github.com/kovetskiy/mark
 
 COMMANDS:
-   publish  publish markdown files to Confluence
-   export   export a Confluence page, or a tree of them, to markdown (experimental)
-   page     list, move, copy, rename, archive, delete or watch Confluence pages (experimental)
-   doctor   check that mark can reach Confluence, log in, and publish to a space
-   help, h  Shows a list of commands or help for one command
+   publish   publish markdown files to Confluence
+   export    export a Confluence page, or a tree of them, to markdown (experimental)
+   page      list, move, copy, rename, archive, delete or watch Confluence pages (experimental)
+   doctor    check that mark can reach Confluence, log in, and publish to a space
+   metadata  work with Confluence metadata
+   help, h   Shows a list of commands or help for one command
 
 GLOBAL OPTIONS:
    --config string, -c string    use the specified configuration file. (default: "${HOME}/.config/mark.toml") [$MARK_CONFIG]
