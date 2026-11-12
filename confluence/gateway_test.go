@@ -492,16 +492,20 @@ func TestGatewayReadsATrashedPageAsNotFound(t *testing.T) {
 	}
 }
 
-// TestGatewayReadsAnArchivedPage: an archived page is still a page, on v1 and
-// on v2 alike.
-func TestGatewayReadsAnArchivedPage(t *testing.T) {
-	ctx := context.Background()
-	server := confluencetest.New(t)
-	api := confluence.NewAPI(server.URL+"/ex/confluence/cloud-id", confluence.Options{Username: "user", Password: "token"})
-	kept := server.AddPage("DOCS", "Kept", "page", "")
-	require.NoError(t, api.ArchivePage(ctx, kept.ID))
+// TestAnArchivedPageIsRead: an archived page is still a page, on v1 and
+// through the gateway alike.
+func TestAnArchivedPageIsRead(t *testing.T) {
+	for name, prefix := range map[string]string{"v1": "", "gateway": "/ex/confluence/cloud-id"} {
+		t.Run(name, func(t *testing.T) {
+			ctx := context.Background()
+			server := confluencetest.New(t)
+			api := confluence.NewAPI(server.URL+prefix, confluence.Options{Username: "user", Password: "token"})
+			kept := server.AddPage("DOCS", "Kept", "page", "")
+			require.NoError(t, api.ArchivePage(ctx, kept.ID))
 
-	page, err := api.GetPageByID(ctx, kept.ID)
-	require.NoError(t, err)
-	assert.Equal(t, "archived", page.Status)
+			page, err := api.GetPageByID(ctx, kept.ID)
+			require.NoError(t, err)
+			assert.Equal(t, "archived", page.Status)
+		})
+	}
 }
