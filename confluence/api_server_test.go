@@ -903,6 +903,26 @@ func TestFindPageCacheIgnoresCase(t *testing.T) {
 	assert.Equal(t, created.ID, found.ID)
 }
 
+// A miss cached for space "docs" must not hide a page created in "DOCS".
+func TestFindPageCacheIgnoresTheCaseOfTheSpaceKey(t *testing.T) {
+	api, server := newAPI(t)
+	server.AddPage("DOCS", "Root", "page", "")
+
+	missing, err := api.FindPage(context.Background(), "docs", "Team", "page")
+	require.NoError(t, err)
+	require.Nil(t, missing)
+
+	parent, err := api.FindPage(context.Background(), "DOCS", "Root", "page")
+	require.NoError(t, err)
+	created, err := api.CreatePage(context.Background(), "DOCS", "page", parent, "Team", "")
+	require.NoError(t, err)
+
+	found, err := api.FindPage(context.Background(), "docs", "Team", "page")
+	require.NoError(t, err)
+	require.NotNil(t, found, "docs and DOCS are one space")
+	assert.Equal(t, created.ID, found.ID)
+}
+
 // TestStatusErrorCarriesTheFakesMessage: the fake answers a failure the way
 // v1 does, with a message, and that message is what reaches the caller.
 func TestStatusErrorCarriesTheFakesMessage(t *testing.T) {
