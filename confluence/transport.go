@@ -4,11 +4,13 @@ import (
 	"context"
 	"crypto/tls"
 	"errors"
+	"fmt"
 	"io"
 	"math/rand/v2"
 	"net"
 	"net/http"
 	"net/http/cookiejar"
+	"net/url"
 	"strconv"
 	"time"
 
@@ -58,6 +60,7 @@ func newHTTPClient(insecureSkipVerify bool, base *http.Client) *http.Client {
 		if client.Jar == nil {
 			client.Jar = newCookieJar()
 		}
+		client.CheckRedirect = checkRedirect(client.CheckRedirect)
 
 		return &client
 	}
@@ -86,9 +89,74 @@ func newHTTPClient(insecureSkipVerify bool, base *http.Client) *http.Client {
 	}
 
 	return &http.Client{
-		Jar:       newCookieJar(),
-		Transport: &retryTransport{base: transport},
+		Jar:           newCookieJar(),
+		Transport:     &retryTransport{base: transport},
+		CheckRedirect: checkRedirect(nil),
 	}
+}
+
+// maxRedirects is how many redirects one request follows, as many as
+// net/http's own policy allows.
+const maxRedirects = 10
+
+// checkRedirect is the redirect policy of the client: next, or net/http's
+// own limit when that is nil, after the Authorization header has been taken
+// off a request that a redirect sends to another server than the one it was
+// made to.
+//
+// net/http keeps the header for any port and scheme of the same host name,
+// but the basic auth or token is the configured server's, as the same host
+// and port are what SameInstance and attachment links are held to. It is
+// kept from http to https on the same host and the default ports, which is
+// how a proxy moves a whole site to TLS. Once off it stays off, as it does
+// in net/http, for a chain that comes back.
+func checkRedirect(next func(req *http.Request, via []*http.Request) error) func(*http.Request, []*http.Request) error {
+	return func(req *http.Request, via []*http.Request) error {
+		if len(via) > 0 && req.Header.Get("Authorization") != "" {
+			hops := append(via[1:len(via):len(via)], req)
+			for _, hop := range hops {
+				if keepsAuthorization(via[0].URL, hop.URL) {
+					continue
+				}
+
+				req.Header.Del("Authorization")
+				log.Warn().
+					Str("requested", via[0].URL.Redacted()).
+					Str("redirected_to", hop.URL.Redacted()).
+					Msg("a redirect led to another server than the one requested, " +
+						"so the request goes on without its Authorization header; " +
+						"if Confluence is served there, use that address as the base URL")
+
+				break
+			}
+		}
+
+		if next != nil {
+			return next(req, via)
+		}
+		if len(via) >= maxRedirects {
+			return fmt.Errorf("stopped after %d redirects", maxRedirects)
+		}
+
+		return nil
+	}
+}
+
+// keepsAuthorization says whether a request first made to requested carries
+// its Authorization header on to target: the same scheme, host and port, or
+// https on the same host when both are on their default ports.
+func keepsAuthorization(requested, target *url.URL) bool {
+	from, errA := originOf(requested)
+	to, errB := originOf(target)
+	if errA != nil || errB != nil {
+		return false
+	}
+
+	if from.scheme == "http" && from.port == 80 && to.scheme == "https" && to.port == 443 {
+		return from.host == to.host
+	}
+
+	return from == to
 }
 
 // newCookieJar returns a jar for Confluence Server's session cookie, or nil

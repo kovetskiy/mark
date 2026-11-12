@@ -237,6 +237,10 @@ empty one, or a page or folder that comes without its id. A write already sent i
 it; the backoff before retrying one is cut short at once, unless the write
 finishes one already given grace and so waits within it. An update or move answered with
 a 2xx that is not JSON is checked by reading the page's version back (`confirmVersion`).
+A write that a 301, 302 or 303 turned into a GET is not answered by what answers the GET:
+it ends in `ErrWriteRedirected`, unless that is a login page, and a redirect to another
+scheme, host or port goes without the Authorization header, http to https on the default
+ports aside (`checkRedirect`, around a caller's own `CheckRedirect` too).
 A timeout is never retried. A call site asks `errors.Is`/`statusOf` rather than reading a
 status, and wraps through `requestError`. Anything that remembers an answer -- a cache, a "this
 endpoint is missing" flag, the platform -- must not remember one `IsCancellation` reports.

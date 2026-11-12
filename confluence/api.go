@@ -647,12 +647,15 @@ type Options struct {
 	// NewAPI would build. NewAPI wraps a copy of it, leaving it unchanged:
 	// mark's retries go around its Transport (http.DefaultTransport when
 	// nil), and a cookie jar is added when it has none, since Confluence
-	// Server expects its session cookie back. Everything else is the
-	// client's own -- proxy, TLS, redirects, and timeouts. NewAPI's client
-	// bounds the dial, the TLS handshake and the wait for response headers,
-	// and sets no Timeout, which would cap a large upload. A Timeout here
-	// caps each request together with its retries and, unlike a context's
-	// end, gives a write already sent no grace to answer.
+	// Server expects its session cookie back. Its CheckRedirect still decides
+	// which redirects are followed, after the Authorization header has been
+	// taken off a request redirected to another server than the one it was
+	// made to. Everything else is the client's own -- proxy, TLS and
+	// timeouts. NewAPI's client bounds the dial, the TLS handshake and the
+	// wait for response headers, and sets no Timeout, which would cap a
+	// large upload. A Timeout here caps each request together with its
+	// retries and, unlike a context's end, gives a write already sent no
+	// grace to answer.
 	HTTPClient *http.Client
 
 	// KeepConcurrentEdits stops UpdatePage from overwriting a page someone
