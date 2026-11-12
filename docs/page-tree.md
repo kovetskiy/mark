@@ -160,6 +160,7 @@ file, no commit. The record lives in Confluence.
 | file renamed | content fingerprint, matched against paths that stopped appearing |
 | parent page renamed | the page the declared parent chain resolved to last run, whatever it is called now |
 | parent and child retitled in one run | the run's own document publishing the parent's new title, and the page it published last time, before that document's turn to retitle it |
+| title given up by one document and taken by another in one run | the title still finds the first document's page, so that document is published first and retitles it, and the other gets a page of its own |
 | folder renamed in Confluence | the recorded folder ID, reused rather than duplicated |
 | source file deleted | a recorded path absent from a run whose pattern covered it |
 | two files claiming one page | the reverse index, when the second one is recorded |
@@ -167,7 +168,14 @@ file, no commit. The record lives in Confluence.
 
 A retitle is written even under `--changes-only`. The content fingerprint would
 otherwise match, the update would be skipped, and the page would keep its old
-title indefinitely.
+title indefinitely. That holds for a title changed only in case, which the
+title lookup still finds the page by, with or without `--track-pages`.
+
+A document taking a title another document of the run gives up waits for that
+one: it is published ahead of its turn, and the report lists it there. If it
+fails, or `--no-overwrite` leaves its page alone, the page keeps the title and
+the document taking it is refused rather than published over that page. Two
+documents that swap titles each publish to the page their new title finds.
 
 Renaming a file is the awkward case: the path is the key, so a rename is a miss,
 and when the title comes from the filename the title lookup misses too. What
