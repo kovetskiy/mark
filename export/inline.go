@@ -34,10 +34,11 @@ func (c *converter) inline(ctx inlineContext) *inlineWriter {
 }
 
 func (w *inlineWriter) finish() string {
-	out := w.b.String()
-	// A hard break at the very end breaks nothing, and Markdown would read
-	// the backslash as text.
-	return strings.TrimSuffix(strings.TrimRight(out, " \n"), "\\")
+	// Hard breaks at the very end break nothing, and Markdown would read
+	// the backslash of one as text.
+	out, _ := w.withoutTrailingBreaks()
+
+	return strings.TrimRight(out, " \n")
 }
 
 func (w *inlineWriter) write(s string) {
