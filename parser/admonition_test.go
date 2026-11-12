@@ -173,7 +173,6 @@ func outline(t *testing.T, source string) []string {
 	t.Helper()
 
 	md := parser.New(
-		parser.WithExtensions(parser.NewCommonMark()),
 		parser.WithBlockParsers(util.Prioritized(cparser.NewAdmonitionParser(), 100)),
 	)
 
@@ -278,6 +277,19 @@ func TestAdmonitionBodyIsIndentedOrClosed(t *testing.T) {
 			want: []string{
 				"List", "  ListItem", "    Paragraph:item", "    !note", "    Paragraph:in the item", "Paragraph:after",
 			},
+		},
+		{
+			name:   "title only in a list item, then the next item",
+			source: "- one\n- !!! note \"T\"\n  in the item\n- three\n",
+			want: []string{
+				"List", "  ListItem", "    Paragraph:one", "  ListItem", "    !note", "    Paragraph:in the item",
+				"  ListItem", "    Paragraph:three",
+			},
+		},
+		{
+			name:   "ended by the block that follows it",
+			source: "  !!! note \"T\"\n  body\n> quoted\n",
+			want:   []string{"!note", "Paragraph:body", "Blockquote", "  Paragraph:quoted"},
 		},
 		{
 			name:   "title only in a blockquote",
