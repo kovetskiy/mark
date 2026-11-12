@@ -208,3 +208,77 @@ func TestSaveReportsAShardItCouldNotSave(t *testing.T) {
 	require.NoError(t, store.Save(ctx))
 	assert.Equal(t, map[string]string{"a.md": "2", apart: "3"}, manifestPages(t, server, id))
 }
+
+// TestSaveWritesTheRestWhenOneMappingIsRefused: the folder and parent mappings
+// are each one property written before the shards. A write of one that
+// Confluence refuses is returned, and everything else is saved all the same.
+func TestSaveWritesTheRestWhenOneMappingIsRefused(t *testing.T) {
+	for _, key := range []string{manifest.FolderPropertyKey, manifest.ParentPropertyKey} {
+		t.Run(key, func(t *testing.T) {
+			ctx := t.Context()
+			first, server := newStore(t)
+			server.AddSpace("DOCS")
+			id := spaceID(t, server, "DOCS")
+
+			require.NoError(t, first.RecordFolder(ctx, "DOCS", "Guides", "folder-1"))
+			require.NoError(t, first.RecordParent(ctx, "DOCS", "Handbook", "10"))
+			require.NoError(t, first.Save(ctx))
+
+			store := newStoreOn(t, server)
+			require.NoError(t, store.RecordFolder(ctx, "DOCS", "Reference", "folder-2"))
+			require.NoError(t, store.RecordParent(ctx, "DOCS", "Handbook / Team", "11"))
+			require.NoError(t, store.Record(ctx, "DOCS", "a.md", "1", "A", ""))
+
+			failWrites(server, http.StatusRequestEntityTooLarge, `{"message":"too large"}`,
+				server.SpaceProperty(id, key).ID)
+
+			err := store.Save(ctx)
+			require.Error(t, err, "the refused write must be reported")
+			var status *confluence.StatusError
+			require.ErrorAs(t, err, &status)
+			assert.Equal(t, http.StatusRequestEntityTooLarge, status.StatusCode)
+
+			assert.Equal(t, map[string]string{"a.md": "1"}, manifestPages(t, server, id),
+				"the page mapping is saved")
+			for _, other := range []string{manifest.FolderPropertyKey, manifest.ParentPropertyKey} {
+				want := 2
+				if other == key {
+					want = 1
+				}
+				assert.Equal(t, want, server.SpaceProperty(id, other).Version, other)
+			}
+		})
+	}
+}
+
+// TestSaveWritesTheRestWhenOneShardIsRefused: one shard's failed write keeps
+// neither the other shards nor the other spaces from being saved.
+func TestSaveWritesTheRestWhenOneShardIsRefused(t *testing.T) {
+	ctx := t.Context()
+	first, server := newStore(t)
+	server.AddSpace("DOCS")
+	server.AddSpace("TEAM")
+	docs, team := spaceID(t, server, "DOCS"), spaceID(t, server, "TEAM")
+
+	// The refused shard is the first written: of the first space, and before
+	// the shard of the other path.
+	low, high := "a.md", otherShard(t, "a.md")
+	if manifest.ShardFor(low) > manifest.ShardFor(high) {
+		low, high = high, low
+	}
+
+	require.NoError(t, first.Record(ctx, "DOCS", low, "1", "A", ""))
+	require.NoError(t, first.Save(ctx))
+
+	store := newStoreOn(t, server)
+	require.NoError(t, store.Record(ctx, "DOCS", low, "2", "A", ""))
+	require.NoError(t, store.Record(ctx, "DOCS", high, "3", "B", ""))
+	require.NoError(t, store.Record(ctx, "TEAM", "a.md", "4", "A", ""))
+
+	failWrites(server, http.StatusInternalServerError, `{"message":"unavailable"}`, shardOf(server, docs, low).ID)
+
+	require.Error(t, store.Save(ctx))
+
+	assert.Equal(t, map[string]string{low: "1", high: "3"}, manifestPages(t, server, docs))
+	assert.Equal(t, map[string]string{"a.md": "4"}, manifestPages(t, server, team))
+}
