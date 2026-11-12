@@ -22,6 +22,16 @@ Selectors must be explicit command-line arguments; environment and configuration
 
 `--space` selects labels on a space's content; `--space-id` selects labels on the space object.
 
+The `PREFIX` column identifies the label namespace:
+
+| Prefix | Meaning |
+| --- | --- |
+| `global` | Shared labels |
+| `my` | Personal labels |
+| `team` | Historical namespace used to group spaces into categories |
+
+These namespaces are separate from the object or space selected by the command.
+
 ## Listing statuses
 
 `mark metadata statuses list` lists content statuses from the selected source.
@@ -39,7 +49,16 @@ Personal statuses are the user's creations, independent of statuses assigned to 
 
 ## Listing output
 
-The list commands write one JSON array to stdout, including every result.
+The list commands show a table by default, with names, IDs, and label prefixes or status colors.
+Empty listings display `No labels found.` or `No statuses found.`.
+
+Use `--json` to write one JSON array to stdout instead:
+
+```shell
+mark metadata labels list --space RD --json
+mark metadata statuses list --space RD --json
+```
+
 Labels contain `id` (string), `name`, and `prefix`.
 Statuses contain `id` (integer), `name`, and `color`.
-An empty listing or an unassigned page status produces `[]`.
+In JSON output, an empty listing or an unassigned page status produces `[]`.
