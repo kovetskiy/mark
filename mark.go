@@ -1474,8 +1474,10 @@ func stepPast(ctx context.Context, continueOnError bool, file string, err error)
 // use.
 //
 // A Publisher is meant for one batch of files: the folders and link answers it
-// keeps are never forgotten, and may go stale. A long-lived program makes a
-// new one for each batch rather than holding one open.
+// keeps are never forgotten, and may go stale. So may what its
+// confluence.API remembers of the pages it looked up; see confluence.NewAPI.
+// A long-lived program makes a new one of each for each batch rather than
+// holding them open.
 //
 // A Publisher sees one file at a time, never the run's whole list, so it does
 // none of what Run does across files, and PublishConfig has no setting for any

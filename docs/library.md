@@ -354,6 +354,12 @@ manifest and writes no report, so a document's `Key` is not used: its page is
 found by its title in its space, as a file's is, and placed under its parents.
 Its relative links are looked for in its `FS`, or on disk around `Path`.
 
+A `Publisher` and the `confluence.API` it is given are meant for one batch.
+The API remembers the pages it has looked up by title, a title that named no
+page included, for as long as it lives, and does not notice one that something
+else creates, retitles or removes in the meantime. A program that runs for long
+makes a new API and a new `Publisher` for each batch.
+
 ## Errors
 
 A run that fails on a document returns a `*mark.FileError` naming its `Path`
