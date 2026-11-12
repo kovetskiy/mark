@@ -10,37 +10,40 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// within fails the test when convert takes longer than limit, which is far
-// more than it needs and far less than work that grows with the square of
-// the page would take.
-func within(t *testing.T, limit time.Duration, storage string) *Document {
+// convertLimit is far more than a conversion needs, under the race detector
+// on a machine busy with other tests too, and far less than work that grows
+// with the square of the page would take.
+const convertLimit = 10 * time.Second
+
+// within fails the test when convert takes longer than convertLimit.
+func within(t *testing.T, storage string) *Document {
 	t.Helper()
 
 	start := time.Now()
 	doc, err := Convert(storage, Options{Space: "DOCS"})
 	require.NoError(t, err)
-	require.Less(t, time.Since(start), limit)
+	require.Less(t, time.Since(start), convertLimit)
 
 	return doc
 }
 
 func TestConvertManyDateOpenings(t *testing.T) {
-	const count = 8000
+	const count = 20000
 
 	t.Run("never closed", func(t *testing.T) {
 		text := strings.Repeat("@date(", count)
-		doc := within(t, 2*time.Second, "<p>"+text+"</p>")
+		doc := within(t, "<p>"+text+"</p>")
 		assert.Equal(t, text+"\n", doc.Markdown)
 	})
 
 	t.Run("closed at the end", func(t *testing.T) {
-		doc := within(t, 2*time.Second, "<p>"+strings.Repeat("@date(", count)+"x)</p>")
+		doc := within(t, "<p>"+strings.Repeat("@date(", count)+"x)</p>")
 		assert.Equal(t, strings.Repeat(`\@date(`, count)+"x)\n", doc.Markdown)
 	})
 
 	t.Run("each followed by spaces", func(t *testing.T) {
 		text := strings.Repeat("@date(  ", count)
-		doc := within(t, 2*time.Second, "<p>"+text+")</p>")
+		doc := within(t, "<p>"+text+")</p>")
 		assert.Equal(t, strings.Repeat(`\@date(  `, count-1)+"@date(  )\n", doc.Markdown)
 	})
 }

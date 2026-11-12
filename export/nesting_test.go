@@ -3,9 +3,9 @@ package export
 import (
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // nested is open, text and close, depth times one inside the other.
@@ -31,7 +31,7 @@ func TestConvertDeepNesting(t *testing.T) {
 		"blockquotes in bullets": nested(depth, "<ul><li><blockquote>", "<p>a</p>", "</blockquote></li></ul>"),
 	} {
 		t.Run(name, func(t *testing.T) {
-			doc := within(t, 3*time.Second, storage)
+			doc := within(t, storage)
 			assert.Less(t, len(doc.Markdown), 3*len(storage))
 		})
 	}
@@ -65,7 +65,7 @@ func TestConvertNestingAsMarkdown(t *testing.T) {
 			kept := nested(2, test.open, test.text, test.closing)
 
 			md, published := republish(t, nested(maxNesting+2, test.open, test.text, test.closing))
-			assert.True(t, strings.HasSuffix(md, " "+kept+"\n"), md[len(md)-2*len(kept):])
+			assert.True(t, strings.HasSuffix(md, " "+kept+"\n"), md)
 			assert.Equal(t, canonical(t, strings.Repeat(test.open+test.text, maxNesting-1)+test.open+test.last+
 				kept+strings.Repeat(test.closing, maxNesting)), published)
 		})
@@ -74,6 +74,18 @@ func TestConvertNestingAsMarkdown(t *testing.T) {
 	t.Run("tasks", func(t *testing.T) {
 		kept := nested(2, taskOpen, "a", taskClose)
 		md := convert(t, nested(maxNesting+2, taskOpen, "a", taskClose))
-		assert.True(t, strings.HasSuffix(md, "- [ ] a\n\n"+strings.Repeat("  ", maxNesting)+kept+"\n"), md[len(md)-2*len(kept):])
+		assert.True(t, strings.HasSuffix(md, "- [ ] a\n\n"+strings.Repeat("  ", maxNesting)+kept+"\n"), md)
 	})
+}
+
+// TestTextContentDeepNesting: a link reads the text it shows at every level
+// of markup it is nested in, so reading it must not build a string per level.
+func TestTextContentDeepNesting(t *testing.T) {
+	const depth = 1000
+
+	root, err := parseStorage(nested(depth, `<a href="https://example.com">`, "a", "</a>"))
+	require.NoError(t, err)
+	require.Equal(t, strings.Repeat("a", depth), root.textContent())
+
+	assert.Less(t, testing.AllocsPerRun(10, func() { _ = root.textContent() }), float64(depth/10))
 }
