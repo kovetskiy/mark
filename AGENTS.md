@@ -57,7 +57,7 @@ tests, which take minutes. There is currently no `-short` skip.
 | `internal/htmlblock` | an HTML block's lines without its closing line, as goldmark v1 gave them |
 | `internal/lazy` | the start-on-first-use, discard and close of a run's browser and mermaid engine; Close cancels a start in flight |
 | `internal/mdsource` | the raw Markdown before goldmark: where the code is, `<!-- ac:ignore -->` regions, CRLF and BOM normalisation |
-| `internal/rendercheck` | the rendering settings' rules (scales, image alignment) that `mark.Config` validation and the publish flag checks share |
+| `internal/rendercheck` | the rendering settings' rules (scales, image alignment, feature names) that `mark.Config` validation and the publish flag checks share |
 | `internal/syntax` | what publishing and export must read alike: heading ids and attribute blocks, anchor keys, the `page#anchor` split, code block info strings and language aliases, admonition markers |
 
 Pipeline in `publishRun.processFile`: read → normalise CRLF → extract metadata → resolve relative
@@ -186,7 +186,9 @@ that.
 **7. `--features` replaces the defaults, it does not add to them.** Defaults are
 `mermaid,mention`, and `none` switches every optional feature off. `markdown/features.go`
 is the one list: `KnownFeatures()` and `DefaultFeatures()` there feed the `--features` flag,
-its usage string and its check in `util/flags.go`. When adding a feature: name it in
+its usage string and the check of its names, `rendercheck.Features`, which `util/flags.go`
+and `RenderingConfig.validate` both apply. A nil `Rendering.Features` is no optional
+feature, not the defaults. When adding a feature: name it in
 `knownFeatures`; if it touches goldmark, register its parser options and renderer in
 `markdownFeatures` and place it in `featureOrder`; and document it under `docs/`
 (diagrams and other rendering in `docs/formatting.md`). The usage string changes with the
