@@ -66,8 +66,8 @@ A key that holds one text value -- `space`, `title`, `type`, `layout`,
 `sidebar`, `emoji` and `image-align` -- reads its value as it is written, the
 way a header does, even where YAML would make a number, a boolean or a date of
 it: `title: 2024` is the title `2024`, and `title: 1.0` is `1.0`, with or
-without quotes. A list or a mapping under one of them is ignored, and warned
-about.
+without quotes. A key left empty, or given `~` or `null`, sets nothing. A list
+or a mapping under one of them is ignored, and warned about.
 
 Note that the front matter keys are plural where the HTML headers are singular:
 `attachments`, `parents`, `folders`, `labels` and `properties`. A key mark does
