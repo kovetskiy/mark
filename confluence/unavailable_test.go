@@ -737,7 +737,7 @@ func TestRestrictPageUpdatesLocksWhenTheRestrictionCannotBeRead(t *testing.T) {
 	assert.Equal(t, 1, server.CountRequests(http.MethodPost, "/restriction"))
 }
 
-// A 503 on the lock is already marked unavailable, with the Retry-After it
+// A gateway's 504 on the lock is already marked unavailable, with the Retry-After it
 // came with; marking it again for the 500s must not drop that wait.
 func TestRestrictPageUpdatesWaitsForRetryAfter(t *testing.T) {
 	api, server, page := newRestrictUnavailableAPI(t, 1, isPost("/restriction"))
