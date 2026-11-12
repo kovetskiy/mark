@@ -310,14 +310,19 @@ type DeleteOptions struct {
 // Delete moves a page to the trash, where Confluence keeps it recoverable. A
 // page with children is refused unless Recursive is set, and then its
 // descendants are trashed first, deepest first, so that every delete is of a
-// page with nothing beneath it.
+// page with nothing beneath it. The space homepage is refused wherever it is
+// among them, before anything is trashed.
 func Delete(ctx context.Context, api *confluence.API, ref Ref, options DeleteOptions, out io.Writer) error {
 	target, err := Resolve(ctx, api, ref)
 	if err != nil {
 		return err
 	}
-	if err := checkRemovable(ctx, api, target); err != nil {
+	home, err := homepageID(ctx, api, target)
+	if err != nil {
 		return err
+	}
+	if home == target.ID {
+		return errHomepage(target, target.Space.Key)
 	}
 
 	children, err := directChildren(ctx, api, target, removeFolders)
@@ -338,6 +343,13 @@ func Delete(ctx context.Context, api *confluence.API, ref Ref, options DeleteOpt
 		doomed = append(doomed, descendants...)
 	}
 	doomed = append(doomed, *target)
+
+	// A space's homepage can be any of its pages, not only the top one.
+	for i := range doomed {
+		if home == doomed[i].ID {
+			return fmt.Errorf("%w: it is beneath %s", errHomepage(&doomed[i], target.Space.Key), describe(target))
+		}
+	}
 
 	for i := range doomed {
 		page := &doomed[i]
@@ -397,22 +409,37 @@ func directChildren(ctx context.Context, api *confluence.API, page *confluence.P
 
 // checkRemovable refuses the space homepage, which holds the whole tree.
 func checkRemovable(ctx context.Context, api *confluence.API, page *confluence.PageInfo) error {
-	if page.Type == confluence.ContentBlogPost {
-		return nil
-	}
-
-	home, err := api.FindHomePage(ctx, page.Space.Key)
-	if errors.Is(err, confluence.ErrNoHomePage) {
-		return nil
-	}
+	home, err := homepageID(ctx, api, page)
 	if err != nil {
-		return fmt.Errorf("unable to tell whether %s is the homepage of space %s: %w", describe(page), page.Space.Key, err)
+		return err
 	}
-	if home != nil && home.ID == page.ID {
-		return fmt.Errorf("%s is the homepage of space %s, and mark does not remove it", describe(page), page.Space.Key)
+	if home == page.ID {
+		return errHomepage(page, page.Space.Key)
 	}
 
 	return nil
+}
+
+// homepageID is the id of the homepage of page's space, or "" when the space
+// has none or page is a blog post, which is never one and has none beneath it.
+func homepageID(ctx context.Context, api *confluence.API, page *confluence.PageInfo) (string, error) {
+	if page.Type == confluence.ContentBlogPost {
+		return "", nil
+	}
+
+	home, err := api.FindHomePage(ctx, page.Space.Key)
+	if errors.Is(err, confluence.ErrNoHomePage) || (err == nil && home == nil) {
+		return "", nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("unable to tell whether %s is the homepage of space %s: %w", describe(page), page.Space.Key, err)
+	}
+
+	return home.ID, nil
+}
+
+func errHomepage(page *confluence.PageInfo, space string) error {
+	return fmt.Errorf("%s is the homepage of space %s, and mark does not remove it", describe(page), space)
 }
 
 // parentOf is the id of the page directly above page, or "".
