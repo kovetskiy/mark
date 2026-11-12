@@ -2,6 +2,7 @@ package export
 
 import (
 	"regexp"
+	"slices"
 	"strings"
 	"unicode"
 
@@ -132,19 +133,10 @@ func escapeInline(text string, opts inlineOptions) string {
 
 // dateOpening is how the date feature's parser knows a date: it takes
 // "@date(", a value of anything but ")", and ")".
-const dateOpening = "@date("
+var dateOpening = []rune("@date(")
 
 func opensDate(text []rune) bool {
-	if len(text) < len(dateOpening) {
-		return false
-	}
-	for i, r := range dateOpening {
-		if text[i] != r {
-			return false
-		}
-	}
-
-	return true
+	return len(text) >= len(dateOpening) && slices.Equal(text[:len(dateOpening)], dateOpening)
 }
 
 // isDateValue reports whether the date feature publishes a date for value,
