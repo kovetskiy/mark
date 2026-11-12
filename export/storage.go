@@ -217,11 +217,20 @@ func (n *node) textContent() string {
 	}
 
 	var b strings.Builder
-	for _, c := range n.children {
-		b.WriteString(c.textContent())
-	}
+	n.writeText(&b)
 
 	return b.String()
+}
+
+func (n *node) writeText(b *strings.Builder) {
+	if n.kind == textNode {
+		b.WriteString(n.text)
+		return
+	}
+
+	for _, c := range n.children {
+		c.writeText(b)
+	}
 }
 
 // isBlank reports a text node holding nothing but whitespace.
