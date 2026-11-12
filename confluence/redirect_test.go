@@ -3,9 +3,12 @@ package confluence
 import (
 	"context"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/http/httputil"
 	"net/url"
+	"strings"
 	"sync"
 	"testing"
 
@@ -65,11 +68,16 @@ func TestWriteRedirectedAsAReadIsNotItsAnswer(t *testing.T) {
 				},
 				"unlabel": func() error { return api.DeletePageLabel(ctx, page, "one") },
 				"delete":  func() error { return api.DeletePage(ctx, page.ID) },
+				"attach": func() error {
+					_, err := api.CreateAttachment(ctx, page.ID, "a.txt", "", strings.NewReader("a"))
+					return err
+				},
+				"unwatch": func() error { return api.UnwatchPage(ctx, page.ID, "user") },
 			} {
 				err := write()
 				require.ErrorIs(t, err, ErrWriteRedirected, name)
 				assert.Contains(t, err.Error(), "was redirected to "+server.URL, name)
-				assert.Contains(t, err.Error(), "as the base URL", name)
+				assert.Contains(t, err.Error(), "served at "+server.URL+", use that address in the base URL", name)
 				assert.False(t, isUnavailable(err), name)
 			}
 
@@ -170,7 +178,7 @@ func TestRedirectToAnotherPortGoesWithoutAuthorization(t *testing.T) {
 
 		info := AttachmentInfo{Filename: "a.txt"}
 		info.Links.Download = "/download/attachments/1/a.txt"
-		require.NoError(t, api.DownloadAttachment(ctx, "1", info, &discard{}), name)
+		require.NoError(t, api.DownloadAttachment(ctx, "1", info, io.Discard), name)
 	}
 
 	assert.Len(t, seen.all(), 8)
@@ -178,10 +186,6 @@ func TestRedirectToAnotherPortGoesWithoutAuthorization(t *testing.T) {
 		assert.Empty(t, header)
 	}
 }
-
-type discard struct{}
-
-func (discard) Write(p []byte) (int, error) { return len(p), nil }
 
 // TestRedirectOnTheSameServerKeepsAuthorization: a redirect to another path
 // of the server asked is still a request to it.
@@ -201,6 +205,87 @@ func TestRedirectOnTheSameServerKeepsAuthorization(t *testing.T) {
 	assert.Equal(t, []string{"Bearer token"}, seen.all())
 }
 
+// TestRedirectKeepsAuthorizationUnderABaseURLWithAUserName: a user name in
+// the base URL goes along on a relative redirect and makes it no other
+// server, so the request keeps the header it was given.
+func TestRedirectKeepsAuthorizationUnderABaseURLWithAUserName(t *testing.T) {
+	seen := &authorizations{}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/moved" {
+			http.Redirect(w, r, "/moved", http.StatusFound)
+			return
+		}
+		seen.ServeHTTP(w, r)
+	}))
+	t.Cleanup(server.Close)
+
+	base := strings.Replace(server.URL, "://", "://name@", 1)
+	_, err := NewAPI(base, Options{Password: "token"}).GetPageByID(context.Background(), "1")
+	require.NoError(t, err)
+	assert.Equal(t, []string{"Bearer token"}, seen.all())
+}
+
+// dataCenterBehind is an API for the fake dressed as Data Center, which has
+// no content move endpoint, reached through a front that answers a post to
+// movepage.action itself, with answer, and hands everything else on.
+func dataCenterBehind(t *testing.T, answer func(w http.ResponseWriter, r *http.Request, server http.Handler)) (*API, *confluencetest.Server) {
+	t.Helper()
+
+	server := confluencetest.New(t)
+	server.SetDataCenter()
+	server.SetFail(func(r *http.Request) (int, string, bool) {
+		return http.StatusNotFound, `{"message":"no such endpoint"}`, strings.Contains(r.URL.Path, "/move/")
+	})
+
+	address, err := url.Parse(server.URL)
+	require.NoError(t, err)
+	proxy := httputil.NewSingleHostReverseProxy(address)
+
+	front := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost && r.URL.Path == "/pages/movepage.action" {
+			answer(w, r, proxy)
+			return
+		}
+		proxy.ServeHTTP(w, r)
+	}))
+	t.Cleanup(front.Close)
+
+	api := NewAPI(front.URL, Options{Username: "user", Password: "token"})
+	api.moveSettleDelay = 0
+
+	return api, server
+}
+
+// TestMoveActionThatRedirectsToThePageHasMovedIt: movepage.action may answer
+// with a redirect to the page it moved, so where the page is decides.
+func TestMoveActionThatRedirectsToThePageHasMovedIt(t *testing.T) {
+	api, server := dataCenterBehind(t, func(w http.ResponseWriter, r *http.Request, server http.Handler) {
+		server.ServeHTTP(httptest.NewRecorder(), r)
+		http.Redirect(w, r, "/rest/api/content/"+r.URL.Query().Get("pageId"), http.StatusFound)
+	})
+	parent := server.AddPage("DOCS", "Parent", "page", "")
+	first := server.AddPage("DOCS", "First", "page", parent.ID)
+	second := server.AddPage("DOCS", "Second", "page", parent.ID)
+
+	require.NoError(t, api.MoveContentBefore(context.Background(), second.ID, first.ID))
+	assert.Equal(t, []string{second.ID, first.ID}, server.ChildOrder(parent.ID))
+}
+
+// TestMoveActionRedirectedAsAReadSaysSo: a redirect that kept the post from
+// movepage.action is what the failed move is put down to.
+func TestMoveActionRedirectedAsAReadSaysSo(t *testing.T) {
+	api, server := dataCenterBehind(t, func(w http.ResponseWriter, r *http.Request, _ http.Handler) {
+		http.Redirect(w, r, "/rest/api/content/"+r.URL.Query().Get("pageId"), http.StatusMovedPermanently)
+	})
+	parent := server.AddPage("DOCS", "Parent", "page", "")
+	first := server.AddPage("DOCS", "First", "page", parent.ID)
+	second := server.AddPage("DOCS", "Second", "page", parent.ID)
+
+	err := api.MoveContentBefore(context.Background(), second.ID, first.ID)
+	require.ErrorIs(t, err, ErrWriteRedirected)
+	assert.Equal(t, []string{first.ID, second.ID}, server.ChildOrder(parent.ID))
+}
+
 // TestCheckRedirectKeepsAuthorizationForTheServerAsked: the header stays for
 // the scheme, host and port first asked and for the same host's move from
 // http to https, and once it is off it stays off.
@@ -218,6 +303,10 @@ func TestCheckRedirectKeepsAuthorizationForTheServerAsked(t *testing.T) {
 		{"another port", []string{"https://wiki.example.org/a", "https://wiki.example.org:8443/a"}, false},
 		{"http to https on other ports", []string{"http://wiki.example.org:8090/a", "https://wiki.example.org:8443/a"}, false},
 		{"a subdomain", []string{"https://example.org/a", "https://media.example.org/a"}, false},
+		{"a user name carried on", []string{"https://name@wiki.example.org/a", "https://name@wiki.example.org/b"}, true},
+		{"a user name left behind", []string{"https://name@wiki.example.org/a", "https://wiki.example.org/b"}, true},
+		{"a user name of the redirect's", []string{"https://wiki.example.org/a", "https://other@wiki.example.org/b"}, false},
+		{"a user name carried to another port", []string{"https://name@wiki.example.org/a", "https://name@wiki.example.org:8443/a"}, false},
 		{"another port and back", []string{"https://wiki.example.org/a", "https://wiki.example.org:8443/a", "https://wiki.example.org/a"}, false},
 	} {
 		t.Run(test.name, func(t *testing.T) {
