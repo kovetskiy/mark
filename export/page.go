@@ -739,13 +739,15 @@ func sameDir(a, b string) bool {
 // separator would reach into another directory, and * ? [ ] { } make the
 // Attachment header declaring it a pattern, so each is an underscore. A name
 // ending in .md would be picked up by the glob that names the documents, and
-// read by OKF as a concept without front matter, so it gets .txt after it.
+// read by OKF as a concept without front matter, so it gets .txt after it;
+// Windows drops trailing dots and spaces, so a name ending in .md before
+// those does too.
 func localName(filename string) string {
 	name := localNameReplacer.Replace(filename)
 	if name == "." || name == ".." {
 		name = "_" + name
 	}
-	if strings.EqualFold(filepath.Ext(name), ".md") {
+	if strings.EqualFold(filepath.Ext(strings.TrimRight(name, ". ")), ".md") {
 		name += ".txt"
 	}
 
