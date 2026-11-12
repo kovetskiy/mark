@@ -306,6 +306,9 @@ cells or with lists or macros in them, headings and cells with an alignment or
 a colour, `<pre>` blocks, and HTML that Markdown has no syntax for (`<u>`,
 `<sub>`, a coloured `<span>`), and a blockquote that opens with a
 [colon marker](formatting.md#colon-markers), which would come back as a macro.
+Lists and blockquotes are Markdown down to a hundred of them one inside the
+other, and storage format below that, where the indentation Markdown needs on
+every line would outgrow the page.
 An info, tip, note or warning macro
 without mark's title -- the way Confluence's editor inserts them -- keeps its
 tags, with its body in Markdown between them, since as an alert it would come

@@ -146,6 +146,10 @@ type converter struct {
 	order    []string
 	used     map[string]bool
 	declared map[string]bool
+
+	// nesting is how many lists and blockquotes the block being written is
+	// inside of.
+	nesting int
 }
 
 // collectAnchors records every anchor a link on the page points at. mark puts

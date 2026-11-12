@@ -104,6 +104,14 @@ func (c *converter) renderBlocks(nodes []*node, ctx blockContext) []block {
 }
 
 func (c *converter) block(n *node, ctx blockContext, previousList string) block {
+	if indenting[n.name] {
+		if c.nesting == maxNesting {
+			return block{text: c.asWritten(n)}
+		}
+		c.nesting++
+		defer func() { c.nesting-- }()
+	}
+
 	switch n.name {
 	case "p":
 		return block{text: c.paragraphElement(n), paragraph: true}
@@ -155,11 +163,26 @@ func (c *converter) block(n *node, ctx blockContext, previousList string) block 
 		return block{text: c.container(n, n, ctx)}
 	}
 
+	return block{text: c.asWritten(n)}
+}
+
+// indenting are the blocks Markdown writes by putting something before every
+// line of what they hold: a list its indentation, a blockquote its marker.
+var indenting = map[string]bool{"ul": true, "ol": true, "ac:task-list": true, "blockquote": true}
+
+// maxNesting is how many of those are written as Markdown one inside the
+// other. Each writes all it holds again, lines that grow with every level, so
+// what is nested deeper than any page written by hand is kept as storage
+// format, which costs the same at any depth.
+const maxNesting = 100
+
+// asWritten writes a block as the storage format it is.
+func (c *converter) asWritten(n *node) string {
 	if strings.Contains(n.name, ":") {
-		return block{text: c.raw(n, rawInline)}
+		return c.raw(n, rawInline)
 	}
 
-	return block{text: c.htmlBlock(n)}
+	return c.htmlBlock(n)
 }
 
 // htmlBlock writes an element as an HTML block, which goldmark passes through
@@ -542,22 +565,28 @@ func (c *converter) blockquote(n *node) string {
 // line, at a <br> or the end of a block. A colon marker is read off the first
 // line, and "Note:" alone above a list is one.
 func lineText(n *node) string {
+	var b strings.Builder
+	writeLineText(&b, n)
+
+	return b.String()
+}
+
+func writeLineText(b *strings.Builder, n *node) {
 	if n.kind == textNode {
-		return n.text
+		b.WriteString(n.text)
+		return
 	}
 	if n.is("br") {
-		return "\n"
+		b.WriteString("\n")
+		return
 	}
 
-	var b strings.Builder
 	for _, c := range n.children {
-		b.WriteString(lineText(c))
+		writeLineText(b, c)
 	}
 	if isBlock(n) {
 		b.WriteString("\n")
 	}
-
-	return b.String()
 }
 
 func quote(text string) string {
