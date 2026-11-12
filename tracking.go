@@ -132,7 +132,8 @@ func resolveTrackedPage(
 // titleHeldError refuses a document a title that still names the page of
 // another document of the run, one that publishes the page under a new title.
 type titleHeldError struct {
-	title, pageID string
+	title string
+	page  *confluence.PageInfo
 	// holder is the document the page is recorded for, and retitled the
 	// title it now declares.
 	holder   input
@@ -142,7 +143,7 @@ type titleHeldError struct {
 func (e *titleHeldError) Error() string {
 	return fmt.Sprintf(
 		"the title %q belongs to page %s until %s, which publishes that page, has retitled it %q",
-		e.title, e.pageID, e.holder.file, e.retitled,
+		e.title, e.page.ID, e.holder.file, e.retitled,
 	)
 }
 
@@ -191,7 +192,7 @@ func (r *publishRun) titleHolder(
 		return nil, nil
 	}
 
-	return &titleHeldError{title: meta.Title, pageID: pg.ID, holder: holder, retitled: declared.Title}, nil
+	return &titleHeldError{title: meta.Title, page: pg, holder: holder, retitled: declared.Title}, nil
 }
 
 // titleFreed reports, for a dry run, whether the page the document's title
@@ -199,6 +200,9 @@ func (r *publishRun) titleHolder(
 // leaving the title to a new page. It would when that document's new title
 // is itself free, or freed the same way; visiting holds the documents asked
 // about, so that titles swapped between documents are found as they are.
+//
+// A page --no-overwrite would leave alone keeps its title, and the error is
+// the one a real run refuses the document with.
 func (r *publishRun) titleFreed(
 	ctx context.Context, file, key string, meta *metadata.Meta, visiting map[string]bool,
 ) (bool, error) {
@@ -208,6 +212,17 @@ func (r *publishRun) titleFreed(
 	}
 
 	declared := r.titles.readAhead(held.holder).meta
+
+	if r.noOverwrite {
+		drift, err := hasDrifted(ctx, r.api, r.tracker, declared.Space, held.holder.key, held.page)
+		if err != nil {
+			return false, err
+		}
+		if drift != "" {
+			return false, held
+		}
+	}
+
 	taken, err := r.api.FindPage(ctx, declared.Space, declared.Title, confluence.ContentType(declared.Type))
 	if err != nil {
 		return false, fmt.Errorf("error while finding page %q: %w", declared.Title, err)
@@ -218,7 +233,13 @@ func (r *publishRun) titleFreed(
 
 	visiting[file] = true
 
-	return r.titleFreed(ctx, held.holder.file, held.holder.key, declared, visiting)
+	freed, err := r.titleFreed(ctx, held.holder.file, held.holder.key, declared, visiting)
+	if refused := (*titleHeldError)(nil); errors.As(err, &refused) {
+		// The holder is refused its own title, so it keeps this one.
+		return false, held
+	}
+
+	return freed, err
 }
 
 // refreshStaleParents rewrites parent titles that no longer resolve to the
