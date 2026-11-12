@@ -184,6 +184,29 @@ func TestUpdatePageIncrementsVersion(t *testing.T) {
 	assert.Equal(t, "<p>new</p>", after.Body)
 }
 
+// TestUpdatePageFreesTheTitleThePageHad: a lookup of the old title found the
+// page, and after the page is retitled that title names none.
+func TestUpdatePageFreesTheTitleThePageHad(t *testing.T) {
+	api, server := newAPI(t)
+	server.AddPage("DOCS", "Before", "page", "")
+
+	page, err := api.FindPage(context.Background(), "DOCS", "Before", "page")
+	require.NoError(t, err)
+	require.NotNil(t, page)
+
+	page.Title = "After"
+	require.NoError(t, api.UpdatePage(context.Background(), page, "<p>new</p>", confluence.UpdateOptions{}))
+
+	old, err := api.FindPage(context.Background(), "DOCS", "before", "page")
+	require.NoError(t, err)
+	assert.Nil(t, old, "the title the page had is free")
+
+	renamed, err := api.FindPage(context.Background(), "DOCS", "After", "page")
+	require.NoError(t, err)
+	require.NotNil(t, renamed)
+	assert.Equal(t, page.ID, renamed.ID)
+}
+
 // TestUpdatePageWritesBothAppearanceProperties pins that the page width is
 // written to the draft property as well as the published one. Published alone
 // leaves the two disagreeing, and the editor takes the draft value, so the
