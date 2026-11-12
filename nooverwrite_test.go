@@ -165,3 +165,65 @@ func TestNoOverwriteStillLeavesAnEditAfterAFailedRun(t *testing.T) {
 	assert.Equal(t, report.StatusSkipped, after.Status)
 	assert.Equal(t, "<p>Written by a person.</p>", server.Page(id).Body)
 }
+
+// TestNoOverwriteLeavesAnEditedPageWhereItIs: a page left alone as edited in
+// Confluence is not moved either, and the parent its document now names is
+// not created for it.
+func TestNoOverwriteLeavesAnEditedPageWhereItIs(t *testing.T) {
+	server, id, config := noOverwriteFixture(t)
+	dir := filepath.Dir(config.Files)
+	parent := server.Page(id).ParentID
+
+	server.EditPage(id, "<p>Written by a person.</p>")
+	writeMovingDoc(t, dir, "Elsewhere", "From mark again.")
+	server.ResetRequests()
+	skipped := runReported(t, config)
+
+	assert.Equal(t, report.StatusSkipped, skipped.Status)
+	assert.Equal(t, id, skipped.PageID)
+	assert.Equal(t, parent, server.Page(id).ParentID, "the page stays under the parent it had")
+	assert.Zero(t, countPagesTitled(t, server, "Elsewhere"), "no parent is created for a page that is left alone")
+	assert.Equal(t, "<p>Written by a person.</p>", server.Page(id).Body)
+
+	// Published without the flag, the page is reclaimed and moved.
+	config.Tracking.NoOverwrite = false
+	require.NoError(t, Run(context.Background(), config))
+	assert.Equal(t, mustFind(t, server, "Elsewhere"), server.Page(id).ParentID)
+	assert.Contains(t, server.Page(id).Body, "From mark again.")
+}
+
+// TestNoOverwriteLeavesAnEditedRetitledPageWhereItIs: the same for a page
+// found through the manifest because its document's title changed as well.
+func TestNoOverwriteLeavesAnEditedRetitledPageWhereItIs(t *testing.T) {
+	server, id, config := noOverwriteFixture(t)
+	dir := filepath.Dir(config.Files)
+	parent := server.Page(id).ParentID
+
+	server.EditPage(id, "<p>Written by a person.</p>")
+	writeFile(t, dir, "doc.md",
+		"<!-- Space: DOCS -->\n<!-- Parent: Elsewhere -->\n<!-- Title: Doc Renamed -->\n\nFrom mark again.\n")
+	skipped := runReported(t, config)
+
+	assert.Equal(t, report.StatusSkipped, skipped.Status)
+	assert.Equal(t, id, skipped.PageID)
+	assert.Equal(t, parent, server.Page(id).ParentID, "the page stays under the parent it had")
+	assert.Equal(t, "Doc", server.Page(id).Title)
+	assert.Zero(t, countPagesTitled(t, server, "Elsewhere"), "no parent is created for a page that is left alone")
+
+	// The skip repeats until the difference is resolved.
+	assert.Equal(t, report.StatusSkipped, runReported(t, config).Status)
+}
+
+// TestNoOverwriteMovesAPageNobodyEdited: a page still at the version mark
+// wrote follows its document to a new parent as before.
+func TestNoOverwriteMovesAPageNobodyEdited(t *testing.T) {
+	server, id, config := noOverwriteFixture(t)
+	dir := filepath.Dir(config.Files)
+
+	writeMovingDoc(t, dir, "Elsewhere", "Moved.")
+	moved := runReported(t, config)
+
+	assert.Equal(t, report.StatusPublished, moved.Status, moved.Reason)
+	assert.Equal(t, mustFind(t, server, "Elsewhere"), server.Page(id).ParentID)
+	assert.Contains(t, server.Page(id).Body, "Moved.")
+}

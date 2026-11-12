@@ -1991,6 +1991,13 @@ func (r *publishRun) processFile(ctx context.Context, in input) (*confluence.Pag
 		return nil, nil, r.preview(ctx, doc)
 	}
 
+	// Ahead of resolving, which creates the parents a document declares and
+	// moves its page under them: a page that is left alone is left where it
+	// is as well.
+	if kept, err := r.leaveDriftedInPlace(ctx, doc); kept != nil || err != nil {
+		return kept, nil, err
+	}
+
 	dest, err := r.resolveDestination(ctx, doc)
 	if err != nil {
 		return nil, nil, err
