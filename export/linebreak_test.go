@@ -60,6 +60,16 @@ func TestConvertLineBreakEndingARun(t *testing.T) {
 			published: `<p><strong>bold</strong></p>`,
 		},
 		{
+			storage:   `<p><strong>bold<br/><br/></strong></p>`,
+			markdown:  "**bold**\n",
+			published: `<p><strong>bold</strong></p>`,
+		},
+		{
+			storage:   `<p>plain<br/> <br/></p>`,
+			markdown:  "plain\n",
+			published: `<p>plain</p>`,
+		},
+		{
 			// A backslash the text ends in is text, not a break.
 			storage:   `<p><strong>a\</strong> b</p>`,
 			markdown:  "**a\\\\** b\n",
