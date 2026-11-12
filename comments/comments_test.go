@@ -500,3 +500,236 @@ func TestMergeReportsALostComment(t *testing.T) {
 		Message: `inline comment uuid-gone is lost: the text it was made on, "world", is not in the new body's page text`,
 	}}, warnings.List())
 }
+
+const markerA = `<ac:inline-comment-marker ac:ref="uuid-a">`
+const markerEnd = `</ac:inline-comment-marker>`
+
+// TestMergeComments_SelectionAcrossInlineMarkup: a comment made on text that
+// runs through inline markup is kept, with one marker for each run of text it
+// covers and none of them across an element's boundary.
+func TestMergeComments_SelectionAcrossInlineMarkup(t *testing.T) {
+	tests := []struct {
+		name      string
+		body      string
+		selection string
+		want      string
+	}{
+		{
+			name:      "into bold",
+			body:      `<p>hello <strong>world</strong> x</p>`,
+			selection: "hello world",
+			want:      `<p>` + markerA + `hello ` + markerEnd + `<strong>` + markerA + `world` + markerEnd + `</strong> x</p>`,
+		},
+		{
+			name:      "out of bold, part of each run",
+			body:      `<p>one <strong>two three</strong> four five</p>`,
+			selection: "three four",
+			want:      `<p>one <strong>two ` + markerA + `three` + markerEnd + `</strong>` + markerA + ` four` + markerEnd + ` five</p>`,
+		},
+		{
+			name:      "through a link",
+			body:      `<p>read <a href="https://example.com/guide">the guide</a> first</p>`,
+			selection: "read the guide first",
+			want:      `<p>` + markerA + `read ` + markerEnd + `<a href="https://example.com/guide">` + markerA + `the guide` + markerEnd + `</a>` + markerA + ` first` + markerEnd + `</p>`,
+		},
+		{
+			name:      "through a code span",
+			body:      `<p>run <code>make test</code> twice</p>`,
+			selection: "run make test twice",
+			want:      `<p>` + markerA + `run ` + markerEnd + `<code>` + markerA + `make test` + markerEnd + `</code>` + markerA + ` twice` + markerEnd + `</p>`,
+		},
+		{
+			name:      "through nested markup",
+			body:      `<p>a <em>b <strong>c</strong></em> d</p>`,
+			selection: "b c d",
+			want:      `<p>a <em>` + markerA + `b ` + markerEnd + `<strong>` + markerA + `c` + markerEnd + `</strong></em>` + markerA + ` d` + markerEnd + `</p>`,
+		},
+		{
+			name:      "through a link with a rich body",
+			body:      `<p>see <ac:link ac:anchor="notes"><ac:link-body>the notes</ac:link-body></ac:link> below</p>`,
+			selection: "the notes below",
+			want:      `<p>see <ac:link ac:anchor="notes"><ac:link-body>` + markerA + `the notes` + markerEnd + `</ac:link-body></ac:link>` + markerA + ` below` + markerEnd + `</p>`,
+		},
+		{
+			name:      "past an emoticon",
+			body:      `<p>well <ac:emoticon ac:name="smile"/> done</p>`,
+			selection: "well done",
+			want:      `<p>` + markerA + `well ` + markerEnd + `<ac:emoticon ac:name="smile"/>` + markerA + ` done` + markerEnd + `</p>`,
+		},
+		{
+			name:      "space only between two elements",
+			body:      `<p><strong>a</strong> <em>b</em></p>`,
+			selection: "a b",
+			want:      `<p><strong>` + markerA + `a` + markerEnd + `</strong> <em>` + markerA + `b` + markerEnd + `</em></p>`,
+		},
+		{
+			name:      "references in both runs",
+			body:      `<p>R&amp;D <strong>&lt;team&gt;</strong></p>`,
+			selection: "R&D <team>",
+			want:      `<p>` + markerA + `R&amp;D ` + markerEnd + `<strong>` + markerA + `&lt;team&gt;` + markerEnd + `</strong></p>`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			warnings := report.NewWarnings("docs/a.md")
+
+			result, err := MergeWithWarnings(tt.body, `<p>none</p>`, makeComments(tt.selection, "uuid-a"), warnings)
+			assert.NoError(t, err)
+			assert.Equal(t, tt.want, result)
+			assert.NoError(t, markdown.CheckWellFormed(result))
+			assert.Empty(t, warnings.List())
+		})
+	}
+}
+
+// TestMergeComments_SelectionAcrossWhitespace: the selection is the text as
+// the page shows it, where a line break in the source or a no-break space
+// reads as one space.
+func TestMergeComments_SelectionAcrossWhitespace(t *testing.T) {
+	tests := []struct {
+		name      string
+		body      string
+		selection string
+		want      string
+	}{
+		{
+			name:      "soft line break",
+			body:      "<p>foo\nbar baz</p>",
+			selection: "foo bar",
+			want:      "<p>" + markerA + "foo\nbar" + markerEnd + " baz</p>",
+		},
+		{
+			name:      "no-break space reference",
+			body:      `<p>10&nbsp;km away</p>`,
+			selection: "10 km",
+			want:      `<p>` + markerA + `10&nbsp;km` + markerEnd + ` away</p>`,
+		},
+		{
+			name:      "no-break space in the selection",
+			body:      `<p>10&#160;km away</p>`,
+			selection: "10 km",
+			want:      `<p>` + markerA + `10&#160;km` + markerEnd + ` away</p>`,
+		},
+		{
+			name:      "space on both sides of an opening tag",
+			body:      `<p>hello <strong> world</strong></p>`,
+			selection: "hello world",
+			want:      `<p>` + markerA + `hello ` + markerEnd + `<strong>` + markerA + ` world` + markerEnd + `</strong></p>`,
+		},
+		{
+			name:      "indented source",
+			body:      "<p>one\n   two</p>",
+			selection: "one two",
+			want:      "<p>" + markerA + "one\n   two" + markerEnd + "</p>",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := Merge(tt.body, `<p>none</p>`, makeComments(tt.selection, "uuid-a"))
+			assert.NoError(t, err)
+			assert.Equal(t, tt.want, result)
+			assert.NoError(t, markdown.CheckWellFormed(result))
+		})
+	}
+}
+
+// TestMergeComments_SelectionAcrossBlocks: text in two blocks is not one
+// stretch of text, and neither is text on either side of a macro, a CDATA
+// section or a line break element, so a selection is never matched across
+// them.
+func TestMergeComments_SelectionAcrossBlocks(t *testing.T) {
+	tests := []struct {
+		name string
+		body string
+	}{
+		{name: "paragraphs", body: `<p>hello </p><p>world</p>`},
+		{name: "table cells", body: `<table><tbody><tr><td>hello </td><td>world</td></tr></tbody></table>`},
+		{name: "list items", body: `<ul><li>hello </li><li>world</li></ul>`},
+		{name: "line break element", body: `<p>hello <br/>world</p>`},
+		{name: "XML comment", body: `<p>hello <!-- note -->world</p>`},
+		{
+			name: "macro parameter",
+			body: `<p>hello <ac:structured-macro ac:name="status"><ac:parameter ac:name="title">world</ac:parameter></ac:structured-macro></p>`,
+		},
+		{
+			name: "plain link body",
+			body: `<p>hello <ac:link><ri:page ri:content-title="Guide"/><ac:plain-text-link-body><![CDATA[world]]></ac:plain-text-link-body></ac:link></p>`,
+		},
+		{
+			name: "macro between",
+			body: `<p>hello <ac:structured-macro ac:name="anchor"><ac:parameter ac:name="">top</ac:parameter></ac:structured-macro>world</p>`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			warnings := report.NewWarnings("docs/a.md")
+
+			result, err := MergeWithWarnings(tt.body, `<p>none</p>`, makeComments("hello world", "uuid-a"), warnings)
+			assert.NoError(t, err)
+			assert.Equal(t, tt.body, result)
+			assert.Len(t, warnings.List(), 1)
+		})
+	}
+}
+
+// TestMergeComments_SplitMarkerKeepsItsPlace: the markers of one comment in
+// the old body are read as one stretch, so the comment goes back where it was
+// when the same text appears twice.
+func TestMergeComments_SplitMarkerKeepsItsPlace(t *testing.T) {
+	body := `<p>hello <strong>world</strong> first</p><p>hello <strong>world</strong> second</p>`
+	want := `<p>hello <strong>world</strong> first</p><p>` + markerA + `hello ` + markerEnd + `<strong>` + markerA + `world` + markerEnd + `</strong> second</p>`
+
+	result, err := Merge(body, want, makeComments("hello world", "uuid-a"))
+	assert.NoError(t, err)
+	assert.Equal(t, want, result)
+
+	// What mark wrote is what it reads on the next run.
+	again, err := Merge(body, result, makeComments("hello world", "uuid-a"))
+	assert.NoError(t, err)
+	assert.Equal(t, want, again)
+}
+
+// TestMergeComments_OverlapAcrossInlineMarkup: a comment whose text overlaps
+// one that runs through inline markup is still set aside, not nested in it.
+func TestMergeComments_OverlapAcrossInlineMarkup(t *testing.T) {
+	body := `<p>hello <strong>world</strong> x</p>`
+	warnings := report.NewWarnings("docs/a.md")
+
+	result, err := MergeWithWarnings(body, `<p>none</p>`, makeComments("hello world", "uuid-a", "world x", "uuid-b"), warnings)
+	assert.NoError(t, err)
+	assert.Equal(t,
+		`<p>hello <strong><ac:inline-comment-marker ac:ref="uuid-b">world`+markerEnd+`</strong><ac:inline-comment-marker ac:ref="uuid-b"> x`+markerEnd+`</p>`,
+		result)
+	assert.NoError(t, markdown.CheckWellFormed(result))
+	assert.Len(t, warnings.List(), 1)
+}
+
+// TestMergeComments_InlineMarkupInCompiledMarkdown: a comment on a sentence
+// with emphasis, a link, a code span and a line break in its source survives
+// a republish of the unchanged document.
+func TestMergeComments_InlineMarkupInCompiledMarkdown(t *testing.T) {
+	std, err := stdlib.New(t.Context(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := "Run **make test** before\nyou open [a pull request](https://example.com/pulls) with `git push`.\n"
+	body, _, err := markdown.CompileMarkdown(t.Context(), []byte(source), std, "page.md", markdown.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	assert.Equal(t,
+		"<p>Run <strong>make test</strong> before\nyou open <a href=\"https://example.com/pulls\">a pull request</a> with <code>git push</code>.</p>\n",
+		body)
+	warnings := report.NewWarnings("page.md")
+
+	result, err := MergeWithWarnings(body, `<p>none</p>`,
+		makeComments("make test before you open a pull request with git", "uuid-a"), warnings)
+	assert.NoError(t, err)
+	assert.Equal(t,
+		"<p>Run <strong>"+markerA+"make test"+markerEnd+"</strong>"+markerA+" before\nyou open "+markerEnd+
+			"<a href=\"https://example.com/pulls\">"+markerA+"a pull request"+markerEnd+"</a>"+markerA+" with "+markerEnd+
+			"<code>"+markerA+"git"+markerEnd+" push</code>.</p>\n",
+		result)
+	assert.NoError(t, markdown.CheckWellFormed(result))
+	assert.Empty(t, warnings.List())
+}

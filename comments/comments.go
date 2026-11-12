@@ -11,6 +11,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/kovetskiy/mark/v17/confluence"
@@ -106,6 +107,25 @@ func levenshteinDistance(s1, s2 string) int {
 type textSpan struct {
 	start int
 	end   int
+	// stretch numbers the stretch of text the run belongs to: runs that only
+	// inlineElements separate, which a reader sees as one.
+	stretch int
+}
+
+// inlineElements are the tags a stretch of text runs through. Any other
+// markup ends the stretch, so that a selection is never matched across two
+// blocks, a macro or a line break.
+var inlineElements = map[string]bool{
+	"a": true, "abbr": true, "b": true, "big": true, "cite": true, "code": true,
+	"del": true, "dfn": true, "em": true, "i": true, "ins": true, "kbd": true,
+	"mark": true, "q": true, "s": true, "samp": true, "small": true, "span": true,
+	"strike": true, "strong": true, "sub": true, "sup": true, "tt": true, "u": true,
+	"var": true,
+
+	"ac:link": true, "ac:link-body": true, "ac:emoticon": true,
+	"ri:attachment": true, "ri:blog-post": true, "ri:content-entity": true,
+	"ri:page": true, "ri:shortcut": true, "ri:space": true, "ri:url": true,
+	"ri:user": true,
 }
 
 // settingElements hold text that is not page text: a macro's parameters, a
@@ -128,16 +148,21 @@ func textSpans(body string) []textSpan {
 	var spans []textSpan
 	inSetting := 0
 	textStart := 0
+	stretch := 0
 	for i := 0; i < len(body); {
 		if body[i] != '<' {
 			i++
 			continue
 		}
 		if inSetting == 0 && i > textStart {
-			spans = append(spans, textSpan{start: textStart, end: i})
+			spans = append(spans, textSpan{start: textStart, end: i, stretch: stretch})
 		}
 		end := markupEnd(body, i)
-		switch name, closing, selfClosing := tagName(body[i:end]); {
+		name, closing, selfClosing := tagName(body[i:end])
+		if !inlineElements[name] {
+			stretch++
+		}
+		switch {
 		case !settingElements[name] || selfClosing:
 		case closing:
 			inSetting = max(inSetting-1, 0)
@@ -148,7 +173,7 @@ func textSpans(body string) []textSpan {
 		textStart = end
 	}
 	if inSetting == 0 && len(body) > textStart {
-		spans = append(spans, textSpan{start: textStart, end: len(body)})
+		spans = append(spans, textSpan{start: textStart, end: len(body), stretch: stretch})
 	}
 	return spans
 }
@@ -203,36 +228,88 @@ func tagName(tag string) (name string, closing, selfClosing bool) {
 	return tag[:end], closing, selfClosing
 }
 
-// decodedText is a run of page text with its character references resolved,
-// so that a selection matches however the body spells a character: goldmark
-// writes a double quote as &quot;, mark's templates as &#34;, and Confluence
-// and raw HTML often leave it as it is.
-type decodedText struct {
+// pageText is a stretch of page text as a reader sees it, which is how a
+// selection spells it: character references resolved -- goldmark writes a
+// double quote as &quot;, mark's templates as &#34;, and Confluence and raw
+// HTML often leave it as it is -- and each run of white space, a line break or
+// a no-break space included, as one space.
+type pageText struct {
 	text string
-	// from[i] is the body offset of the character or reference text[i] was
-	// decoded from, and from[len(text)] the offset just past the run.
-	from []int
+	// from[i] and until[i] are the body offsets [from, until) of the
+	// character, reference or white space text[i] was read from.
+	from  []int
+	until []int
 }
 
-// decodeText resolves the character references in span of body.
-func decodeText(body string, span textSpan) decodedText {
+// readPageText reads the stretch of body made of spans.
+func readPageText(body string, spans []textSpan) pageText {
 	var text strings.Builder
-	text.Grow(span.end - span.start)
-	from := make([]int, 0, span.end-span.start+1)
-	for i := span.start; i < span.end; {
-		n, decoded := 1, body[i:i+1]
-		if body[i] == '&' {
-			if ref, value, ok := characterReference(body[i:span.end]); ok {
-				n, decoded = len(ref), value
+	var from, until []int
+	// spaceIn is the span the space ending the text so far came from, or -1
+	// if the text does not end in one.
+	spaceIn := -1
+	for n, span := range spans {
+		for i := span.start; i < span.end; {
+			_, size := utf8.DecodeRuneInString(body[i:span.end])
+			decoded := body[i : i+size]
+			if body[i] == '&' {
+				if ref, value, ok := characterReference(body[i:span.end]); ok {
+					size, decoded = len(ref), value
+				}
 			}
+			switch {
+			case strings.TrimFunc(decoded, unicode.IsSpace) != "":
+				for range len(decoded) {
+					from = append(from, i)
+					until = append(until, i+size)
+				}
+				text.WriteString(decoded)
+				spaceIn = -1
+			case spaceIn == n:
+				until[len(until)-1] = i + size
+			case spaceIn == -1:
+				from = append(from, i)
+				until = append(until, i+size)
+				text.WriteByte(' ')
+				spaceIn = n
+			default:
+				// White space following white space in an earlier run adds
+				// nothing to what the reader sees.
+			}
+			i += size
 		}
-		for range len(decoded) {
-			from = append(from, i)
-		}
-		text.WriteString(decoded)
-		i += n
 	}
-	return decodedText{text: text.String(), from: append(from, span.end)}
+	return pageText{text: text.String(), from: from, until: until}
+}
+
+// pageTexts reads each stretch of page text in body.
+func pageTexts(body string) []pageText {
+	var texts []pageText
+	spans := textSpans(body)
+	for len(spans) > 0 {
+		n := 1
+		for n < len(spans) && spans[n].stretch == spans[0].stretch {
+			n++
+		}
+		texts = append(texts, readPageText(body, spans[:n]))
+		spans = spans[n:]
+	}
+	return texts
+}
+
+// collapseSpace returns s with each run of white space as one space.
+func collapseSpace(s string) string {
+	var collapsed strings.Builder
+	inSpace := false
+	for _, r := range s {
+		if !unicode.IsSpace(r) {
+			collapsed.WriteRune(r)
+		} else if !inSpace {
+			collapsed.WriteByte(' ')
+		}
+		inSpace = unicode.IsSpace(r)
+	}
+	return collapsed.String()
 }
 
 // xmlEntities are the references XML itself defines.
@@ -271,9 +348,14 @@ func characterReference(s string) (ref, value string, ok bool) {
 
 // occurrences yields the body offsets [start, end) of each occurrence of
 // selection in texts, in order. An occurrence must take whole characters and
-// references: one that would split a reference is no place for a marker.
-func occurrences(texts []decodedText, selection string) iter.Seq2[int, int] {
+// references: one that would split a reference is no place for a marker. It
+// may run through inline tags, which markRuns then keeps out of the markers.
+func occurrences(texts []pageText, selection string) iter.Seq2[int, int] {
+	selection = collapseSpace(selection)
 	return func(yield func(int, int) bool) {
+		if selection == "" {
+			return
+		}
 		for _, t := range texts {
 			for pos := 0; ; pos++ {
 				index := strings.Index(t.text[pos:], selection)
@@ -283,13 +365,54 @@ func occurrences(texts []decodedText, selection string) iter.Seq2[int, int] {
 				pos += index
 				end := pos + len(selection)
 				startsUnit := pos == 0 || t.from[pos] != t.from[pos-1]
-				endsUnit := t.from[end] != t.from[end-1]
-				if startsUnit && endsUnit && !yield(t.from[pos], t.from[end]) {
+				endsUnit := end == len(t.text) || t.from[end] != t.from[end-1]
+				if startsUnit && endsUnit && !yield(t.from[pos], t.until[end-1]) {
 					return
 				}
 			}
 		}
 	}
+}
+
+// markRuns wraps each run of text in commented, a piece of body that starts
+// and ends in text, in a marker of its own for ref. Confluence writes a
+// comment that runs through inline markup the same way, and a marker that
+// took a tag in could close an element it did not open. A run of nothing but
+// white space is left bare beside runs that have text, since it may sit where
+// an element takes no markup.
+func markRuns(commented, ref string) string {
+	type run struct {
+		text   string
+		isText bool
+	}
+	var runs []run
+	hasText := false
+	for i := 0; i < len(commented); {
+		end := len(commented)
+		if commented[i] == '<' {
+			end = markupEnd(commented, i)
+			runs = append(runs, run{text: commented[i:end]})
+		} else {
+			if next := strings.IndexByte(commented[i:], '<'); next != -1 {
+				end = i + next
+			}
+			runs = append(runs, run{text: commented[i:end], isText: true})
+			hasText = hasText || strings.TrimSpace(commented[i:end]) != ""
+		}
+		i = end
+	}
+
+	var marked strings.Builder
+	for _, r := range runs {
+		if !r.isText || (hasText && strings.TrimSpace(r.text) == "") {
+			marked.WriteString(r.text)
+			continue
+		}
+		fmt.Fprintf(&marked,
+			`<ac:inline-comment-marker ac:ref="%s">%s</ac:inline-comment-marker>`,
+			stdhtml.EscapeString(ref), r.text)
+	}
+	return marked.String()
 }
 
 type commentContext struct {
@@ -332,13 +455,14 @@ func MergeWithWarnings(
 	matches := markerRegex.FindAllStringSubmatchIndex(oldBody, -1)
 	for _, match := range matches {
 		ref := oldBody[match[2]:match[3]]
-		// context around the tag
-		before := contextBefore(oldBody, match[0], contextWindowBytes)
-		after := contextAfter(oldBody, match[1], contextWindowBytes)
-		contexts[ref] = commentContext{
-			before: before,
-			after:  after,
+		// A comment that runs through inline markup has several markers:
+		// its context is what precedes the first and follows the last.
+		ctx, seen := contexts[ref]
+		if !seen {
+			ctx.before = contextBefore(oldBody, match[0], contextWindowBytes)
 		}
+		ctx.after = contextAfter(oldBody, match[1], contextWindowBytes)
+		contexts[ref] = ctx
 	}
 
 	type replacement struct {
@@ -349,10 +473,7 @@ func MergeWithWarnings(
 	}
 	var replacements []replacement
 	seenRefs := make(map[string]bool)
-	var texts []decodedText
-	for _, span := range textSpans(newBody) {
-		texts = append(texts, decodeText(newBody, span))
-	}
+	texts := pageTexts(newBody)
 
 	for _, comment := range comments.Results {
 		if comment.Extensions.Location != "inline" {
@@ -490,13 +611,7 @@ func MergeWithWarnings(
 			continue
 		}
 		minAppliedStart = r.start
-		selection := newBody[r.start:r.end]
-		withComment := fmt.Sprintf(
-			`<ac:inline-comment-marker ac:ref="%s">%s</ac:inline-comment-marker>`,
-			stdhtml.EscapeString(r.ref),
-			selection,
-		)
-		newBody = newBody[:r.start] + withComment + newBody[r.end:]
+		newBody = newBody[:r.start] + markRuns(newBody[r.start:r.end], r.ref) + newBody[r.end:]
 	}
 
 	return newBody, nil
