@@ -226,8 +226,6 @@ func (r *publishRun) leaveDriftedInPlace(ctx context.Context, doc *document) (*c
 		return nil, err
 	}
 
-	r.claimPage(doc.file)
-
 	return existing, nil
 }
 
