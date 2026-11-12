@@ -11,7 +11,6 @@ import (
 	"slices"
 	"strconv"
 	"strings"
-	"unicode"
 	"unicode/utf8"
 
 	"github.com/kovetskiy/mark/v17/confluence"
@@ -243,8 +242,14 @@ type pageText struct {
 
 // readPageText reads the stretch of body made of spans.
 func readPageText(body string, spans []textSpan) pageText {
+	size := 0
+	for _, span := range spans {
+		size += span.end - span.start
+	}
 	var text strings.Builder
-	var from, until []int
+	text.Grow(size)
+	from := make([]int, 0, size)
+	until := make([]int, 0, size)
 	// spaceIn is the span the space ending the text so far came from, or -1
 	// if the text does not end in one.
 	spaceIn := -1
@@ -258,7 +263,7 @@ func readPageText(body string, spans []textSpan) pageText {
 				}
 			}
 			switch {
-			case strings.TrimFunc(decoded, unicode.IsSpace) != "":
+			case !isBlank(decoded):
 				for range len(decoded) {
 					from = append(from, i)
 					until = append(until, i+size)
@@ -297,19 +302,12 @@ func pageTexts(body string) []pageText {
 	return texts
 }
 
-// collapseSpace returns s with each run of white space as one space.
-func collapseSpace(s string) string {
-	var collapsed strings.Builder
-	inSpace := false
-	for _, r := range s {
-		if !unicode.IsSpace(r) {
-			collapsed.WriteRune(r)
-		} else if !inSpace {
-			collapsed.WriteByte(' ')
-		}
-		inSpace = unicode.IsSpace(r)
-	}
-	return collapsed.String()
+// sought returns selection as it is looked for in a pageText: each run of
+// white space as one space, and none at its ends. White space at the edge of
+// a selection may be all there is between two elements, where a marker cannot
+// go, so the marker is placed on the text alone.
+func sought(selection string) string {
+	return strings.Join(strings.Fields(selection), " ")
 }
 
 // xmlEntities are the references XML itself defines.
@@ -347,11 +345,11 @@ func characterReference(s string) (ref, value string, ok bool) {
 }
 
 // occurrences yields the body offsets [start, end) of each occurrence of
-// selection in texts, in order. An occurrence must take whole characters and
-// references: one that would split a reference is no place for a marker. It
-// may run through inline tags, which markRuns then keeps out of the markers.
+// selection, which sought returned, in texts, in order. An occurrence must
+// take whole characters and references: one that would split a reference is
+// no place for a marker. It may run through inline tags, which markRuns then
+// keeps out of the markers.
 func occurrences(texts []pageText, selection string) iter.Seq2[int, int] {
-	selection = collapseSpace(selection)
 	return func(yield func(int, int) bool) {
 		if selection == "" {
 			return
@@ -374,44 +372,33 @@ func occurrences(texts []pageText, selection string) iter.Seq2[int, int] {
 	}
 }
 
+// isBlank reports whether s is empty or all white space.
+func isBlank(s string) bool {
+	return strings.TrimSpace(s) == ""
+}
+
 // markRuns wraps each run of text in commented, a piece of body that starts
 // and ends in text, in a marker of its own for ref. Confluence writes a
 // comment that runs through inline markup the same way, and a marker that
 // took a tag in could close an element it did not open. A run of nothing but
-// white space is left bare beside runs that have text, since it may sit where
-// an element takes no markup.
+// white space is left bare, since it may sit where an element takes no
+// markup.
 func markRuns(commented, ref string) string {
-	type run struct {
-		text   string
-		isText bool
-	}
-	var runs []run
-	hasText := false
-	for i := 0; i < len(commented); {
-		end := len(commented)
-		if commented[i] == '<' {
-			end = markupEnd(commented, i)
-			runs = append(runs, run{text: commented[i:end]})
-		} else {
-			if next := strings.IndexByte(commented[i:], '<'); next != -1 {
-				end = i + next
-			}
-			runs = append(runs, run{text: commented[i:end], isText: true})
-			hasText = hasText || strings.TrimSpace(commented[i:end]) != ""
-		}
-		i = end
-	}
-
 	var marked strings.Builder
-	for _, r := range runs {
-		if !r.isText || (hasText && strings.TrimSpace(r.text) == "") {
-			marked.WriteString(r.text)
+	written := 0
+	for _, span := range textSpans(commented) {
+		text := commented[span.start:span.end]
+		marked.WriteString(commented[written:span.start])
+		written = span.end
+		if isBlank(text) {
+			marked.WriteString(text)
 			continue
 		}
 		fmt.Fprintf(&marked,
 			`<ac:inline-comment-marker ac:ref="%s">%s</ac:inline-comment-marker>`,
-			stdhtml.EscapeString(ref), r.text)
+			stdhtml.EscapeString(ref), text)
 	}
+	marked.WriteString(commented[written:])
 	return marked.String()
 }
 
@@ -496,7 +483,8 @@ func MergeWithWarnings(
 		// (threaded replies) are always deduplicated, even if this one is dropped.
 		seenRefs[ref] = true
 
-		if selection == "" {
+		text := sought(selection)
+		if text == "" {
 			warnings.Add(report.WarningInlineComment,
 				"inline comment %s is lost: the text it was made on is empty", ref)
 			continue
@@ -512,7 +500,7 @@ func MergeWithWarnings(
 		// with its references resolved: a match in markup would break the XML
 		// or show as literal text.
 		candidates := 0
-		for start, end := range occurrences(texts, selection) {
+		for start, end := range occurrences(texts, text) {
 			// Skip candidates that start or end in the middle of a multi-byte
 			// UTF-8 rune; such a match would produce invalid UTF-8 output.
 			if !utf8.RuneStart(newBody[start]) || (end < len(newBody) && !utf8.RuneStart(newBody[end])) {
