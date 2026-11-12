@@ -3194,5 +3194,8 @@ func (c RenderingConfig) markdownOptions(res *resources) markdown.Options {
 		Features:         c.Features,
 		AttachReferenced: c.AttachReferenced,
 		IncludePath:      c.IncludePath,
+		// The page header is checked against this before the first page is
+		// published; each document's compile replaces it with its own root.
+		Root: attachment.Root{}.WithBoundary(c.AttachmentRoot),
 	}
 }
