@@ -92,12 +92,13 @@ func GetCredentials(
 	pageBase := url.Scheme + "://" + url.Host + contextPath
 
 	if pageURLGiven && pageID == "" {
-		pageID, err = shortLinkOrInstance(url, contextPath)
+		pageID, err = shortLinkOrInstance(url, contextPath, baseURL)
 		if err != nil {
 			return nil, fmt.Errorf(
-				"--url %q names no page mark can publish to by its id: give the page's address as "+
+				"the page URL %q (--url, MARK_PAGE_URL or url in the configuration file) names no page "+
+					"mark can publish to by its id: give the page's address as "+
 					".../pages/viewpage.action?pageId=ID, .../spaces/KEY/pages/ID/Title or a short /x/ link, "+
-					"or leave --url out, set the base URL and name the page with Space and Title headers: %w",
+					"or set it aside with --url \"\", set the base URL and name the page with Space and Title headers: %w",
 				pageURL, err,
 			)
 		}
@@ -199,7 +200,14 @@ var instanceLanding = map[string]bool{
 // alone needs none. Anything else names something in the instance that is not
 // a page id, and reading it as the instance alone would publish wherever each
 // document's headers say; it is ErrNoPageID.
-func shortLinkOrInstance(target *url.URL, contextPath string) (string, error) {
+func shortLinkOrInstance(target *url.URL, contextPath, baseURL string) (string, error) {
+	// The base URL names the instance whatever its context path looks like,
+	// and so does a page URL that repeats it.
+	if base, err := url.Parse(baseURL); err == nil && baseURL != "" && target.Host != "" &&
+		strings.TrimRight(base.EscapedPath(), "/") == strings.TrimRight(target.EscapedPath(), "/") {
+		return "", nil
+	}
+
 	rest := strings.TrimPrefix(strings.TrimRight(target.EscapedPath(), "/"), contextPath)
 
 	if code, ok := strings.CutPrefix(rest, "/x/"); ok {

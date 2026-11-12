@@ -506,3 +506,32 @@ func TestPublishURLWithoutPageID(t *testing.T) {
 		})
 	}
 }
+
+// TestPublishURLSetAsideOnTheCommandLine: an empty --url sets aside a url the
+// configuration file keeps for mark export, and the document's headers name
+// the page.
+func TestPublishURLSetAsideOnTheCommandLine(t *testing.T) {
+	noDefaultConfig(t)
+
+	server := confluencetest.New(t)
+	home := server.AddPage("DOCS", "Home", "page", "")
+	server.SetHomepage("DOCS", home.ID)
+
+	dir := t.TempDir()
+	config := writeConfig(t, dir, "mark.toml",
+		"base-url = \""+server.URL+"\"\nurl = \""+server.URL+"/display/DOCS/Home\"\n")
+	document := filepath.Join(dir, "page.md")
+	require.NoError(t, os.WriteFile(document,
+		[]byte("<!-- Space: DOCS -->\n<!-- Title: Another page -->\n\nBody.\n"), 0o600))
+
+	_, _, err := runMark(t, "-c", config, "--color", "never", "-u", "user", "-p", "token",
+		"publish", "--files", document)
+	require.ErrorIs(t, err, ErrNoPageID)
+	assert.ErrorContains(t, err, "configuration file")
+	assert.Zero(t, server.CountRequests("POST", ""), "no page was created")
+
+	_, _, err = runMark(t, "-c", config, "--color", "never", "-u", "user", "-p", "token",
+		"publish", "--url", "", "--files", document)
+	require.NoError(t, err)
+	assert.Equal(t, 1, server.CountRequests("POST", "/content"), "the page the headers name was created")
+}
