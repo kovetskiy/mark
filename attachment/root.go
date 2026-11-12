@@ -446,20 +446,37 @@ func (r Root) narrow(base, joined, named string) error {
 		)
 	}
 
-	if !r.OnDisk(joined) {
-		dir, dirErr := r.fsName(base)
-		file, fileErr := r.fsName(joined)
-		if dirErr == nil && fileErr == nil {
-			file = r.resolveDeepest(file)
-			if dir = r.resolveDeepest(dir); dir == "." || file == dir || strings.HasPrefix(file, dir+"/") {
-				return nil
-			}
-
-			joined = file
-		}
+	// A name under the include path is on disk, outside every directory of
+	// the fs.FS.
+	if r.OnDisk(joined) {
+		return r.boundary.outside(base, named, filepath.ToSlash(joined))
 	}
 
-	return r.boundary.outside(base, named, filepath.ToSlash(joined))
+	file, ok := r.inFSDir(base, joined)
+	if ok {
+		return nil
+	}
+
+	return r.boundary.outside(base, named, file)
+}
+
+// inFSDir reports whether joined is inside the directory dir of the fs.FS,
+// both followed through their links, and returns joined as it compared it.
+func (r Root) inFSDir(dir, joined string) (string, bool) {
+	dir, dirErr := r.fsName(dir)
+	file, fileErr := r.fsName(joined)
+	if dirErr != nil || fileErr != nil {
+		return filepath.ToSlash(joined), false
+	}
+
+	// The root of the fs.FS holds everything in it, with no walk needed.
+	if dir = r.resolveDeepest(dir); dir == "." {
+		return file, true
+	}
+
+	file = r.resolveDeepest(file)
+
+	return file, file == dir || strings.HasPrefix(file, dir+"/")
 }
 
 // resolveDeepest is name, a path inside the fs.FS, with the symbolic links in
