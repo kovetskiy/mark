@@ -354,7 +354,10 @@ manifest and writes no report, so a document's `Key` is not used: its page is
 found by its title in its space, as a file's is, and placed under its parents.
 A second file or document of a title the `Publisher` has already published in
 that space is refused, as a run refuses it (see
-[One page per title](page-tree.md#one-page-per-title)). The same file can be
+[One page per title](page-tree.md#one-page-per-title)). It keeps no record of
+which document a page was published from, so the first to name a title has it;
+`Run` with `Tracking.TrackPages` leaves a recorded page to the file, or the
+`Document` of the `Key`, it is recorded for. The same file can be
 published again, under its title or a new one, which leaves the earlier title
 to another file. A file renamed in between is a second file of its title, and
 is refused until a new `Publisher` is made, as one is for each batch.

@@ -1236,9 +1236,18 @@ func Run(ctx context.Context, config Config) (err error) {
 		// A title that still names the page of a document retitling it is
 		// free once that document has published, so it goes first. One that
 		// has had its turn and still holds the title leaves this one refused.
+		// So does the document the page is recorded for when it keeps the
+		// title: it goes first, and this one is then refused the title.
 		var held *titleHeldError
 		if errors.As(err, &held) && !turned[held.holder.file] {
-			log.Info().Msgf("%s; publishing it first", held)
+			if held.retitled == "" {
+				log.Info().Msgf(
+					"page %s, which the title %q finds, is recorded for %s; publishing it first",
+					held.page.ID, held.title, held.holder.file,
+				)
+			} else {
+				log.Info().Msgf("%s; publishing it first", held)
+			}
 
 			pub.yielded[file] = true
 			stop := publish(held.holder)
@@ -2035,7 +2044,7 @@ func (r *publishRun) processFile(ctx context.Context, in input) (*confluence.Pag
 		return nil, nil, err
 	}
 
-	if err := r.claimTitle(doc); err != nil {
+	if err := r.claimTitle(ctx, doc); err != nil {
 		return nil, nil, err
 	}
 
@@ -2166,7 +2175,12 @@ func (r *publishRun) processFile(ctx context.Context, in input) (*confluence.Pag
 //
 // A document holds the title it was last published under: one published
 // again under another title leaves the first to whichever document takes it.
-func (r *publishRun) claimTitle(doc *document) error {
+//
+// First is not only a matter of order. With --track-pages, a title whose page
+// is recorded for another document of the run that still declares it is that
+// document's: the error names it, and the run gives it its turn before this
+// one is asked again.
+func (r *publishRun) claimTitle(ctx context.Context, doc *document) error {
 	meta := doc.meta
 	if meta == nil || meta.Title == "" {
 		return nil
@@ -2174,11 +2188,13 @@ func (r *publishRun) claimTitle(doc *document) error {
 
 	key, name := runTitleKey(meta.Space, meta.Type, meta.Title), absPath(doc.file)
 	if previous, taken := r.titleClaims[key]; taken && absPath(previous) != name {
-		return fmt.Errorf(
-			"%s already publishes %q in space %q, and a space holds one page of a title: "+
-				"rename one of them, or use --title-append-generated-hash",
-			previous, meta.Title, meta.Space,
-		)
+		return titleTaken(previous, meta.Title, meta.Space)
+	}
+
+	if owner, err := r.titleOwner(ctx, doc.file, doc.key, meta); err != nil {
+		return err
+	} else if owner != nil {
+		return owner
 	}
 
 	if held, ok := r.claimedTitles[name]; ok && held != key {
