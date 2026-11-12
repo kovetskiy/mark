@@ -293,6 +293,27 @@ func TestPageURLOfTheInstance(t *testing.T) {
 	}
 }
 
+// TestPageURLThatIsTheBaseURL: a --url that repeats the base URL names the
+// instance alone, whatever the context path is made of.
+func TestPageURLThatIsTheBaseURL(t *testing.T) {
+	for _, base := range []string{
+		"https://host/apps/confluence",
+		"https://host/confluence-7.19",
+		"https://x.atlassian.net/wiki",
+	} {
+		t.Run(base, func(t *testing.T) {
+			creds, err := GetCredentials(context.Background(), "user", "token", "", base+"/", base, false)
+			require.NoError(t, err)
+
+			assert.Equal(t, base, creds.BaseURL)
+			assert.Empty(t, creds.PageID)
+
+			_, err = GetCredentials(context.Background(), "user", "token", "", base+"/display/DOC/Title", base, false)
+			require.ErrorIs(t, err, ErrNoPageID)
+		})
+	}
+}
+
 // TestGetCredentialsExplicitBaseURLWins covers -l beside a target URL on the
 // same instance written another way: the base URL is the one requests go to,
 // and the URL supplies the page id.

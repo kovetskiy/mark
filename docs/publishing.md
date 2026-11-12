@@ -32,13 +32,16 @@ hosts are one server. Set the base URL to the host in the URL, or leave
 `--url` out and name the page with `Space` and `Title` headers.
 
 A URL that names the instance alone -- `https://example.atlassian.net/wiki`,
-or the home page or dashboard a browser opens it on -- gives the base URL and
-no page, and each document names its page with its headers. Any other URL has
+the home page or dashboard a browser opens it on, or the base URL itself --
+gives the base URL and no page, and each document names its page with its
+headers. Any other URL has
 to carry a page id. One that does not is refused before anything is sent,
 since the documents' headers would otherwise decide where they go and the
 page the URL names would stay as it was: a `/display/KEY/Title` address, a
 space's overview, a blog post, or a bare page id in place of a URL. Open the
-page and copy one of the forms above, or leave `--url` out.
+page and copy one of the forms above, or leave `--url` out. When the URL comes
+from `MARK_PAGE_URL` or the configuration file, where `mark export` may need
+it, `--url ""` on the command line sets it aside for one run.
 
 `mark export --url` is the same setting, under the same names. It reads
 `/display/KEY/Title` and blog post addresses as well, since it looks the page

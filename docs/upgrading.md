@@ -30,7 +30,7 @@ The old names are no longer read. In the configuration file an old key is refuse
 | `MARK_URL` (export) | `MARK_PAGE_URL` |
 | `--math-format`, `MARK_MATH_FORMAT`, `math-format` | `--math-output`, `MARK_MATH_OUTPUT`, `math-output` |
 
-`--url`, `MARK_PAGE_URL` and `url` now name the page for **both** `publish` and `export`. A configuration file whose `url` was only meant for `mark export` now sends `mark publish` to that page as well. Likewise, a CI job that sets `MARK_PAGE_URL` sends every `mark publish` of the job to that one page.
+`--url`, `MARK_PAGE_URL` and `url` now name the page for **both** `publish` and `export`. A configuration file whose `url` was only meant for `mark export` now sends `mark publish` to that page as well, or has it refuse a URL that carries no page id, such as a `/display/KEY/Title` address; `mark publish --url ""` sets the URL aside. Likewise, a CI job that sets `MARK_PAGE_URL` sends every `mark publish` of the job to that one page.
 
 ### Unknown configuration keys are an error
 
