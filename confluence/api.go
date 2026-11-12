@@ -191,10 +191,10 @@ type spaceIDCacheEntry struct {
 	err error
 }
 
-// pageCacheKey lowercases the title, so every spelling of it shares one
-// entry, as it shares one page in Confluence.
+// pageCacheKey lowercases the space key and the title, so every spelling of
+// them shares one entry, as it shares one page in Confluence.
 func pageCacheKey(space, title string, pageType ContentType) string {
-	return space + "\x00" + strings.ToLower(title) + "\x00" + string(pageType)
+	return strings.ToLower(space) + "\x00" + strings.ToLower(title) + "\x00" + string(pageType)
 }
 
 func clonePageInfo(page *PageInfo) *PageInfo {
