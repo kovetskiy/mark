@@ -708,3 +708,18 @@ func TestRestrictPageUpdatesGivesUpAfterMaxAttempts(t *testing.T) {
 	assert.Empty(t, server.Page(page.ID).UpdateRestrictedTo)
 	assert.Equal(t, maxAttempts, server.CountRequests(http.MethodPost, "/restriction"))
 }
+
+// A 503 on the lock is already marked unavailable, with the Retry-After it
+// came with; marking it again for the 500s must not drop that wait.
+func TestRestrictPageUpdatesWaitsForRetryAfter(t *testing.T) {
+	api, server := newUnavailableAPI(t, false, 1, isPost("/restriction"))
+	var waited []string
+	api.unavailableWait = func(_ context.Context, _ int, retryAfter string) { waited = append(waited, retryAfter) }
+	server.AddSpace("DOCS")
+	stored := server.AddPage("DOCS", "Locked", "page", "")
+	server.SetCurrentUser(confluencetest.User{AccountID: "acct-me", FullName: "Mark Bot"})
+
+	require.NoError(t, api.RestrictPageUpdates(context.Background(), &PageInfo{ID: stored.ID, Title: stored.Title}, ""))
+	assert.Equal(t, []string{"acct-me"}, server.Page(stored.ID).UpdateRestrictedTo)
+	assert.Equal(t, []string{"7"}, waited)
+}

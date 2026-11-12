@@ -2302,8 +2302,9 @@ func (api *API) RestrictPageUpdates(
 		)
 		// Adding a user who may update already changes nothing, so the
 		// request is safe to send again after any 5xx, not only after the
-		// answers that say Confluence was unavailable.
-		if status := statusOf(err); status >= 500 && status != http.StatusNotImplemented {
+		// answers that say Confluence was unavailable. Those are marked
+		// already, with the Retry-After they came with.
+		if status := statusOf(err); status >= 500 && status != http.StatusNotImplemented && !isUnavailable(err) {
 			err = unavailableError{error: err}
 		}
 		return struct{}{}, err
