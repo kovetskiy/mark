@@ -1969,6 +1969,8 @@ func (s *Store) OrphanEntries(spaceKey string) []Orphan {
 // HoldingPage is the id of the page a space's manifest is kept on: the page
 // --manifest-page names, or the space homepage on Server and Data Center. It
 // is "" for a manifest kept in space properties, and for a space not loaded.
+// page.HandleOrphans knows nothing of the manifest, so its caller keeps this
+// page out of what it removes.
 func (s *Store) HoldingPage(spaceKey string) string {
 	s.mu.Lock()
 	defer s.mu.Unlock()

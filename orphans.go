@@ -205,20 +205,15 @@ func handleOrphans(
 				// of its entries came to name a page elsewhere. The entry is
 				// kept, so that each run reports the page again until somebody
 				// corrects it.
-				if reason, ok := elsewhere[candidate.Path]; ok {
-					log.Warn().Msgf("page %q (%s) is left alone: %s", candidate.Title, candidate.PageID, reason)
-
-					if !config.Mode.readOnly() {
-						reportKept(results, candidate, reason)
-					}
-
-					continue
-				}
+				reason, alone := elsewhere[candidate.Path]
 
 				// Removing the page the manifest is kept on would take the
 				// manifest with it, and every later tracked run would stop there.
-				if candidate.PageID == holding {
-					reason := fmt.Sprintf("the page manifest of space %q is kept on it", space)
+				if !alone && holding != "" && candidate.PageID == holding {
+					reason, alone = fmt.Sprintf("the page manifest of space %q is kept on it", space), true
+				}
+
+				if alone {
 					log.Warn().Msgf("page %q (%s) is left alone: %s", candidate.Title, candidate.PageID, reason)
 
 					if !config.Mode.readOnly() {

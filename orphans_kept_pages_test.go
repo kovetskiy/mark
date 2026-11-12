@@ -12,11 +12,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// rootDoc is a document published at the root of DOCS under its title.
-func rootDoc(title string) string {
-	return "<!-- Space: DOCS -->\n<!-- Title: " + title + " -->\n\n" + title + ".\n"
-}
-
 // keptOrphan returns the report's entry for a page --on-orphan left alone.
 func keptOrphan(t *testing.T, got *report.Report, pageID string) report.Orphan {
 	t.Helper()
@@ -50,7 +45,7 @@ func TestOnOrphanLeavesTheSpaceHomepage(t *testing.T) {
 				dir := t.TempDir()
 				writeFile(t, dir, "keep.md", markdownWithTitle("Keep"))
 				writeFile(t, dir, "gone.md", markdownWithTitle("Gone"))
-				homeFile := writeFile(t, dir, "home.md", rootDoc("Home"))
+				homeFile := writeFile(t, dir, "home.md", parentDoc("Home"))
 
 				config := trackingConfig(server, filepath.Join(dir, "*.md"))
 				config.Tracking.OnOrphan = action
