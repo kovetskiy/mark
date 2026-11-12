@@ -153,6 +153,25 @@ const uncapDiagramWidth = `mermaid.initialize(Object.assign({startOnLoad: false}
 		.filter(([, section]) => section && typeof section === "object" && "useMaxWidth" in section)
 		.map(([name]) => [name, {useMaxWidth: false}]))))`
 
+// startupTimeout bounds getting a browser ready to draw: the launch, which
+// chrome.Browser allows 90 seconds for, and loading the bundle, which
+// mermaid.go bounds by itself once the browser answers. Nothing bounds the
+// launch otherwise, so a browser that starts and then stops responding would
+// hold the first diagram until the engine is closed.
+var startupTimeout = 90*time.Second + mermaid.DefaultStartupTimeout
+
+// browserEngine is the chrome renderer with the context it was launched under,
+// which is released when the renderer is stopped.
+type browserEngine struct {
+	*mermaid.RenderEngine
+	release context.CancelFunc
+}
+
+func (b *browserEngine) Cancel() {
+	b.RenderEngine.Cancel()
+	b.release()
+}
+
 // start launches the renderer of e's kind, to live as long as life, which
 // Close cancels.
 func (e *Engine) start(life context.Context) (mermaid.Renderer, error) {
@@ -161,19 +180,58 @@ func (e *Engine) start(life context.Context) (mermaid.Renderer, error) {
 	}
 
 	log.Debug().Msg("Setting up Mermaid renderer")
-	// NewRenderEngine prepends chromedp.DefaultExecAllocatorOptions itself, so
-	// only the additional options are passed here. Without them Chrome fails to
-	// start wherever the sandbox is unavailable -- the same failure the d2
-	// renderer hits, since both drive Chrome through chromedp.
-	//
+
 	// The context governs the engine's whole lifetime rather than just its
-	// startup, so it deliberately carries no deadline: mermaid.go bounds loading
-	// the embedded bundle with DefaultStartupTimeout by itself, whereas a
-	// deadline here would close the browser mid-run.
-	engine, err := mermaid.NewRenderEngine(life, []string{uncapDiagramWidth},
-		slices.Concat(chrome.AllocatorOptions(), e.extraOptions)...)
-	if err != nil {
-		return nil, err
+	// startup, so it deliberately carries no deadline, which would close the
+	// browser mid-run. A launch that overruns is cancelled instead.
+	ctx, cancel := context.WithCancel(life)
+
+	type launched struct {
+		engine *mermaid.RenderEngine
+		err    error
+	}
+
+	started := make(chan launched, 1)
+
+	go func() {
+		// NewRenderEngine prepends chromedp.DefaultExecAllocatorOptions itself, so
+		// only the additional options are passed here. Without them Chrome fails to
+		// start wherever the sandbox is unavailable -- the same failure the d2
+		// renderer hits, since both drive Chrome through chromedp.
+		engine, err := mermaid.NewRenderEngine(ctx, []string{uncapDiagramWidth},
+			slices.Concat(chrome.AllocatorOptions(), e.extraOptions)...)
+		started <- launched{engine, err}
+	}()
+
+	timer := time.NewTimer(startupTimeout)
+	defer timer.Stop()
+
+	var engine *mermaid.RenderEngine
+
+	select {
+	case result := <-started:
+		if result.err != nil {
+			cancel()
+
+			return nil, result.err
+		}
+
+		engine = result.engine
+
+	case <-timer.C:
+		cancel()
+
+		// Waited for, since chromedp may still be reaping the Chrome it was
+		// starting; an engine that finished starting meanwhile is stopped.
+		if result := <-started; result.err == nil {
+			result.engine.Cancel()
+		}
+
+		return nil, fmt.Errorf(
+			"the browser for mermaid diagrams did not finish starting within %s, "+
+				"which usually means the machine is too loaded or too small to run it",
+			startupTimeout,
+		)
 	}
 
 	engine.SetRenderTimeout(renderTimeout)
@@ -190,7 +248,7 @@ func (e *Engine) start(life context.Context) (mermaid.Renderer, error) {
 		log.Error().Err(err).Msg("Chrome crashed while rendering Mermaid diagrams")
 	})
 
-	return engine, nil
+	return &browserEngine{RenderEngine: engine, release: cancel}, nil
 }
 
 // minimumMermanVersion is merman-version.txt as the binary carries it. Read
@@ -373,7 +431,7 @@ func (e *Engine) renderPNG(ctx context.Context, title, diagram string, scale flo
 		//
 		// Only for the browser engine: merman draws a PNG without one, so there
 		// is no browser for the capture to take down.
-		if _, inBrowser := engine.(*mermaid.RenderEngine); inBrowser {
+		if _, inBrowser := engine.(*browserEngine); inBrowser {
 			svg, err := engine.RenderContext(ctx, diagram)
 			if err != nil {
 				return err
