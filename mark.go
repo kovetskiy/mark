@@ -1631,7 +1631,7 @@ func newPublishRun(
 		config:           config,
 		res:              res,
 		folders:          page.NewFolderCache(),
-		createdParents:   &createdPages{},
+		createdParents:   map[string]bool{},
 		users:            users,
 		std:              std,
 		pageHeader:       pageHeader,
@@ -1866,9 +1866,9 @@ type publishRun struct {
 	hierarchy        *page.Hierarchy
 	titles           *runTitles
 
-	// createdParents holds the parent pages the run created, which is what
-	// makes a directory's page one of mark's own.
-	createdParents *createdPages
+	// createdParents holds the ids of the parent pages the run created,
+	// which is what makes a directory's page one of mark's own.
+	createdParents map[string]bool
 
 	// directoryKeys names the manifest key of each directory of the
 	// hierarchy that only documents lie in; one not here is keyed by its
@@ -2404,7 +2404,7 @@ func (r *publishRun) ancestryOptions(doc *document) page.AncestryOptions {
 		FolderCache: r.folders,
 		Parents:     r.ancestryTracker,
 		Folders:     r.ancestryTracker,
-		Created:     r.createdParents.add,
+		Created:     func(created *confluence.PageInfo) { r.createdParents[created.ID] = true },
 		Warnings:    doc.warnings,
 	}
 }
