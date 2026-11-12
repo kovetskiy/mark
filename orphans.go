@@ -45,7 +45,7 @@ func handleOrphans(
 		// there: they and their entries stay as they are, for a run given
 		// that space or none.
 		own := config.Page.Space == "" || strings.EqualFold(config.Page.Space, space)
-		if own && !hadErrors {
+		if own && !hadErrors && !config.Mode.readOnly() {
 			tracker.ForgetMoved(space)
 		}
 
@@ -69,7 +69,7 @@ func handleOrphans(
 		// Before any scope is resolved: --orphan-under names a place in the
 		// run's own space.
 		if !own {
-			leaveOtherSpace(config, space, orphans, action, results)
+			leaveOtherSpace(config, space, orphans, results)
 
 			continue
 		}
@@ -290,11 +290,9 @@ func handleOrphans(
 }
 
 // leaveOtherSpace says which tracked pages of a space other than the run's own
-// had no source file in the run, and lists those --on-orphan was to remove as
-// left where they are.
-func leaveOtherSpace(
-	config Config, space string, orphans []manifest.Orphan, action report.OnOrphan, results *report.Report,
-) {
+// had no source file in the run, and lists them as left where they are,
+// whatever --on-orphan was to do with them.
+func leaveOtherSpace(config Config, space string, orphans []manifest.Orphan, results *report.Report) {
 	paths := make([]string, 0, len(orphans))
 	for _, orphan := range orphans {
 		paths = append(paths, orphan.Path)
@@ -306,7 +304,7 @@ func leaveOtherSpace(
 		space, len(paths), reason, strings.Join(paths, ", "),
 	)
 
-	if action == report.OnOrphanReport || config.Mode.readOnly() {
+	if config.Mode.readOnly() {
 		return
 	}
 

@@ -109,11 +109,6 @@ func TestOnOrphanLeavesASpaceOnlyAHeaderNames(t *testing.T) {
 				"the document itself is tracked where it published")
 
 			got := decodeReport(t, []byte(out))
-			if action == report.OnOrphanReport {
-				assert.Empty(t, got.Orphans)
-				return
-			}
-
 			require.Len(t, got.Orphans, 2)
 			for _, orphan := range got.Orphans {
 				assert.Equal(t, report.OnOrphanReport, orphan.Action)

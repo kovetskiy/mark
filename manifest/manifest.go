@@ -2159,8 +2159,7 @@ func (s *Store) ForgetMoved(spaceKey string) {
 	for i := range state.shards {
 		for path, entry := range state.shards[i].pages {
 			// What orphans passes over for another reason is not this one's.
-			if state.seen[path] || s.leftToOwner(path, entry) || !s.covers(path, entry) ||
-				state.claimed[entry.PageID] {
+			if state.seen[path] || !s.covers(path, entry) || state.claimed[entry.PageID] {
 				continue
 			}
 
@@ -2183,10 +2182,11 @@ func (s *Store) ForgetMoved(spaceKey string) {
 }
 
 // publishedElsewhere returns the space other than spaceKey in which this run
-// looked up or recorded path, one of the documents it publishes. Called with
-// s.mu held.
+// looked up or recorded path, one of the documents it publishes. Not a
+// directory, which has a page in every space its documents publish to. Called
+// with s.mu held.
 func (s *Store) publishedElsewhere(spaceKey, path string) (string, bool) {
-	if !s.runFiles[path] {
+	if !s.runFiles[path] || isDocumentDirectory(path) {
 		return "", false
 	}
 

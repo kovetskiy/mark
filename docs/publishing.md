@@ -260,6 +260,8 @@ it, because its space is not the one `--space` gave the run, because it is
 the space homepage or the page the manifest is kept on, because the space
 homepage could not be read, or because nothing was published in its space
 this run -- is `report`, with a `reason` saying why.
+One whose space the run was not given carries that `reason` under `--on-orphan
+report` too, since it stays tracked where any other reported page is forgotten.
 
 `untracked` lists the spaces published to without a page manifest under
 [`--manifest-page-optional`](page-tree.md#when-the-manifest-page-does-not-exist-yet),
