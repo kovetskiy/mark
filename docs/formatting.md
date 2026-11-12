@@ -520,7 +520,12 @@ This is the hidden content.
 
 To write about the tag instead, escape it or put it in a code span:
 `\<details>`, `&lt;details&gt;` and `` `<details>` `` all show `<details>` on
-the page.
+the page. Escape the closing tag the same way: a `</details>` that
+closes nothing is written to the page as it stands, and Confluence refuses a
+page holding one.
+
+Inside an HTML block, such as the lines of the example above, Markdown is not
+read and a backslash escapes nothing: write `&lt;details&gt;` there.
 
 ## LaTeX & Math Formulas
 
