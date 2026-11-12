@@ -1148,10 +1148,9 @@ func (state *spaceState) writeProperty(
 // writeMapping stores one of the mappings that covers the whole space -- the
 // folders or the parents -- and reports whether it was written.
 //
-// A conflict is warned about rather than failed on, as it is for a shard:
-// another run wrote between this run's read and its write, the two are not
-// mergeable from here, and losing the mapping is not worth failing a publish
-// that has already succeeded.
+// A conflict is warned about rather than failed on: another run wrote between
+// this run's read and its write, and losing the mapping is not worth failing a
+// publish that has already succeeded.
 func (state *spaceState) writeMapping(
 	ctx context.Context,
 	api *confluence.API,
@@ -2202,9 +2201,10 @@ func (s *Store) Save(ctx context.Context) (err error) {
 
 	// A space whose manifest page could not be looked for again keeps no other
 	// space from being saved, nor is its failure lost to a later one's.
-	var lateErrs []error
+	// Nor does a shard another run kept this one from saving.
+	var lateErrs, unsaved []error
 	defer func() {
-		err = errors.Join(append(lateErrs, err)...)
+		err = errors.Join(append(append(lateErrs, unsaved...), err)...)
 	}()
 	for _, spaceKey := range s.sortedSpaces() {
 		state := s.spaces[spaceKey]
@@ -2263,54 +2263,143 @@ func (s *Store) Save(ctx context.Context) (err error) {
 				continue
 			}
 
-			value, err := json.Marshal(document{
-				Version: formatVersion,
-				Pages:   state.shards[i].pages,
-			})
-			if err != nil {
-				return fmt.Errorf("unable to encode manifest for space %q: %w", spaceKey, err)
-			}
-
-			if len(value) > shardSizeWarning {
-				// Said while there is still room to act. Confluence's own limit
-				// is not knowable from here, so this is a heads-up rather than a
-				// refusal, and the write is attempted regardless.
-				log.Warn().Msgf(
-					"manifest shard %s of space %q is %d bytes and holds %d pages; "+
-						"it may be approaching the property size Confluence will accept",
-					PropertyKeyFor(s.prefix, i), spaceKey, len(value), len(state.shards[i].pages),
-				)
-			}
-
-			if err := state.write(ctx, s.api, i, value); err != nil {
-				if errors.Is(err, confluence.ErrPropertyUnseen) {
-					// Said differently from a plain conflict, and still not
-					// fatal: the other shards describe pages this one says
-					// nothing about, and abandoning them helps nobody.
-					log.Warn().Err(err).Msgf(
-						"manifest shard %s of space %q was not saved",
-						PropertyKeyFor(s.prefix, i), spaceKey,
-					)
-					continue
+			if err := s.saveShard(ctx, spaceKey, state, i); err != nil {
+				if !errors.Is(err, confluence.ErrPropertyConflict) && !errors.Is(err, confluence.ErrPropertyUnseen) {
+					return err
 				}
-				if errors.Is(err, confluence.ErrPropertyConflict) {
-					// Another run wrote between this run's read and its write.
-					// The two are not mergeable from here without re-reading,
-					// and losing the mapping is not worth failing a publish that
-					// has already succeeded -- the pages are live either way.
-					log.Warn().Msgf(
-						"manifest shard %s of space %q was updated by a concurrent run; "+
-							"those mappings were not saved",
-						PropertyKeyFor(s.prefix, i), spaceKey,
-					)
-					continue
-				}
-				return err
+				// The other shards describe pages this one says nothing
+				// about, so they are still written.
+				unsaved = append(unsaved, err)
 			}
-
-			state.shards[i].dirty = false
 		}
 	}
 
 	return nil
+}
+
+// saveShard writes one shard. When another run wrote it since this run read
+// it, the shard is read again and this run's changes are written over what is
+// there, once.
+func (s *Store) saveShard(ctx context.Context, spaceKey string, state *spaceState, index int) error {
+	err := s.writeShard(ctx, spaceKey, state, index)
+	if !errors.Is(err, confluence.ErrPropertyConflict) && !errors.Is(err, confluence.ErrPropertyUnseen) {
+		return err
+	}
+
+	key := PropertyKeyFor(state.prefix, index)
+	if mergeErr := s.mergeShard(ctx, state, index); mergeErr != nil {
+		return fmt.Errorf(
+			"manifest shard %s of space %q was not saved: %w",
+			key, spaceKey, errors.Join(err, mergeErr),
+		)
+	}
+
+	log.Info().Msgf(
+		"manifest shard %s of space %q was saved by another run meanwhile; saving this run's mappings over it",
+		key, spaceKey,
+	)
+
+	if err := s.writeShard(ctx, spaceKey, state, index); err != nil {
+		return fmt.Errorf("manifest shard %s of space %q was not saved: %w", key, spaceKey, err)
+	}
+
+	return nil
+}
+
+// writeShard encodes one shard and writes it over the property it was read
+// from.
+func (s *Store) writeShard(ctx context.Context, spaceKey string, state *spaceState, index int) error {
+	sh := &state.shards[index]
+
+	value, err := json.Marshal(document{
+		Version: formatVersion,
+		Pages:   sh.pages,
+	})
+	if err != nil {
+		return fmt.Errorf("unable to encode manifest for space %q: %w", spaceKey, err)
+	}
+
+	if len(value) > shardSizeWarning {
+		// Said while there is still room to act. Confluence's own limit
+		// is not knowable from here, so this is a heads-up rather than a
+		// refusal, and the write is attempted regardless.
+		log.Warn().Msgf(
+			"manifest shard %s of space %q is %d bytes and holds %d pages; "+
+				"it may be approaching the property size Confluence will accept",
+			PropertyKeyFor(state.prefix, index), spaceKey, len(value), len(sh.pages),
+		)
+	}
+
+	if err := state.write(ctx, s.api, index, value); err != nil {
+		return err
+	}
+
+	sh.dirty = false
+	return nil
+}
+
+// mergeShard reads one shard again and puts this run's changes over what it
+// now holds: the entries this run recorded or changed, and the removal of
+// those it dropped. An entry this run dropped that the other run has since
+// recorded differently is kept, as that run's.
+//
+// What this run changed is what differs from the property it read, so nothing
+// has to be kept about each change as it is made.
+func (s *Store) mergeShard(ctx context.Context, state *spaceState, index int) error {
+	properties, err := state.list(ctx, s.api)
+	if err != nil {
+		return err
+	}
+
+	var current *confluence.Property
+	for i := range properties {
+		if properties[i].Key == PropertyKeyFor(state.prefix, index) {
+			current = &properties[i]
+			break
+		}
+	}
+
+	sh := &state.shards[index]
+	read := shardPages(sh.property)
+	merged := shardPages(current)
+
+	for path, entry := range read {
+		if _, kept := sh.pages[path]; !kept && merged[path] == entry {
+			delete(merged, path)
+		}
+	}
+	for path, entry := range sh.pages {
+		if before, ok := read[path]; !ok || before != entry {
+			merged[path] = entry
+		}
+	}
+
+	for path, entry := range merged {
+		if _, held := sh.pages[path]; held {
+			continue
+		}
+		if _, taken := state.byPage[entry.PageID]; !taken {
+			state.byPage[entry.PageID] = path
+		}
+		state.indexHash(path, entry.Hash)
+	}
+
+	sh.property = current
+	sh.pages = merged
+	return nil
+}
+
+// shardPages returns the entries a shard's property holds, as load reads
+// them: none when the property is absent, unreadable or of a newer format.
+func shardPages(property *confluence.Property) map[string]Entry {
+	pages := map[string]Entry{}
+	if property == nil {
+		return pages
+	}
+
+	var doc document
+	if err := json.Unmarshal(property.Value, &doc); err != nil || doc.Version > formatVersion || doc.Pages == nil {
+		return pages
+	}
+	return doc.Pages
 }

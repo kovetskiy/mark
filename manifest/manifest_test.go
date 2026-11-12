@@ -277,10 +277,10 @@ func TestNewerFormatIsIgnored(t *testing.T) {
 	assert.False(t, ok, "entries from an unknown format must not be trusted")
 }
 
-// TestConcurrentWriteIsReportedNotFatal: two runs racing on the same manifest.
-// The loser keeps its published pages -- they are live either way -- and only
-// loses its mapping, so a failed manifest write must not fail the run.
-func TestConcurrentWriteIsReportedNotFatal(t *testing.T) {
+// TestConcurrentWriteIsSavedOverTheOther: two runs racing on the same manifest
+// entry. The second to save reads what the first wrote and saves its own
+// mapping over it, as it would have had it run afterwards.
+func TestConcurrentWriteIsSavedOverTheOther(t *testing.T) {
 	ctx := t.Context()
 	first, server := newStore(t)
 	server.AddSpace("DOCS")
@@ -297,11 +297,13 @@ func TestConcurrentWriteIsReportedNotFatal(t *testing.T) {
 
 	// ...and the second to write finds its version superseded.
 	require.NoError(t, left.Save(ctx))
-	assert.NoError(t, right.Save(ctx), "losing the race must not fail the run")
+	require.NoError(t, right.Save(ctx))
 
-	property := shardOf(server, spaceID(t, server, "DOCS"), "a.md")
+	id := spaceID(t, server, "DOCS")
+	property := shardOf(server, id, "a.md")
 	require.NotNil(t, property)
-	assert.Equal(t, 2, property.Version, "exactly one of the two writes landed")
+	assert.Equal(t, 3, property.Version, "both writes landed")
+	assert.Equal(t, map[string]string{"a.md": "3"}, manifestPages(t, server, id))
 }
 
 // serverInstance makes the fake behave like Confluence Server/Data Center:
@@ -390,9 +392,9 @@ func TestServerBackendFirstRunHasNoProperty(t *testing.T) {
 	assert.Nil(t, server.SpaceProperty(homeID, manifest.PropertyKey(manifest.ShardFor("a.md"))))
 }
 
-// TestServerBackendConcurrentWriteIsReportedNotFatal mirrors the Cloud case:
-// the v1 endpoint versions properties too, so the loser of a race is told.
-func TestServerBackendConcurrentWriteIsReportedNotFatal(t *testing.T) {
+// TestServerBackendConcurrentWriteIsSavedOverTheOther mirrors the Cloud case:
+// the v1 endpoint versions properties too, so the second to save is told.
+func TestServerBackendConcurrentWriteIsSavedOverTheOther(t *testing.T) {
 	ctx := t.Context()
 	first, server, _ := serverInstance(t)
 	homeID := docsWithHomepage(t, server)
@@ -406,10 +408,10 @@ func TestServerBackendConcurrentWriteIsReportedNotFatal(t *testing.T) {
 	require.NoError(t, right.Record(ctx, "DOCS", "a.md", "3", "T", ""))
 
 	require.NoError(t, left.Save(ctx))
-	assert.NoError(t, right.Save(ctx), "losing the race must not fail the run")
+	require.NoError(t, right.Save(ctx))
 
-	assert.Equal(t, 2, shardOf(server, homeID, "a.md").Version,
-		"exactly one of the two writes landed")
+	assert.Equal(t, 3, shardOf(server, homeID, "a.md").Version, "both writes landed")
+	assert.Equal(t, map[string]string{"a.md": "3"}, manifestPages(t, server, homeID))
 }
 
 // TestCloudUsesSpaceNotHomepage pins the backend split: on Cloud the manifest

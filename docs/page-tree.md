@@ -310,6 +310,12 @@ bounds how large a single property value may be, and one blob would cap how many
 files a repository may have. Each path is assigned a shard by hash; all of them
 are read in a single request and only the ones that changed are written back.
 
+Two runs that overlap, as two pipelines publishing to one space can, may both
+change the same shard. The second to save it reads it again and saves its own
+changes over what the first wrote, so the pages of both stay tracked. A shard
+that is still refused after that is not saved: the run names it among its
+errors and exits non-zero.
+
 Folders and parents live in properties of their own rather than among the
 shards. They are keyed by the chain of titles a document declares rather than by
 a source path, there are few enough of them that splitting them buys nothing,
