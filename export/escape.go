@@ -36,6 +36,18 @@ func escapeInline(text string, opts inlineOptions) string {
 	var b strings.Builder
 	b.Grow(len(text))
 
+	// closing is the first ")" from where it was last asked for, kept so
+	// that a run of "@date(" with none between them looks for it once.
+	closing := 0
+	nextClosing := func(from int) int {
+		closing = max(closing, from)
+		for closing < len(runes) && runes[closing] != ')' {
+			closing++
+		}
+
+		return closing
+	}
+
 	for i, r := range runes {
 		prev, next := opts.after, rune(0)
 		if i > 0 {
@@ -77,8 +89,12 @@ func escapeInline(text string, opts inlineOptions) string {
 		case '@':
 			// "@{name}" is a mention, "user@example.com" an address the
 			// autolinker would make a link of, and "@date(...)" a date.
-			if next == '{' || (isAlnum(prev) && isAlnum(next)) || isDate(runes[i:]) {
+			if next == '{' || (isAlnum(prev) && isAlnum(next)) {
 				b.WriteRune('\\')
+			} else if value := i + len(dateOpening); opensDate(runes[i:]) {
+				if end := nextClosing(value); end < len(runes) && isDateValue(runes[value:end]) {
+					b.WriteRune('\\')
+				}
 			}
 
 		case ':':
@@ -114,17 +130,45 @@ func escapeInline(text string, opts inlineOptions) string {
 	return b.String()
 }
 
-// dateMacro is what the date feature's parser takes for a date.
-var dateMacro = regexp.MustCompile(`^@date\(([^)]+)\)`)
+// dateOpening is how the date feature's parser knows a date: it takes
+// "@date(", a value of anything but ")", and ")".
+const dateOpening = "@date("
 
-// isDate reports whether text starts with what the date feature publishes as
-// a date: "@date(" and a value that is more than spaces and quotes.
-func isDate(text []rune) bool {
-	if len(text) < len("@date()") || string(text[:len("@date(")]) != "@date(" {
+func opensDate(text []rune) bool {
+	if len(text) < len(dateOpening) {
 		return false
 	}
-	m := dateMacro.FindStringSubmatch(string(text))
-	return m != nil && strings.Trim(strings.TrimSpace(m[1]), `"'`) != ""
+	for i, r := range dateOpening {
+		if text[i] != r {
+			return false
+		}
+	}
+
+	return true
+}
+
+// isDateValue reports whether the date feature publishes a date for value,
+// which it does unless nothing is left of it without the spaces around it and
+// then the quotes around that. It reads no further than it has to: past the
+// spaces and quotes value opens with.
+func isDateValue(value []rune) bool {
+	quoted, spaced := false, false
+	for _, r := range value {
+		switch {
+		case unicode.IsSpace(r):
+			// A space after a quote is inside the quotes if another follows.
+			spaced = quoted
+		case r == '"' || r == '\'':
+			if spaced {
+				return true
+			}
+			quoted = true
+		default:
+			return true
+		}
+	}
+
+	return false
 }
 
 var emojis = definition.Github()
