@@ -130,6 +130,10 @@ registered for a node kind wins.** mark is on goldmark v2.
 - *Inline/block parsers and AST transformers*: `util.Prioritized`, and a **smaller**
   number is tried, or runs, **first**. `ConfluenceTagParser` uses `199` to run before
   goldmark's own link parser at `200`, so that `<ac:*/>` tags are not parsed as links.
+  It also reads an `ac:parameter` (and `ac:default-parameter`, `ac:task-id`,
+  `ac:task-status`) through to its closing tag and appends the text between them to the
+  parent itself, escaped, so that no inline parser sees it: a parameter is a string, not
+  Markdown. Each tag is still a node of its own.
   `util.Prioritized` is generic: give it the interface type,
   `util.Prioritized[parser.ASTTransformer](...)`, when the constructor returns a pointer.
 - *Node renderers*: goldmark v2 keeps one renderer per node kind. `html.New` puts its own
