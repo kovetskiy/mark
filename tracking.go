@@ -130,20 +130,34 @@ func resolveTrackedPage(
 }
 
 // titleHeldError refuses a document a title that still names the page of
-// another document of the run, one that publishes the page under a new title.
+// another document of the run: one that publishes the page under a new
+// title, or one that keeps the title.
 type titleHeldError struct {
-	title string
-	page  *confluence.PageInfo
+	space, title string
+	page         *confluence.PageInfo
 	// holder is the document the page is recorded for, and retitled the
-	// title it now declares.
+	// title it now declares; empty when it keeps the title.
 	holder   input
 	retitled string
 }
 
 func (e *titleHeldError) Error() string {
+	if e.retitled == "" {
+		return titleTaken(e.holder.file, e.title, e.space).Error()
+	}
+
 	return fmt.Sprintf(
 		"the title %q belongs to page %s until %s, which publishes that page, has retitled it %q",
 		e.title, e.page.ID, e.holder.file, e.retitled,
+	)
+}
+
+// titleTaken refuses a title that previous publishes in the space.
+func titleTaken(previous, title, space string) error {
+	return fmt.Errorf(
+		"%s already publishes %q in space %q, and a space holds one page of a title: "+
+			"rename one of them, or use --title-append-generated-hash",
+		previous, title, space,
 	)
 }
 
@@ -157,42 +171,116 @@ func (e *titleHeldError) Error() string {
 func (r *publishRun) titleHolder(
 	ctx context.Context, file, key string, meta *metadata.Meta,
 ) (*titleHeldError, error) {
-	if r.tracker == nil || meta == nil {
+	pg, holder, declared, err := r.recordedDocument(ctx, file, key, meta)
+	if err != nil || declared == nil || strings.EqualFold(declared.Title, pg.Title) {
+		return nil, err
+	}
+
+	return &titleHeldError{
+		space: meta.Space, title: meta.Title, page: pg, holder: holder, retitled: declared.Title,
+	}, nil
+}
+
+// titleOwner returns, as the error refusing it, the other document of the
+// run that the page the document's title finds is recorded for and that
+// still declares the title; nil when there is none.
+//
+// The page is that document's whichever of the two comes first, so it has
+// its turn first and the one asking is refused. A page recorded for a
+// document gone from the run belongs to the document of the run that has its
+// content under another name, and to whichever takes the title when none has.
+func (r *publishRun) titleOwner(
+	ctx context.Context, file, key string, meta *metadata.Meta,
+) (*titleHeldError, error) {
+	// A compile asks nothing of Confluence.
+	if r.config.Mode.CompileOnly {
 		return nil, nil
+	}
+
+	pg, holder, declared, err := r.recordedDocument(ctx, file, key, meta)
+	if err != nil || declared == nil || !strings.EqualFold(declared.Title, pg.Title) {
+		return nil, err
+	}
+
+	return &titleHeldError{space: meta.Space, title: meta.Title, page: pg, holder: holder}, nil
+}
+
+// recordedDocument returns the page the document's title finds, the other
+// document of the run that page is recorded for, and the metadata that one
+// declares: content of the same space and type that it publishes. The
+// metadata is nil when there is no such document.
+func (r *publishRun) recordedDocument(
+	ctx context.Context, file, key string, meta *metadata.Meta,
+) (*confluence.PageInfo, input, *metadata.Meta, error) {
+	if r.tracker == nil || meta == nil {
+		return nil, input{}, nil, nil
 	}
 
 	// Memoised, and the question resolving the page asks next.
 	pg, err := r.api.FindPage(ctx, meta.Space, meta.Title, confluence.ContentType(meta.Type))
 	if err != nil {
-		return nil, fmt.Errorf("error while finding page %q: %w", meta.Title, err)
+		return nil, input{}, nil, fmt.Errorf("error while finding page %q: %w", meta.Title, err)
 	}
 	if pg == nil {
-		return nil, nil
+		return nil, input{}, nil, nil
 	}
 
 	recorded, ok, err := r.tracker.RecordedFor(ctx, meta.Space, pg.ID)
 	if err != nil {
-		return nil, fmt.Errorf("unable to read page mapping for page %s: %w", pg.ID, err)
+		return nil, input{}, nil, fmt.Errorf("unable to read page mapping for page %s: %w", pg.ID, err)
 	}
 	if !ok || recorded == manifest.Key(key) {
-		return nil, nil
+		return nil, input{}, nil, nil
 	}
 
 	holder, ok := r.titles.keyed(recorded)
+	if !ok {
+		holder, ok, err = r.renamedFrom(ctx, meta, recorded, pg.ID)
+		if err != nil {
+			return nil, input{}, nil, err
+		}
+	}
 	if !ok || holder.file == file {
-		return nil, nil
+		return nil, input{}, nil, nil
 	}
 
-	// A holder that keeps the title, or publishes nothing, leaves the page
-	// to be found by its title.
+	// A holder that publishes nothing leaves the page to be found by its
+	// title.
 	declared := r.titles.readAhead(holder).meta
 	if declared == nil || !declared.Publish() || declared.Title == "" ||
-		declared.Space != meta.Space || declared.Type != meta.Type ||
-		strings.EqualFold(declared.Title, pg.Title) {
-		return nil, nil
+		declared.Space != meta.Space || declared.Type != meta.Type {
+		return nil, input{}, nil, nil
 	}
 
-	return &titleHeldError{title: meta.Title, page: pg, holder: holder, retitled: declared.Title}, nil
+	return pg, holder, declared, nil
+}
+
+// renamedFrom returns the document of the run declaring meta's title that
+// has the content recorded, a key gone from the run, published to the page:
+// that document under a new name, as resolveRenamedFile finds it at its turn.
+func (r *publishRun) renamedFrom(
+	ctx context.Context, meta *metadata.Meta, recorded, pageID string,
+) (input, bool, error) {
+	for _, in := range r.titles.declaring(meta.Space, meta.Type, meta.Title) {
+		if _, own, err := r.tracker.Recorded(ctx, meta.Space, in.key); err != nil {
+			return input{}, false, fmt.Errorf("unable to read page mapping for %q: %w", in.key, err)
+		} else if own {
+			continue
+		}
+
+		// Indexed, so read ahead already.
+		previous, entry, ok, err := r.tracker.ResolveRenamedFor(
+			ctx, meta.Space, in.key, r.titles.readAhead(in).sourceHash,
+		)
+		if err != nil {
+			return input{}, false, fmt.Errorf("unable to check whether %q was renamed: %w", in.file, err)
+		}
+		if ok && previous == recorded && entry.PageID == pageID {
+			return in, true, nil
+		}
+	}
+
+	return input{}, false, nil
 }
 
 // titleFreed reports, for a dry run, whether the page the document's title
