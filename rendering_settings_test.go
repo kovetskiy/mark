@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/kovetskiy/mark/v17/confluence/confluencetest"
+	"github.com/kovetskiy/mark/v17/markdown"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -71,4 +72,58 @@ func TestImageAlignAcceptsWhatADocumentHeaderDoes(t *testing.T) {
 		require.NoError(t, config.Validate(), "%q", align)
 		require.NoError(t, Run(context.Background(), config), "%q", align)
 	}
+}
+
+// TestFeaturesRejectsANameMarkDoesNotKnow: a name that switches nothing on is
+// a feature the caller asked for and would not get.
+func TestFeaturesRejectsANameMarkDoesNotKnow(t *testing.T) {
+	for _, features := range [][]string{
+		{"mermiad"},
+		{"mermaid", "Math"},
+		{"mermaid", " mention"},
+		{""},
+	} {
+		rendering := RenderingConfig{Features: features}
+
+		err := PublishConfig{Rendering: rendering}.Validate()
+		require.Error(t, err, "%q", features)
+		assert.Contains(t, err.Error(), "Features")
+
+		config, server := renderingFixture(t, rendering)
+		err = Run(context.Background(), config)
+		require.Error(t, err, "%q", features)
+		assert.Contains(t, err.Error(), "Features")
+		requireNothingWritten(t, server)
+	}
+}
+
+// TestFeaturesNoneStandsAlone: "none" beside a feature says two things at
+// once, and the command line refuses it too.
+func TestFeaturesNoneStandsAlone(t *testing.T) {
+	for _, features := range [][]string{{"none", "mermaid"}, {"mention", "none"}} {
+		err := PublishConfig{Rendering: RenderingConfig{Features: features}}.Validate()
+		require.Error(t, err, "%q", features)
+		assert.Contains(t, err.Error(), "Features")
+		assert.Contains(t, err.Error(), "cannot be combined")
+	}
+}
+
+// TestFeaturesAcceptsEveryKnownNameAndNoFeatures: nil, an empty list and
+// "none" all publish with no optional feature, and every name mark knows is
+// accepted, alone or with the others.
+func TestFeaturesAcceptsEveryKnownNameAndNoFeatures(t *testing.T) {
+	lists := [][]string{nil, {}, {"none"}, markdown.DefaultFeatures()}
+	for _, name := range markdown.KnownFeatures() {
+		if name != "d2" {
+			lists = append(lists, []string{name})
+		}
+	}
+
+	for _, features := range lists {
+		require.NoError(t, PublishConfig{Rendering: RenderingConfig{Features: features}}.Validate(), "%q", features)
+	}
+
+	// d2 has no default scale, so it is accepted with one.
+	all := RenderingConfig{Features: markdown.KnownFeatures(), D2Scale: 1}
+	require.NoError(t, PublishConfig{Rendering: all}.Validate())
 }

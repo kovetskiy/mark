@@ -17,6 +17,12 @@ the run's report is written to `PublishConfig.Output` in
 `PublishConfig.Rendering` before anything is published, and refuse a value the
 renderers cannot act on.
 
+* `Features` is the optional features to compile with, each a name
+  `markdown.KnownFeatures()` lists. Left nil or empty it switches none of them
+  on, which is not what the command line does when `--features` is not given:
+  pass `markdown.DefaultFeatures()` for its `mermaid` and `mention`. `none` on
+  its own also means no optional feature; beside another name it is refused,
+  as is a name mark does not know.
 * `ImageAlign` is `left`, `center` or `right`, in any case, or empty for no
   alignment. A document's `Image-Align` header takes its place for that
   document.

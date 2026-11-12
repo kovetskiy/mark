@@ -24,3 +24,19 @@ func TestImageAlign(t *testing.T) {
 	_, ok = ImageAlign("middle")
 	assert.False(t, ok)
 }
+
+func TestFeatures(t *testing.T) {
+	known := []string{"math", "mermaid"}
+
+	for _, features := range [][]string{nil, {}, {NoFeatures}, {"math"}, {"mermaid", "math"}} {
+		assert.NoError(t, Features(features, known), features)
+	}
+
+	for _, features := range [][]string{{"maths"}, {"Math"}, {" math"}, {""}, {"math", "other"}} {
+		assert.ErrorContains(t, Features(features, known), "expected any of: math, mermaid, or none", features)
+	}
+
+	for _, features := range [][]string{{NoFeatures, "math"}, {"math", NoFeatures}, {NoFeatures, NoFeatures}} {
+		assert.ErrorContains(t, Features(features, known), "cannot be combined", features)
+	}
+}

@@ -478,7 +478,11 @@ type RenderingConfig struct {
 	D2BundleRemote bool
 	MathOutput     imageformat.Format
 	MathScale      float64
-	Features       []string
+	// Features is the optional features to compile with, each a name from
+	// markdown.KnownFeatures. Nil or empty is none of them, as is "none" on
+	// its own; it is not the command line's default, which is
+	// markdown.DefaultFeatures.
+	Features []string
 	// ImageAlign is the alignment of every image in a document that sets no
 	// Image-Align header of its own: "left", "center" or "right", in any case,
 	// or empty for none.
@@ -680,6 +684,12 @@ func (r RenderingConfig) validate() error {
 			"invalid MathScale %v: expected a finite number greater than 0, or 0 for the default, with the math feature enabled",
 			r.MathScale,
 		)
+	}
+
+	// A name that switches nothing on is a feature the caller asked for and
+	// would not get, and the command line refuses the same lists.
+	if err := rendercheck.Features(r.Features, markdown.KnownFeatures()); err != nil {
+		return fmt.Errorf("invalid Features: %w", err)
 	}
 
 	// The one alignment every document shares, so a value no image can take

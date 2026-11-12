@@ -27,7 +27,7 @@ var KnownFeatures = markdown.KnownFeatures()
 // noFeatures is the --features value that switches off every optional
 // feature. An empty list cannot say that: urfave reads an empty
 // MARK_FEATURES or features = [] as no value at all, and keeps the defaults.
-const noFeatures = "none"
+const noFeatures = rendercheck.NoFeatures
 
 // EnabledFeatures is the --features list mark compiles with: none of them for
 // "none", which checkPublishFlags has made sure stands alone.
@@ -740,26 +740,14 @@ func checkPublishFlags(context context.Context, command *cli.Command) (context.C
 	}
 
 	features := command.StringSlice("features")
-	if slices.Contains(features, noFeatures) && len(features) > 1 {
-		return context, fmt.Errorf("--features %s switches every optional feature off, so it cannot be combined with others", noFeatures)
+	if slices.Contains(features, "") && !slices.Contains(features, noFeatures) {
+		return context, emptyFeatures("--features")
 	}
 
-	known := markdown.KnownFeatures()
-	for _, feature := range features {
-		if feature == "" {
-			return context, emptyFeatures("--features")
-		}
-
-		// Compared as written rather than trimmed, because that is how it is
-		// read where it takes effect: --features "math, mermaid" hands the
-		// second one over with its leading space still on, and it would go
-		// unrecognised there just as surely.
-		if feature != noFeatures && !slices.Contains(known, feature) {
-			return context, fmt.Errorf(
-				"invalid value for --features: %q (expected any of: %s, or %s)",
-				feature, strings.Join(known, ", "), noFeatures,
-			)
-		}
+	// The rule mark.Config is held to, so that a list the command line
+	// accepts is one the library does.
+	if err := rendercheck.Features(features, markdown.KnownFeatures()); err != nil {
+		return context, fmt.Errorf("invalid value for --features: %w", err)
 	}
 
 	imageAlign := strings.TrimSpace(command.String("image-align"))
