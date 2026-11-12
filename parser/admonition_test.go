@@ -3,6 +3,7 @@ package parser_test
 import (
 	"strings"
 	"testing"
+	"time"
 
 	cparser "github.com/kovetskiy/mark/v17/parser"
 	"github.com/stretchr/testify/assert"
@@ -292,6 +293,53 @@ func TestAdmonitionBodyIsIndentedOrClosed(t *testing.T) {
 			want:   []string{"!note", "Paragraph:body", "Blockquote", "  Paragraph:quoted"},
 		},
 		{
+			name:   "a run in a fenced code block is code",
+			source: "!!! note \"T\"\n\none\n\n```markdown\n!!! note \"X\"\nbody\n!!!\n```\n\nrest\n",
+			want:   []string{"!note", "Paragraph:one", "CodeBlock", "Paragraph:rest"},
+		},
+		{
+			name:   "a run in an HTML block is the block's",
+			source: "!!! note \"T\"\n\ntext\n\n<pre>\n!!!\n</pre>\n\nend\n",
+			want:   []string{"!note", "Paragraph:text", "HTMLBlock", "Paragraph:end"},
+		},
+		{
+			name:   "a run in a fenced code block of a closed body is code",
+			source: "!!! note \"T\"\n```\n!!!\n```\n<div>\n!!!\n</div>\n\n<!-- c -->\n!!!\nafter\n",
+			want:   []string{"!note", "  CodeBlock", "  HTMLBlock", "  HTMLBlock", "Paragraph:after"},
+		},
+		{
+			name:   "a run after a nested indented body closes the outer one",
+			source: "!!! note \"outer\"\nintro\n!!! tip \"inner\"\n    b\n!!!\n\nafter\n",
+			want:   []string{"!note", "  Paragraph:intro", "  !tip", "    Paragraph:b", "Paragraph:after"},
+		},
+		{
+			name:   "a run after a title-only one nested in an indented body",
+			source: "!!! note \"outer\"\n    !!! tip \"inner\"\n\n    a\n!!!\n\nafter\n",
+			want:   []string{"!note", "  !tip", "  Paragraph:a", "Paragraph:after"},
+		},
+		{
+			name:   "a run after two indented bodies, one in the other",
+			source: "!!! note \"outer\"\n    !!! tip \"inner\"\n        b\n!!!\nafter\n",
+			want:   []string{"!note", "  !tip", "    Paragraph:b", "Paragraph:after"},
+		},
+		{
+			name:   "title only, then one closed by a run",
+			source: "!!! note \"one\"\n!!! tip \"two\"\nb\n!!!\nafter\n",
+			want:   []string{"!note", "!tip", "  Paragraph:b", "Paragraph:after"},
+		},
+		{
+			name:   "a run in the next list item is not this one's",
+			source: "- !!! note \"T\"\n  a\n- !!! tip \"U\"\n  b\n  !!!\n",
+			want: []string{
+				"List", "  ListItem", "    !note", "    Paragraph:a", "  ListItem", "    !tip", "      Paragraph:b",
+			},
+		},
+		{
+			name:   "closed by a run in a blockquote",
+			source: "> !!! note \"T\"\n> a\n>\n> b\n> !!!\n> c\n",
+			want:   []string{"Blockquote", "  !note", "    Paragraph:a", "    Paragraph:b", "  Paragraph:c"},
+		},
+		{
 			name:   "title only in a blockquote",
 			source: "> !!! note \"T\"\n>\n> quoted\n\nafter\n",
 			want:   []string{"Blockquote", "  !note", "  Paragraph:quoted", "Paragraph:after"},
@@ -303,4 +351,19 @@ func TestAdmonitionBodyIsIndentedOrClosed(t *testing.T) {
 			assert.Equal(t, tt.want, outline(t, tt.source))
 		})
 	}
+}
+
+// TestAdmonitionsWithoutABodyAreNotNested: an admonition that ends at its
+// opening line is closed there, so a page of them is read in one pass rather
+// than each inside the one before.
+func TestAdmonitionsWithoutABodyAreNotNested(t *testing.T) {
+	const count = 2000
+
+	source := strings.Repeat("!!! note \"T\"\n\ntext\n\n", count)
+
+	start := time.Now()
+	blocks := outline(t, source)
+
+	assert.Len(t, blocks, 2*count)
+	assert.Less(t, time.Since(start), 2*time.Second)
 }

@@ -42,3 +42,47 @@ func TestAdmonitionUnindentedBodyUpToAClosingRun(t *testing.T) {
 		`</ac:rich-text-body></ac:structured-macro>`+"\n"+
 		`<p>After the box.</p>`+"\n", out)
 }
+
+// TestAdmonitionRunInsideLiteralText: a line of "!!!" inside a code block or
+// an HTML block is that block's text, whether or not an admonition is open
+// around it.
+func TestAdmonitionRunInsideLiteralText(t *testing.T) {
+	const title = `<ac:structured-macro ac:name="info"><ac:parameter ac:name="icon">true</ac:parameter><ac:rich-text-body>` + "\n" +
+		`<p><strong>Remember</strong></p>` + "\n"
+	const end = `</ac:rich-text-body></ac:structured-macro>` + "\n"
+
+	for name, tt := range map[string]struct{ source, want string }{
+		"HTML block after a title": {
+			source: "!!! note \"Remember\"\n\ntext\n\n<pre>\n!!!\n</pre>\n\nend\n",
+			want:   title + end + "<p>text</p>\n<pre>\n!!!\n</pre>\n<p>end</p>\n",
+		},
+		"HTML block in a closed body": {
+			source: "!!! note \"Remember\"\n<pre>\n!!!\n</pre>\n!!!\nend\n",
+			want:   title + "<pre>\n!!!\n</pre>\n" + end + "<p>end</p>\n",
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			assert.Equal(t, tt.want, compileDoc(t, tt.source, "mkdocsadmonitions"))
+		})
+	}
+
+	out := compileDoc(t, "!!! note \"Remember\"\n\nOne.\n\n```text\n!!! note \"T\"\nbody\n!!!\n```\n\nRest.\n", "mkdocsadmonitions")
+
+	after, found := strings.CutPrefix(out, title+end+"<p>One.</p>\n")
+	if assert.True(t, found, out) {
+		assert.Contains(t, after, "<![CDATA[!!! note \"T\"\nbody\n!!!]]>")
+		assert.True(t, strings.HasSuffix(after, "<p>Rest.</p>\n"), after)
+	}
+}
+
+// TestAdmonitionWithoutABodyOrATitle: with no body, what is published is what
+// the opening line alone gives: an empty box without a title, and an empty
+// quotation for a type that has no box, whose title is not published.
+func TestAdmonitionWithoutABodyOrATitle(t *testing.T) {
+	assert.Equal(t, `<ac:structured-macro ac:name="info"><ac:parameter ac:name="icon">true</ac:parameter><ac:rich-text-body>`+"\n"+
+		`</ac:rich-text-body></ac:structured-macro>`+"\n"+
+		`<p>text</p>`+"\n", compileDoc(t, "!!! note\n\ntext\n", "mkdocsadmonitions"))
+
+	assert.Equal(t, `<blockquote class="admonition adm-example"></blockquote>`+"\n"+
+		`<p>text</p>`+"\n", compileDoc(t, "!!! example \"Usage\"\n\ntext\n", "mkdocsadmonitions"))
+}
