@@ -43,6 +43,14 @@ page and copy one of the forms above, or leave `--url` out. When the URL comes
 from `MARK_PAGE_URL` or the configuration file, where `mark export` may need
 it, `--url ""` on the command line sets it aside for one run.
 
+The base URL has to be the address Confluence itself answers at, not one
+that redirects to it. Reads follow a redirect, but a write that is redirected
+with a 301, 302 or 303 arrives as a `GET` without its body, so mark fails it
+and names the address it was sent on to: set the base URL to that, such as
+`https://` in place of `http://`. The `Authorization` header goes with a
+redirect only to the same scheme, host and port, or from `http` to `https` on
+the same host and the default ports.
+
 `mark export --url` is the same setting, under the same names. It reads
 `/display/KEY/Title` and blog post addresses as well, since it looks the page
 up rather than writing to it.
