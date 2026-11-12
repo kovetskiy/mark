@@ -86,6 +86,10 @@ MkDocs types now match in any case (`!!! Note` works). `> Error: …` and `> Suc
 
 An unknown value in a `Content-Appearance` header, front matter, `--content-appearance` or `Config.ContentAppearance` is now an error. Previously the page was published full width. The accepted values are `full-width`, `default` and `max`. `fixed`, an older editor's narrow layout, is refused too: use `default`. `--changes-only` does not notice a change of appearance, so publish once without it after changing `--content-appearance`.
 
+### Front matter reads an unquoted number as text
+
+`title: 2024`, `space: 42` or `emoji: 2705` in YAML front matter is now the text as written. Previously a value YAML reads as a number, a boolean or a date left the key unset with nothing said, so the page took its title from `--title-from-h1` or `--title-from-filename`, or its space from `--space`. The same goes for `type`, `layout`, `sidebar` and `image-align`, so an unquoted value there is now handled as the same value in quotes is. A list or a mapping under one of these keys is still ignored, and now warned about.
+
 ### `attachment://` links are plain URLs
 
 An image or link written as `attachment://path/to/file.png` is no longer resolved to the attachment at that path. Write the path itself: `![diagram](path/to/file.png)`.

@@ -62,6 +62,13 @@ A list key given a single value, as in `labels: release`, reads it as a list
 of one. A value that is neither a string nor a list of strings is ignored, and
 warned about.
 
+A key that holds one text value -- `space`, `title`, `type`, `layout`,
+`sidebar`, `emoji` and `image-align` -- reads its value as it is written, the
+way a header does, even where YAML would make a number, a boolean or a date of
+it: `title: 2024` is the title `2024`, and `title: 1.0` is `1.0`, with or
+without quotes. A list or a mapping under one of them is ignored, and warned
+about.
+
 Note that the front matter keys are plural where the HTML headers are singular:
 `attachments`, `parents`, `folders`, `labels` and `properties`. A key mark does
 not read is ignored, and warned about:
@@ -154,7 +161,8 @@ mark's `metadata` package:
   mark reads as one (`title` and `Title`), a value that is not nil, a
   string, a boolean, a number, or a list or map of them, a string holding
   `<!--`, or a value of a kind its key does not take (a number for `title`, a
-  list of numbers for `labels`), which mark would otherwise drop.
+  list of numbers for `labels`), which mark would otherwise read back as
+  something else or drop.
 
 ## Further headers
 

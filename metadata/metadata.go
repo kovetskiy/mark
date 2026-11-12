@@ -507,13 +507,30 @@ func addRestrictionHeader(meta *Meta, value string) error {
 	return nil
 }
 
-func toString(val any) string {
-	if val == nil {
+// toText reads a front matter key that holds one text value.
+//
+// YAML decodes an unquoted 2024, 1.0, true or 2024-01-31 as a number, a
+// boolean or a date, but under a key that holds text each is the text the
+// author wrote, as it is in a comment header. So such a value is taken as
+// written rather than as decoded, which would make 1.0 into 1. A list or a
+// mapping is not one value, and is reported against its key.
+func toText(val any, key string, written map[string]string, line int, warnings *report.Warnings) string {
+	switch v := val.(type) {
+	case nil:
 		return ""
+	case string:
+		return strings.TrimSpace(v)
 	}
-	if s, ok := val.(string); ok {
-		return strings.TrimSpace(s)
+
+	if text, ok := written[key]; ok {
+		return strings.TrimSpace(text)
 	}
+
+	warnings.AddAt(line, report.WarningIgnoredValue,
+		"front matter key %q takes a single value, so %v (%T) was ignored",
+		key, val, val,
+	)
+
 	return ""
 }
 
@@ -581,25 +598,46 @@ func warnAboutUnknownKeys(keys []string, lines map[string]int, warnings *report.
 // top-level key is written on. The front matter starts on the file's second
 // line, below its opening delimiter; a key not written there, such as one a
 // merge brings in, has no line.
-func decodeFrontMatter(frontMatter []byte) (map[string]any, map[string]int, error) {
+//
+// written is each top-level scalar as its text rather than as the number,
+// boolean or date YAML decodes it to, for the keys that hold text.
+func decodeFrontMatter(frontMatter []byte) (parsed map[string]any, lines map[string]int, written map[string]string, err error) {
 	var document yaml.Node
 	if err := yaml.Unmarshal(frontMatter, &document); err != nil || len(document.Content) == 0 {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 
-	var parsed map[string]any
 	if err := document.Decode(&parsed); err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 
-	lines := map[string]int{}
+	// Decoded a second time rather than read off the mapping's nodes, so
+	// that a key a merge brings in is found as the first decoding found it.
+	var nodes map[string]yaml.Node
+	if err := document.Decode(&nodes); err != nil {
+		return nil, nil, nil, err
+	}
+
+	written = map[string]string{}
+	for key := range nodes {
+		node := nodes[key]
+		value := &node
+		for value.Kind == yaml.AliasNode && value.Alias != nil {
+			value = value.Alias
+		}
+		if value.Kind == yaml.ScalarNode {
+			written[key] = value.Value
+		}
+	}
+
+	lines = map[string]int{}
 	if mapping := document.Content[0]; mapping.Kind == yaml.MappingNode {
 		for i := 0; i+1 < len(mapping.Content); i += 2 {
 			lines[mapping.Content[i].Value] = mapping.Content[i].Line + 1
 		}
 	}
 
-	return parsed, lines, nil
+	return parsed, lines, written, nil
 }
 
 // splitFrontMatter separates the YAML front matter opening data from the
@@ -733,7 +771,7 @@ func ExtractMeta(data []byte, opts ExtractOptions) (*Meta, []byte, error) {
 	doc := parser.New().Parse(data)
 
 	if found {
-		parsed, lines, err := decodeFrontMatter(frontMatter)
+		parsed, lines, written, err := decodeFrontMatter(frontMatter)
 		if err != nil {
 			return nil, nil, fmt.Errorf("decode YAML front matter: %w", err)
 		}
@@ -753,24 +791,24 @@ func ExtractMeta(data []byte, opts ExtractOptions) (*Meta, []byte, error) {
 			case "folders":
 				meta.Folders = append(meta.Folders, toStringSlice(v, k, lines[k], warnings)...)
 			case "space":
-				meta.Space = toString(v)
+				meta.Space = toText(v, k, written, lines[k], warnings)
 			case "type":
-				meta.Type = toString(v)
+				meta.Type = toText(v, k, written, lines[k], warnings)
 			case "title":
-				meta.Title = toString(v)
+				meta.Title = toText(v, k, written, lines[k], warnings)
 			case "layout":
-				meta.Layout = toString(v)
+				meta.Layout = toText(v, k, written, lines[k], warnings)
 			case "sidebar":
-				meta.Sidebar = toString(v)
+				meta.Sidebar = toText(v, k, written, lines[k], warnings)
 			case "emoji":
-				meta.Emoji = toString(v)
+				meta.Emoji = toText(v, k, written, lines[k], warnings)
 			case "attachments":
 				meta.Attachments = append(meta.Attachments, toStringSlice(v, k, lines[k], warnings)...)
 			case "labels":
 				meta.Labels = append(meta.Labels, toStringSlice(v, k, lines[k], warnings)...)
 			case "contentappearance":
-				// Not toString, which would drop a value that is not a
-				// string for the default rather than refuse it.
+				// Not toText: a value that is not one of the appearances
+				// is refused, whatever its kind.
 				var value string
 				if v != nil {
 					value = fmt.Sprint(v)
@@ -779,7 +817,7 @@ func ExtractMeta(data []byte, opts ExtractOptions) (*Meta, []byte, error) {
 					return nil, nil, err
 				}
 			case "imagealign":
-				meta.ImageAlign = strings.ToLower(toString(v))
+				meta.ImageAlign = strings.ToLower(toText(v, k, written, lines[k], warnings))
 			case "order":
 				order, ok := toInt(v)
 				if !ok {

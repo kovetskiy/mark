@@ -319,9 +319,10 @@ func TestFrontMatterRefusesTooManyValues(t *testing.T) {
 }
 
 // TestFrontMatterRefusesAKindItsKeyDropsSilently: front matter reads a string
-// key that holds a number as unset, and leaves out a list item or a property
-// key that is not a string, so FrontMatter refuses those rather than write a
-// document that publishes to another space or under another title.
+// key that holds a number as its text, which need not be how the number was
+// given, and leaves out a list item or a property key that is not a string,
+// so FrontMatter refuses those rather than write a document that reads back
+// as something else.
 func TestFrontMatterRefusesAKindItsKeyDropsSilently(t *testing.T) {
 	for name, fields := range map[string]map[string]any{
 		"space number":        {"space": 123},
