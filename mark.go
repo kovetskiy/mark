@@ -2764,6 +2764,11 @@ func (r *publishRun) resolveDocumentPage(ctx context.Context, doc *document) (*d
 			pg.Title = meta.Title
 			dest.titleChanged = true
 		}
+	} else if pg.Title != meta.Title && strings.EqualFold(pg.Title, meta.Title) {
+		// The title lookup ignores case, so the page it found may carry
+		// another casing of the title than the document now writes.
+		pg.Title = meta.Title
+		dest.titleChanged = true
 	}
 
 	if pg == nil {
