@@ -1966,6 +1966,21 @@ func (s *Store) OrphanEntries(spaceKey string) []Orphan {
 	return orphans
 }
 
+// HoldingPage is the id of the page a space's manifest is kept on: the page
+// --manifest-page names, or the space homepage on Server and Data Center. It
+// is "" for a manifest kept in space properties, and for a space not loaded.
+func (s *Store) HoldingPage(spaceKey string) string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	state, ok := s.spaces[spaceKey]
+	if !ok {
+		return ""
+	}
+
+	return state.contentID
+}
+
 // Published reports how many pages this run actually published in a space.
 //
 // Nothing published means nothing to compare against: a checkout that failed,
