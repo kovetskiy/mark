@@ -3,8 +3,6 @@ package mark
 import (
 	"bytes"
 	"context"
-	"encoding/json"
-	"io"
 	"os"
 	"path/filepath"
 	"testing"
@@ -18,19 +16,10 @@ import (
 )
 
 func spaceOrphanConfig(server *confluencetest.Server, dir string, action report.OnOrphan) Config {
-	return Config{
-		PublishConfig: PublishConfig{
-			Rendering: RenderingConfig{Features: []string{"mention"}},
-			Output:    io.Discard,
-		},
-		Files: filepath.Join(dir, "*.md"),
-		Connection: ConnectionConfig{
-			BaseURL:  server.URL,
-			Username: "user",
-			Password: "token",
-		},
-		Tracking: TrackingConfig{TrackPages: true, OnOrphan: action},
-	}
+	config := trackingConfig(server, filepath.Join(dir, "*.md"))
+	config.Tracking.OnOrphan = action
+
+	return config
 }
 
 func spaceOrphanServer(t *testing.T, spaces ...string) (*confluencetest.Server, *confluence.API) {
@@ -86,11 +75,7 @@ func otherSpaceFixture(
 
 	require.NoError(t, os.Remove(filepath.Join(dir, "first.md")))
 	require.NoError(t, os.Remove(filepath.Join(dir, "second.md")))
-	own := "<!-- Space: TWO -->\n"
-	if space != "" {
-		own = ""
-	}
-	writeFile(t, dir, "own.md", own+"<!-- Title: Own -->\n\nOwn.\n")
+	writeFile(t, dir, "own.md", "<!-- Space: TWO -->\n<!-- Title: Own -->\n\nOwn.\n")
 	writeFile(t, dir, "note.md", "<!-- Space: ONE -->\n<!-- Title: Note -->\n\nNote.\n")
 
 	var out bytes.Buffer
@@ -123,8 +108,7 @@ func TestOnOrphanLeavesASpaceOnlyAHeaderNames(t *testing.T) {
 			assert.True(t, trackedIn(t, api, "ONE", filepath.Join(dir, "note.md")),
 				"the document itself is tracked where it published")
 
-			var got report.Report
-			require.NoError(t, json.Unmarshal([]byte(out), &got))
+			got := decodeReport(t, []byte(out))
 			if action == report.OnOrphanReport {
 				assert.Empty(t, got.Orphans)
 				return
@@ -135,6 +119,43 @@ func TestOnOrphanLeavesASpaceOnlyAHeaderNames(t *testing.T) {
 				assert.Equal(t, report.OnOrphanReport, orphan.Action)
 				assert.Equal(t, `space "ONE" is not the run's space, "TWO"`, orphan.Reason)
 			}
+		})
+	}
+}
+
+// TestOnOrphanKeepsAnEntryOfAPathTheRunPublishesInItsOwnSpace: two runs
+// publish one tree, a space each. A document whose Space header names the
+// other run's space brings that space into this run, where every other path
+// is recorded too; those entries are the other run's and stay.
+func TestOnOrphanKeepsAnEntryOfAPathTheRunPublishesInItsOwnSpace(t *testing.T) {
+	for _, action := range []report.OnOrphan{report.OnOrphanDelete, report.OnOrphanArchive, report.OnOrphanReport} {
+		t.Run(string(action), func(t *testing.T) {
+			ctx := context.Background()
+			server, api := spaceOrphanServer(t, "ONE", "TWO")
+
+			dir := t.TempDir()
+			writeFile(t, dir, "index.md", "<!-- Title: Index -->\n\nIndex.\n")
+			writeFile(t, dir, "note.md", "<!-- Title: Note -->\n\nNote.\n")
+
+			one := spaceOrphanConfig(server, dir, action)
+			one.Page.Space = "ONE"
+			require.NoError(t, Run(ctx, one))
+			index := findPageID(t, api, "ONE", "Index")
+
+			writeFile(t, dir, "note.md", "<!-- Space: ONE -->\n<!-- Title: Note -->\n\nNote.\n")
+			two := spaceOrphanConfig(server, dir, action)
+			two.Page.Space = "TWO"
+			require.NoError(t, Run(ctx, two))
+
+			page := server.Page(index)
+			assert.False(t, page.Trashed)
+			assert.False(t, page.Archived)
+
+			entry, known, err := manifest.NewStore(api).Lookup(ctx, "ONE", filepath.Join(dir, "index.md"))
+			require.NoError(t, err)
+			require.True(t, known, "the other run's entry stays")
+			assert.Equal(t, index, entry.PageID)
+			assert.True(t, trackedIn(t, api, "TWO", filepath.Join(dir, "index.md")))
 		})
 	}
 }
@@ -216,8 +237,7 @@ func TestOnOrphanLeavesThePageOfADocumentThatChangedSpace(t *testing.T) {
 
 			assert.NotEqual(t, old, findPageID(t, api, "TWO", "Moved"))
 
-			var got report.Report
-			require.NoError(t, json.Unmarshal([]byte(out), &got))
+			got := decodeReport(t, []byte(out))
 			assert.Empty(t, got.Orphans, "its file is not gone")
 
 			moved := filepath.Join(dir, "moved.md")
@@ -240,8 +260,7 @@ func TestOnOrphanDryRunLeavesTheEntryOfADocumentThatChangedSpace(t *testing.T) {
 	assert.False(t, server.Page(old).Trashed)
 	assert.True(t, trackedIn(t, api, "ONE", filepath.Join(dir, "moved.md")))
 
-	var got report.Report
-	require.NoError(t, json.Unmarshal([]byte(out), &got))
+	got := decodeReport(t, []byte(out))
 	assert.Empty(t, got.Orphans)
 }
 

@@ -39,6 +39,16 @@ func handleOrphans(
 	results *report.Report,
 ) error {
 	for _, space := range tracker.Spaces() {
+		// The space a run is given is the one it speaks for. Another is in the
+		// run only because a document's Space header names it, which says
+		// where that document goes and nothing of the other pages tracked
+		// there: they and their entries stay as they are, for a run given
+		// that space or none.
+		own := config.Page.Space == "" || strings.EqualFold(config.Page.Space, space)
+		if own && !hadErrors {
+			tracker.ForgetMoved(space)
+		}
+
 		orphans := tracker.OrphanEntries(space)
 		if len(orphans) == 0 {
 			continue
@@ -56,13 +66,10 @@ func handleOrphans(
 			continue
 		}
 
-		// The space a run is given is the one it speaks for. Another is in the
-		// run only because a document's Space header names it, which says
-		// where that document goes and nothing of the other pages tracked
-		// there: they stay as they are, entries included, for a run given
-		// that space or none.
-		if own := config.Page.Space; own != "" && !strings.EqualFold(own, space) {
-			leaveOtherSpace(config, space, own, orphans, action, results)
+		// Before any scope is resolved: --orphan-under names a place in the
+		// run's own space.
+		if !own {
+			leaveOtherSpace(config, space, orphans, action, results)
 
 			continue
 		}
@@ -284,17 +291,16 @@ func handleOrphans(
 
 // leaveOtherSpace says which tracked pages of a space other than the run's own
 // had no source file in the run, and lists those --on-orphan was to remove as
-// left where they are. Before any scope is resolved: --orphan-under names a
-// place in the run's own space.
+// left where they are.
 func leaveOtherSpace(
-	config Config, space, own string, orphans []manifest.Orphan, action report.OnOrphan, results *report.Report,
+	config Config, space string, orphans []manifest.Orphan, action report.OnOrphan, results *report.Report,
 ) {
 	paths := make([]string, 0, len(orphans))
 	for _, orphan := range orphans {
 		paths = append(paths, orphan.Path)
 	}
 
-	reason := fmt.Sprintf("space %q is not the run's space, %q", space, own)
+	reason := fmt.Sprintf("space %q is not the run's space, %q", space, config.Page.Space)
 	log.Warn().Msgf(
 		"space %q: %d tracked page(s) had no matching source file in this run and are left alone, still tracked, since %s: %s",
 		space, len(paths), reason, strings.Join(paths, ", "),

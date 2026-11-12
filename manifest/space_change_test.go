@@ -28,7 +28,7 @@ func spaceChangeServer(t *testing.T) *confluencetest.Server {
 
 // TestOrphansLeaveOutADocumentRecordedInAnotherSpace: a document the run
 // publishes into another space is not gone from the one it left, which stops
-// tracking it.
+// tracking it once told to.
 func TestOrphansLeaveOutADocumentRecordedInAnotherSpace(t *testing.T) {
 	ctx := t.Context()
 	server := spaceChangeServer(t)
@@ -42,6 +42,13 @@ func TestOrphansLeaveOutADocumentRecordedInAnotherSpace(t *testing.T) {
 
 	assert.Empty(t, next.Orphans("ONE"))
 	assert.Empty(t, next.Orphans("TWO"))
+
+	_, known, err = next.Recorded(ctx, "ONE", "moved.md")
+	require.NoError(t, err)
+	assert.True(t, known, "looking for orphans leaves the entry to ForgetMoved")
+
+	next.ForgetMoved("ONE")
+	next.ForgetMoved("TWO")
 	require.NoError(t, next.Save(ctx))
 
 	after := runStore(t, server, "keep.md", "moved.md")
@@ -67,6 +74,7 @@ func TestOrphansKeepADocumentOnlyLookedUpInAnotherSpace(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Empty(t, next.Orphans("ONE"))
+	next.ForgetMoved("ONE")
 
 	entry, known, err := next.Recorded(ctx, "ONE", "moved.md")
 	require.NoError(t, err)
@@ -83,6 +91,8 @@ func TestOrphansKeepAPathTheRunDoesNotPublish(t *testing.T) {
 	next := runStore(t, server, "keep.md")
 	require.NoError(t, next.Record(ctx, "ONE", "keep.md", "1", "Keep", "k"))
 	require.NoError(t, next.Record(ctx, "TWO", "moved.md", "3", "Moved", "m"))
+
+	next.ForgetMoved("ONE")
 
 	assert.Equal(t, []string{"moved.md"}, next.Orphans("ONE"))
 }

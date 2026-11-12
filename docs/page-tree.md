@@ -470,12 +470,13 @@ where the mapping cannot apply -- is a warning.
 * A page in **a space the run was not given** is left alone and reported, and
   stays tracked. With `--space`, a run looks for orphans in that space alone: a
   document's `Space` header says where that document is published, not that the
-  other pages tracked in its space are this run's to remove. A run with no
-  `--space` takes its spaces from its documents and looks for orphans in each,
-  so publish such a space in a run given it, or none.
+  other pages tracked in its space are this run's to remove. To have them
+  removed, publish with that `--space`, or with none: a run with no `--space`
+  takes its spaces from its documents and looks for orphans in each.
 * A document whose **`Space` changed** is not gone. The page it published
-  before is left behind in the space it left, which stops tracking it; the run
-  says so and reports no orphan.
+  before is left behind in the space it left; the run says so and reports no
+  orphan. That space then stops tracking it, unless it is a space the run was
+  not given, where the entry stays as every other does.
 * A document that opted out with `Synchronized: false` still counts as present.
 * `--dry-run` reports what would go and touches nothing.
 
