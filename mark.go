@@ -1479,6 +1479,9 @@ func stepPast(ctx context.Context, continueOnError bool, file string, err error)
 // A long-lived program makes a new one of each for each batch rather than
 // holding them open.
 //
+// A space holds one page of a title, so a Publisher refuses a file whose
+// space, type and title another file it published has, as Run does.
+//
 // A Publisher sees one file at a time, never the run's whole list, so it does
 // none of what Run does across files, and PublishConfig has no setting for any
 // of it: a page's Position is not applied among its siblings, a document
@@ -1637,6 +1640,7 @@ func newPublishRun(
 		pageHeader:       pageHeader,
 		checker:          page.NewLinkChecker(checks),
 		globalProperties: globalProperties,
+		titleClaims:      map[string]string{},
 	}, nil
 }
 
@@ -1884,6 +1888,9 @@ type publishRun struct {
 	// pageFile is the file published to Page.PageID, once there is one.
 	pageFile string
 
+	// titleClaims names the document publishing each title, by runTitleKey.
+	titleClaims map[string]string
+
 	// warnings holds each document's warnings for the run's report: a second
 	// pass keeps what only the first found, such as a comment it dropped, and
 	// a document that fails is reported with what was found before it did.
@@ -1980,6 +1987,10 @@ func (r *publishRun) processFile(ctx context.Context, in input) (*confluence.Pag
 	}
 
 	if err := r.validate(doc); err != nil {
+		return nil, nil, err
+	}
+
+	if err := r.claimTitle(doc); err != nil {
 		return nil, nil, err
 	}
 
@@ -2101,6 +2112,31 @@ func (r *publishRun) processFile(ctx context.Context, in input) (*confluence.Pag
 	return target, placement, nil
 }
 
+// claimTitle records that doc publishes its title in its space, and refuses
+// a title another document got to first: the two name one page, and the
+// second would overwrite the first and move it under its own parents. A
+// document that is not synchronized, or publishes to a page id, names none.
+// Titles are compared as Confluence compares them, without regard to case,
+// and a page and a blog post of one title are two pieces of content.
+func (r *publishRun) claimTitle(doc *document) error {
+	meta := doc.meta
+	if meta == nil || meta.Title == "" {
+		return nil
+	}
+
+	key := runTitleKey(meta.Space, meta.Type, meta.Title)
+	if previous, taken := r.titleClaims[key]; taken && previous != doc.file {
+		return fmt.Errorf(
+			"%s already publishes %q in space %q, and a space holds one page of a title: "+
+				"rename one of them, or use --title-append-generated-hash",
+			previous, meta.Title, meta.Space,
+		)
+	}
+	r.titleClaims[key] = doc.file
+
+	return nil
+}
+
 // claimPage records file as the one publishing to Page.PageID, once it has
 // reached the page. A file that failed before then leaves the page to the next
 // one; a dry run claims at the same point a real run does.
@@ -2143,16 +2179,6 @@ func (r *publishRun) readDocument(in input) (*document, error) {
 	meta, markdown, err := documentMeta(r.config, file, markdown, r.hierarchy, warnings)
 	if err != nil {
 		return nil, err
-	}
-
-	if meta != nil {
-		if previous, taken := r.hierarchy.Claim(meta.Space, meta.Title, file); taken {
-			return nil, fmt.Errorf(
-				"%s already publishes %q in space %q, and a space holds one page of a title: "+
-					"rename one of them, or use --title-append-generated-hash",
-				previous, meta.Title, meta.Space,
-			)
-		}
 	}
 
 	if r.config.Page.PageID != "" && meta != nil {

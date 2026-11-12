@@ -352,6 +352,9 @@ for a program that publishes as it renders. `Publisher.Publish` takes a file,
 and `Publisher.PublishDocument` a `Document`. A `Publisher` keeps no page
 manifest and writes no report, so a document's `Key` is not used: its page is
 found by its title in its space, as a file's is, and placed under its parents.
+A second file or document of a title the `Publisher` has already published in
+that space is refused, as a run refuses it (see
+[One page per title](page-tree.md#one-page-per-title)).
 Its relative links are looked for in its `FS`, or on disk around `Path`.
 
 A `Publisher` and the `confluence.API` it is given are meant for one batch.
