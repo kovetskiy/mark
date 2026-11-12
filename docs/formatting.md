@@ -518,6 +518,10 @@ This is the hidden content.
 </details>
 ```
 
+To write about the tag instead, escape it or put it in a code span:
+`\<details>`, `&lt;details&gt;` and `` `<details>` `` all show `<details>` on
+the page.
+
 ## LaTeX & Math Formulas
 
 Optionally you can enable LaTeX / Math formula rendering via `--features="math"`.
