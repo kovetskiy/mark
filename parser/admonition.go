@@ -40,6 +40,11 @@ import (
 //
 //	!!! note "Title" {.class #id key=value}
 //	    Body, indented under the opening line.
+//
+// A body level with the opening line is one only up to a closing run:
+//
+//	!!! note "Title"
+//	Body.
 //	!!!
 type Admonition struct {
 	ast.BaseBlock
@@ -98,6 +103,9 @@ type admonitionState struct {
 	// body, which every later body line is read relative to.
 	contentIndent     int
 	contentHasStarted bool
+
+	// closedByRun is set once the admonition's own closing run has ended it.
+	closedByRun bool
 }
 
 // admonitionStackKey holds the admonitions open at the current line,
@@ -286,6 +294,8 @@ func (b *admonitionParser) Continue(node ast.Node, reader text.Reader, pc parser
 	if closing && level == len(stack)-1 {
 		// Len counts the padding already, which Advance steps over first.
 		reader.Advance(segment.Len() - newline)
+		state.closedByRun = true
+
 		return parser.Close
 	}
 
@@ -316,13 +326,39 @@ func (b *admonitionParser) Continue(node ast.Node, reader text.Reader, pc parser
 // Only this admonition's own entry goes. A sibling that opened on the line
 // that ended this one is already on the stack above it by now, because
 // goldmark opens the new block before it closes the old.
+//
+// A body that was not indented belongs to the admonition only if a closing
+// run ended it. Whether one does is not known until the admonition closes, so
+// without one the blocks read into it are moved out here, to follow it: the
+// admonition is its title alone, as MkDocs reads it, rather than everything up
+// to the end of the list item, the blockquote or the document it is in.
 func (b *admonitionParser) Close(node ast.Node, reader text.Reader, pc parser.Context) {
 	stack := admonitionStack(pc)
 	for i, state := range stack {
 		if state.node == node {
 			pc.Set(admonitionStackKey, slices.Delete(slices.Clone(stack), i, i+1))
+
+			if !state.closedByRun && state.contentIndent <= state.indent {
+				moveChildrenAfter(node)
+			}
+
 			return
 		}
+	}
+}
+
+// moveChildrenAfter makes node's children the siblings that follow it, in
+// their order. They go straight after node and not to the end of its parent,
+// which may already hold the block that ended node.
+func moveChildrenAfter(node ast.Node) {
+	parent := node.Parent()
+	if parent == nil {
+		return
+	}
+
+	for child := node.LastChild(); child != nil; child = node.LastChild() {
+		node.RemoveChild(child)
+		parent.InsertAfter(node, child)
 	}
 }
 

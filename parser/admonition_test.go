@@ -165,3 +165,130 @@ func TestAdmonitionParserIsDeterministic(t *testing.T) {
 	}
 	assert.ElementsMatch(t, []string{"class=admonition adm-danger extra", "id=id"}, names)
 }
+
+// outline parses source and returns its blocks in document order, one a line
+// and indented by depth: an admonition as "!class", any other block as its
+// kind and text.
+func outline(t *testing.T, source string) []string {
+	t.Helper()
+
+	md := parser.New(
+		parser.WithExtensions(parser.NewCommonMark()),
+		parser.WithBlockParsers(util.Prioritized(cparser.NewAdmonitionParser(), 100)),
+	)
+
+	src := []byte(source)
+
+	var lines []string
+	var walk func(node ast.Node, depth string)
+	walk = func(node ast.Node, depth string) {
+		for child := node.FirstChild(); child != nil; child = child.NextSibling() {
+			if admonition, ok := child.(*cparser.Admonition); ok {
+				lines = append(lines, depth+"!"+string(admonition.AdmonitionClass))
+				walk(child, depth+"  ")
+
+				continue
+			}
+
+			block, ok := child.(ast.BlockNode)
+			if !ok {
+				continue
+			}
+
+			body := ""
+			for _, segment := range block.Source() {
+				body += string(segment.Bytes(src))
+			}
+
+			line := depth + child.Kind().String()
+			if body = strings.TrimRight(body, "\n"); body != "" {
+				line += ":" + body
+			}
+			lines = append(lines, line)
+			walk(child, depth+"  ")
+		}
+	}
+	walk(md.Parse(src), "")
+
+	return lines
+}
+
+// TestAdmonitionBodyIsIndentedOrClosed: an admonition holds the lines indented
+// under its opening line, as MkDocs reads it, or the lines up to its closing
+// run. Lines that are neither follow it.
+func TestAdmonitionBodyIsIndentedOrClosed(t *testing.T) {
+	tests := []struct {
+		name   string
+		source string
+		want   []string
+	}{
+		{
+			name:   "title only, then the rest of the document",
+			source: "!!! note \"Remember\"\n\nNext paragraph.\n\n## Heading\n\nLast.\n",
+			want:   []string{"!note", "Paragraph:Next paragraph.", "Heading:Heading", "Paragraph:Last."},
+		},
+		{
+			name:   "unindented line straight after",
+			source: "!!! tip\nunindented body\n\nlater paragraph\n",
+			want:   []string{"!tip", "Paragraph:unindented body", "Paragraph:later paragraph"},
+		},
+		{
+			name:   "indented body, then the rest of the document",
+			source: "!!! note \"T\"\n    body\n\nNext paragraph.\n",
+			want:   []string{"!note", "  Paragraph:body", "Paragraph:Next paragraph."},
+		},
+		{
+			name:   "indented body after a blank line",
+			source: "!!! note \"T\"\n\n    body\n\nNext paragraph.\n",
+			want:   []string{"!note", "  Paragraph:body", "Paragraph:Next paragraph."},
+		},
+		{
+			name:   "unindented body up to a closing run",
+			source: "!!! note \"T\"\nbody\n\n## Heading\n!!!\n\nNext paragraph.\n",
+			want:   []string{"!note", "  Paragraph:body", "  Heading:Heading", "Paragraph:Next paragraph."},
+		},
+		{
+			name:   "unindented body after a blank line, up to a closing run",
+			source: "!!! note \"T\"\n\nbody\n\n!!!\nNext paragraph.\n",
+			want:   []string{"!note", "  Paragraph:body", "Paragraph:Next paragraph."},
+		},
+		{
+			name:   "unindented and nested, each with its closing run",
+			source: "!!! note \"outer\"\na\n!!! tip \"inner\"\nb\n!!!\nc\n!!!\nafter\n",
+			want:   []string{"!note", "  Paragraph:a", "  !tip", "    Paragraph:b", "  Paragraph:c", "Paragraph:after"},
+		},
+		{
+			name:   "a closing run ends the inner one only",
+			source: "!!! note \"outer\"\na\n!!! tip \"inner\"\nb\n!!!\nc\n",
+			want:   []string{"!note", "Paragraph:a", "!tip", "  Paragraph:b", "Paragraph:c"},
+		},
+		{
+			name:   "title only, then a sibling",
+			source: "!!! note \"one\"\n\n!!! tip \"two\"\n    b\n\nafter\n",
+			want:   []string{"!note", "!tip", "  Paragraph:b", "Paragraph:after"},
+		},
+		{
+			name:   "title only inside an indented body",
+			source: "!!! note \"outer\"\n    !!! tip \"inner\"\n\n    a\n\nafter\n",
+			want:   []string{"!note", "  !tip", "  Paragraph:a", "Paragraph:after"},
+		},
+		{
+			name:   "title only in a list item",
+			source: "- item\n\n  !!! note \"T\"\n\n  in the item\n\nafter\n",
+			want: []string{
+				"List", "  ListItem", "    Paragraph:item", "    !note", "    Paragraph:in the item", "Paragraph:after",
+			},
+		},
+		{
+			name:   "title only in a blockquote",
+			source: "> !!! note \"T\"\n>\n> quoted\n\nafter\n",
+			want:   []string{"Blockquote", "  !note", "  Paragraph:quoted", "Paragraph:after"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, outline(t, tt.source))
+		})
+	}
+}

@@ -506,6 +506,25 @@ title, if it has one, in bold at the top. Any other type stays a quotation.
     A yellow box titled "Mind the gap".
 ```
 
+The box holds the lines indented under its opening line, as in MkDocs. An
+admonition with no indented lines is its title alone, and what follows it is
+published after the box:
+
+```markdown
+!!! note "Remember"
+
+This paragraph follows the box.
+```
+
+Lines that are not indented are part of the box only up to a line of `!!!` that
+closes it:
+
+```markdown
+!!! note "Remember"
+This paragraph is in the box.
+!!!
+```
+
 ## HTML Details/Summary Macro
 
 Standard HTML `<details>` and `<summary>` tags are converted to native
