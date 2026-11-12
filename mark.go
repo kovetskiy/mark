@@ -471,14 +471,17 @@ type RenderingConfig struct {
 	MermaidScale    float64
 	// MermaidOutput, D2Output and MathOutput are the image each kind of
 	// picture is published as; the zero value is PNG.
-	MermaidOutput    imageformat.Format
-	MermaidBundle    bool
-	D2Output         imageformat.Format
-	D2Scale          float64
-	D2BundleRemote   bool
-	MathOutput       imageformat.Format
-	MathScale        float64
-	Features         []string
+	MermaidOutput  imageformat.Format
+	MermaidBundle  bool
+	D2Output       imageformat.Format
+	D2Scale        float64
+	D2BundleRemote bool
+	MathOutput     imageformat.Format
+	MathScale      float64
+	Features       []string
+	// ImageAlign is the alignment of every image in a document that sets no
+	// Image-Align header of its own: "left", "center" or "right", in any case,
+	// or empty for none.
 	ImageAlign       string
 	AttachReferenced bool
 	IncludePath      string
@@ -677,6 +680,18 @@ func (r RenderingConfig) validate() error {
 			"invalid MathScale %v: expected a finite number greater than 0, or 0 for the default, with the math feature enabled",
 			r.MathScale,
 		)
+	}
+
+	// The one alignment every document shares, so a value no image can take
+	// fails the run here rather than at each document's compile, which comes
+	// after its page is created. Read as the Image-Align header is.
+	if r.ImageAlign != "" {
+		if _, ok := rendercheck.ImageAlign(r.ImageAlign); !ok {
+			return fmt.Errorf(
+				"invalid ImageAlign %q: expected \"left\", \"center\", \"right\", or \"\" for none",
+				r.ImageAlign,
+			)
+		}
 	}
 
 	return nil
