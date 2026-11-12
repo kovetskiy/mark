@@ -573,7 +573,7 @@ func (s *Store) Untracked(spaceKey string) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	state, ok := s.spaces[spaceKey]
+	state, ok := s.spaces[s.loadedKey(spaceKey)]
 	return ok && state.untracked
 }
 
@@ -1179,8 +1179,27 @@ func (state *spaceState) writeMapping(
 	return true, nil
 }
 
+// loadedKey returns the key a space was loaded under, which is how its first
+// caller spelt it. Confluence reads a space key without regard to case, so
+// another spelling names the same space and must find the same state: held
+// apart, each would take the other's entries for files that are gone. A key
+// naming no loaded space is returned as given.
+func (s *Store) loadedKey(spaceKey string) string {
+	if _, ok := s.spaces[spaceKey]; ok {
+		return spaceKey
+	}
+	for loaded := range s.spaces {
+		if strings.EqualFold(loaded, spaceKey) {
+			return loaded
+		}
+	}
+
+	return spaceKey
+}
+
 // load returns the state for a space, reading it from Confluence on first use.
 func (s *Store) load(ctx context.Context, spaceKey string) (*spaceState, error) {
+	spaceKey = s.loadedKey(spaceKey)
 	if state, ok := s.spaces[spaceKey]; ok {
 		return state, nil
 	}
@@ -1345,6 +1364,7 @@ func (s *Store) Record(ctx context.Context, spaceKey, path, pageID, title, hash 
 	defer s.mu.Unlock()
 
 	path = Key(path)
+	spaceKey = s.loadedKey(spaceKey)
 
 	state, err := s.load(ctx, spaceKey)
 	if err != nil {
@@ -1929,6 +1949,7 @@ func (s *Store) OrphanEntries(spaceKey string) []Orphan {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	spaceKey = s.loadedKey(spaceKey)
 	state, ok := s.spaces[spaceKey]
 	if !ok {
 		return nil
@@ -1954,7 +1975,7 @@ func (s *Store) Published(spaceKey string) int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	state, ok := s.spaces[spaceKey]
+	state, ok := s.spaces[s.loadedKey(spaceKey)]
 	if !ok {
 		return 0
 	}
@@ -1978,7 +1999,7 @@ func (s *Store) Survivors(spaceKey, glob string) int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	state, ok := s.spaces[spaceKey]
+	state, ok := s.spaces[s.loadedKey(spaceKey)]
 	if !ok {
 		return 0
 	}
@@ -2030,7 +2051,7 @@ func (s *Store) Orphans(spaceKey string) []string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	return s.orphans(spaceKey)
+	return s.orphans(s.loadedKey(spaceKey))
 }
 
 // orphans is Orphans without the lock, for callers that already hold it. It

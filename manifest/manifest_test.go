@@ -1702,3 +1702,57 @@ func TestNamedPathsAreRecordedUnderThemselves(t *testing.T) {
 	require.NoError(t, second.Record(ctx, "DOCS", "many/file-001.md", "4", "many/file-001.md", "h"))
 	assert.Equal(t, []string{"many/file-000.md"}, second.Orphans("DOCS"))
 }
+
+// TestSpaceKeyIsReadWithoutRegardToCase: Confluence reads docs and DOCS as one
+// space, so both spellings share one manifest, kept under the first one seen.
+func TestSpaceKeyIsReadWithoutRegardToCase(t *testing.T) {
+	ctx := t.Context()
+	store, server := newStore(t)
+	server.AddSpace("DOCS")
+
+	require.NoError(t, store.Record(ctx, "DOCS", "upper.md", "1", "Upper", ""))
+	require.NoError(t, store.Record(ctx, "docs", "lower.md", "2", "Lower", ""))
+	require.NoError(t, store.Save(ctx))
+
+	assert.Equal(t, []string{"DOCS"}, store.Spaces())
+	assert.Equal(t, map[string]string{"upper.md": "1", "lower.md": "2"},
+		manifestPages(t, server, spaceID(t, server, "DOCS")))
+
+	// The next run publishes both again, one under each spelling.
+	next := newStoreOn(t, server)
+	entry, ok, err := next.Lookup(ctx, "docs", "upper.md")
+	require.NoError(t, err)
+	require.True(t, ok, "recorded as DOCS, found as docs")
+	assert.Equal(t, "1", entry.PageID)
+	require.NoError(t, next.Record(ctx, "docs", "upper.md", "1", "Upper", ""))
+	require.NoError(t, next.Record(ctx, "DOCS", "lower.md", "2", "Lower", ""))
+
+	assert.Equal(t, []string{"docs"}, next.Spaces())
+	for _, key := range []string{"docs", "DOCS"} {
+		assert.Empty(t, next.Orphans(key), "no file of %s is gone", key)
+		assert.Empty(t, next.OrphanEntries(key))
+		assert.Equal(t, 2, next.Published(key))
+		assert.Equal(t, 2, next.Survivors(key, "*.md"))
+		assert.False(t, next.Untracked(key))
+	}
+
+	// A file that is gone is reported under either spelling.
+	last := newStoreOn(t, server)
+	require.NoError(t, last.Record(ctx, "DOCS", "upper.md", "1", "Upper", ""))
+	assert.Equal(t, []string{"lower.md"}, last.Orphans("docs"))
+}
+
+// TestSpacesOfDifferentKeysStayApart: only case is disregarded.
+func TestSpacesOfDifferentKeysStayApart(t *testing.T) {
+	ctx := t.Context()
+	store, server := newStore(t)
+	server.AddSpace("DOCS")
+	server.AddSpace("DOCS2")
+
+	require.NoError(t, store.Record(ctx, "DOCS", "one.md", "1", "One", ""))
+	require.NoError(t, store.Record(ctx, "DOCS2", "two.md", "2", "Two", ""))
+
+	assert.Equal(t, []string{"DOCS", "DOCS2"}, store.Spaces())
+	assert.Equal(t, 1, store.Published("DOCS"))
+	assert.Equal(t, 1, store.Published("docs2"))
+}

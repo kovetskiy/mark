@@ -297,6 +297,22 @@ func (s *Server) newID() string {
 	return strconv.Itoa(s.nextID)
 }
 
+// spaceKeyLocked returns the key of the space that key names. Confluence
+// matches a space key without regard to case, so a request may spell one
+// either way; a key naming no space is returned as given. The caller holds
+// s.mu.
+func (s *Server) spaceKeyLocked(key string) string {
+	if _, ok := s.spaces[key]; ok {
+		return key
+	}
+	for known := range s.spaces {
+		if strings.EqualFold(known, key) {
+			return known
+		}
+	}
+	return key
+}
+
 // AddSpace registers a space and returns it.
 func (s *Server) AddSpace(key string) *Space {
 	s.mu.Lock()
@@ -1086,7 +1102,7 @@ func (s *Server) handleV2(w http.ResponseWriter, r *http.Request, path string) {
 		defer s.mu.Unlock()
 		results := []map[string]any{}
 		for _, sp := range s.spaces {
-			if key == "" || sp.Key == key {
+			if key == "" || strings.EqualFold(sp.Key, key) {
 				// v2 reports the homepage as an id, unlike v1 which expands the
 				// whole page object. FindHomePage's v2 fallback resolves it with
 				// a second call, so the field has to be here for that path to be
@@ -1313,6 +1329,7 @@ func (s *Server) spacePages(w http.ResponseWriter, r *http.Request, key string) 
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	key = s.spaceKeyLocked(key)
 	if _, ok := s.spaces[key]; !ok {
 		writeJSON(w, http.StatusNotFound, map[string]any{"message": "no space with key " + key})
 		return
@@ -1506,7 +1523,7 @@ func (s *Server) movePageAction(w http.ResponseWriter, r *http.Request) {
 
 	var target *Page
 	for _, candidate := range s.pages {
-		if candidate.SpaceKey == query.Get("spaceKey") &&
+		if strings.EqualFold(candidate.SpaceKey, query.Get("spaceKey")) &&
 			strings.EqualFold(candidate.Title, query.Get("targetTitle")) &&
 			!candidate.Trashed && !candidate.Archived {
 			target = candidate
@@ -1777,7 +1794,7 @@ func (s *Server) searchContent(w http.ResponseWriter, r *http.Request) {
 
 	var matches []*Page
 	for _, p := range s.pages {
-		if spaceKey != "" && p.SpaceKey != spaceKey {
+		if spaceKey != "" && !strings.EqualFold(p.SpaceKey, spaceKey) {
 			continue
 		}
 		if pageType != "" && p.Type != pageType {
@@ -1839,6 +1856,7 @@ func (s *Server) createContent(w http.ResponseWriter, r *http.Request) {
 	// Creating content does not create the space it goes into. A fake that
 	// did would let a misspelt or unresolved space key through as a new page
 	// in a space that exists nowhere else.
+	payload.Space.Key = s.spaceKeyLocked(payload.Space.Key)
 	if _, ok := s.spaces[payload.Space.Key]; !ok {
 		writeJSON(w, http.StatusNotFound, map[string]any{
 			"message": "no space with key " + payload.Space.Key,
@@ -2038,7 +2056,7 @@ func (s *Server) getSpace(w http.ResponseWriter, r *http.Request, key string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	sp, ok := s.spaces[key]
+	sp, ok := s.spaces[s.spaceKeyLocked(key)]
 	if !ok {
 		writeJSON(w, http.StatusNotFound, map[string]any{"message": "no space " + key})
 		return
@@ -2695,7 +2713,7 @@ func (s *Server) searchFolder(w http.ResponseWriter, r *http.Request) {
 
 	matches := []map[string]any{}
 	for _, f := range s.folders {
-		if !strings.EqualFold(f.Title, title) || (spaceKey != "" && f.SpaceKey != spaceKey) {
+		if !strings.EqualFold(f.Title, title) || (spaceKey != "" && !strings.EqualFold(f.SpaceKey, spaceKey)) {
 			continue
 		}
 		// ancestor= is any ancestor, as in Confluence, not only the parent.

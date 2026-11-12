@@ -317,8 +317,8 @@ func (h *Hierarchy) Claim(space, title, file string) (string, bool) {
 	return "", false
 }
 
-// titleKey names a page by space and title, the title compared without regard
-// to case, as Confluence compares them.
+// titleKey names a page by space and title, both compared without regard to
+// case, as Confluence compares them.
 func titleKey(space, title string) string {
-	return space + "\x00" + strings.ToLower(title)
+	return strings.ToLower(space) + "\x00" + strings.ToLower(title)
 }
