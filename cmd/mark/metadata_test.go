@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -37,6 +38,7 @@ func TestMetadataFailuresExit(t *testing.T) {
 				_, _ = fmt.Fprint(w, `{"message":"cannot access metadata target"}`)
 			}))
 			defer server.Close()
+
 			config := filepath.Join(t.TempDir(), "mark.toml")
 			require.NoError(t, os.WriteFile(config, nil, 0o600))
 			args := []string{"--config", config, "--base-url", server.URL + "/wiki", "--color", "never", "metadata"}
@@ -46,21 +48,26 @@ func TestMetadataFailuresExit(t *testing.T) {
 
 			worker := exec.CommandContext(t.Context(), os.Args[0], "-test.run=^TestMetadataCommandProcess$")
 			worker.WaitDelay = 2 * time.Second
+
 			for _, variable := range os.Environ() {
 				if !strings.HasPrefix(variable, "MARK_") {
 					worker.Env = append(worker.Env, variable)
 				}
 			}
+
 			worker.Env = append(worker.Env, "MARK_TEST_METADATA_ARGS="+string(encoded), "MARK_USERNAME=user", "MARK_PASSWORD=token")
+
 			var stdout, stderr bytes.Buffer
+
 			worker.Stdout, worker.Stderr = &stdout, &stderr
 			err = worker.Run()
+
 			var exitError *exec.ExitError
 			require.ErrorAs(t, err, &exitError, stderr.String())
 			assert.Equal(t, 1, exitError.ExitCode())
 			assert.Empty(t, stdout.String())
 			assert.Contains(t, stderr.String(), "cannot access metadata target")
-			assert.Contains(t, stderr.String(), fmt.Sprintf("%d", testCase.status))
+			assert.Contains(t, stderr.String(), strconv.Itoa(testCase.status))
 		})
 	}
 }
@@ -71,8 +78,10 @@ func TestMetadataCommandProcess(t *testing.T) {
 	if encoded == "" {
 		t.Skip("subprocess helper")
 	}
+
 	var args []string
 	require.NoError(t, json.Unmarshal([]byte(encoded), &args))
 	os.Args = append([]string{"mark"}, args...)
+
 	main()
 }
