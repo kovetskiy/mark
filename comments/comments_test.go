@@ -2,6 +2,7 @@ package comments
 
 import (
 	"html"
+	"strings"
 	"testing"
 
 	"github.com/kovetskiy/mark/v17/confluence"
@@ -687,6 +688,82 @@ func TestMergeComments_SplitMarkerKeepsItsPlace(t *testing.T) {
 	again, err := Merge(body, result, makeComments("hello world", "uuid-a"))
 	assert.NoError(t, err)
 	assert.Equal(t, want, again)
+}
+
+// TestMergeComments_SpaceAtTheEdgeOfSelection: white space at either end of a
+// selection is not part of what is looked for or marked, so the comment is
+// found whether or not the text goes on after it.
+func TestMergeComments_SpaceAtTheEdgeOfSelection(t *testing.T) {
+	tests := []struct {
+		name      string
+		body      string
+		selection string
+		want      string
+	}{
+		{
+			name:      "at the end of a paragraph",
+			body:      `<p>hello world</p>`,
+			selection: "world ",
+			want:      `<p>hello ` + markerA + `world` + markerEnd + `</p>`,
+		},
+		{
+			name:      "before more text",
+			body:      `<p>hello world again</p>`,
+			selection: " world ",
+			want:      `<p>hello ` + markerA + `world` + markerEnd + ` again</p>`,
+		},
+		{
+			name:      "between two elements",
+			body:      `<p><strong>hello</strong> <em>world</em></p>`,
+			selection: "hello\n",
+			want:      `<p><strong>` + markerA + `hello` + markerEnd + `</strong> <em>world</em></p>`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			warnings := report.NewWarnings("docs/a.md")
+
+			result, err := MergeWithWarnings(tt.body, `<p>none</p>`, makeComments(tt.selection, "uuid-a"), warnings)
+			assert.NoError(t, err)
+			assert.Equal(t, tt.want, result)
+			assert.Empty(t, warnings.List())
+		})
+	}
+}
+
+// TestMergeComments_SelectionOfWhiteSpaceOnly: a selection with no text in it
+// names no place on the page; in particular it is not the line break between
+// two blocks, where a marker cannot go.
+func TestMergeComments_SelectionOfWhiteSpaceOnly(t *testing.T) {
+	body := "<p>foo</p>\n<p>bar baz</p>"
+	for _, selection := range []string{" ", "\n", "\u00a0 "} {
+		warnings := report.NewWarnings("docs/a.md")
+
+		result, err := MergeWithWarnings(body, `<p>none</p>`, makeComments(selection, "uuid-a"), warnings)
+		assert.NoError(t, err)
+		assert.Equal(t, body, result)
+		assert.Equal(t, []report.Warning{{
+			Kind:    report.WarningInlineComment,
+			File:    "docs/a.md",
+			Message: "inline comment uuid-a is lost: the text it was made on is empty",
+		}}, warnings.List())
+	}
+}
+
+// TestMergeComments_BareSpaceAtTheEdgeKeepsItsPlace: a selection that begins
+// with the space between two elements has its marker on the text only, and
+// the comment goes back there although the same words, after the same
+// address, appear again.
+func TestMergeComments_BareSpaceAtTheEdgeKeepsItsPlace(t *testing.T) {
+	address := "https://example.com/" + strings.Repeat("guide/", 20)
+	body := `<p><em>Docs</em> <a href="` + address + `">here</a> for all.</p>` +
+		`<p><code>` + address + `</code> here for all.</p>`
+	want := `<p><em>Docs</em> <a href="` + address + `">` + markerA + `here` + markerEnd + `</a> for all.</p>` +
+		`<p><code>` + address + `</code> here for all.</p>`
+
+	result, err := Merge(body, want, makeComments(" here", "uuid-a"))
+	assert.NoError(t, err)
+	assert.Equal(t, want, result)
 }
 
 // TestMergeComments_OverlapAcrossInlineMarkup: a comment whose text overlaps
