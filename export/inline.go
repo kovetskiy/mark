@@ -26,6 +26,10 @@ type inlineWriter struct {
 	// afterBreak is set by a hard line break, whose own newline replaces the
 	// one the text after it starts with.
 	afterBreak bool
+
+	// trailingBreaks counts the hard line breaks, written with a backslash,
+	// that what has been written so far ends in.
+	trailingBreaks int
 }
 
 func (c *converter) inline(ctx inlineContext) *inlineWriter {
@@ -45,6 +49,26 @@ func (w *inlineWriter) write(s string) {
 	}
 	w.b.WriteString(s)
 	w.afterBreak = false
+	w.trailingBreaks = 0
+}
+
+// hardBreak is a hard line break as Markdown writes it.
+const hardBreak = "\\\n"
+
+// withoutTrailingBreaks is what has been written, less the hard line breaks
+// it ends in, and how many those are. Inside emphasis or a link the backslash
+// of the last one would escape the closing delimiter, so they are written
+// after it.
+func (w *inlineWriter) withoutTrailingBreaks() (string, int) {
+	out := w.b.String()
+
+	return out[:len(out)-w.trailingBreaks*len(hardBreak)], w.trailingBreaks
+}
+
+func (w *inlineWriter) lineBreaks(count int) {
+	for range count {
+		w.lineBreak()
+	}
 }
 
 // writeLink writes a link, escaping a "!" just before it, which would make it
@@ -169,8 +193,10 @@ func (w *inlineWriter) lineBreak() {
 		return
 	}
 
-	w.write("\\\n")
+	breaks := w.trailingBreaks
+	w.write(hardBreak)
 	w.afterBreak = true
+	w.trailingBreaks = breaks + 1
 }
 
 // emphasis writes strong, emphasis and strikethrough with Markdown's
@@ -181,7 +207,7 @@ func (w *inlineWriter) lineBreak() {
 func (w *inlineWriter) emphasis(n *node, delimiter, tag string) {
 	sub := w.c.inline(w.ctx)
 	sub.nodes(n.children)
-	inner := sub.b.String()
+	inner, breaks := sub.withoutTrailingBreaks()
 
 	core := strings.TrimLeftFunc(inner, unicode.IsSpace)
 	lead := inner[:len(inner)-len(core)]
@@ -189,9 +215,15 @@ func (w *inlineWriter) emphasis(n *node, delimiter, tag string) {
 	trail := core[len(trimmed):]
 	core = trimmed
 
+	if breaks > 0 {
+		// Space ahead of a line break shows nowhere.
+		trail = ""
+	}
+
 	w.write(lead)
 	if core == "" {
 		w.write(trail)
+		w.lineBreaks(breaks)
 		return
 	}
 
@@ -199,7 +231,9 @@ func (w *inlineWriter) emphasis(n *node, delimiter, tag string) {
 	last, _ := utf8.DecodeLastRuneInString(core)
 
 	next := rune(' ')
-	if trail == "" {
+	if breaks > 0 {
+		next = '\\'
+	} else if trail == "" {
 		next = followingRune(n)
 	}
 
@@ -215,6 +249,7 @@ func (w *inlineWriter) emphasis(n *node, delimiter, tag string) {
 		w.write("<" + tag + ">" + core + "</" + tag + ">")
 	}
 	w.write(trail)
+	w.lineBreaks(breaks)
 }
 
 func isPunct(r rune) bool {
@@ -388,8 +423,10 @@ func (w *inlineWriter) link(n *node) {
 
 	sub := w.c.inline(w.ctx)
 	sub.nodes(n.children)
+	inner, breaks := sub.withoutTrailingBreaks()
 
-	w.writeLink("[" + strings.TrimSpace(sub.b.String()) + "](" + dest + linkTitle(title) + ")")
+	w.writeLink("[" + strings.TrimSpace(inner) + "](" + dest + linkTitle(title) + ")")
+	w.lineBreaks(breaks)
 }
 
 // destination writes a link destination: as it is where it can be, and in
