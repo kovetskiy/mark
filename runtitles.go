@@ -5,6 +5,7 @@ import (
 
 	"github.com/kovetskiy/mark/v17/fingerprint"
 	"github.com/kovetskiy/mark/v17/internal/similar"
+	"github.com/kovetskiy/mark/v17/manifest"
 	"github.com/kovetskiy/mark/v17/metadata"
 	"github.com/kovetskiy/mark/v17/page"
 	"github.com/kovetskiy/mark/v17/report"
@@ -29,6 +30,9 @@ type runTitles struct {
 
 	// ahead holds each read ahead by file.
 	ahead map[string]*readAhead
+
+	// byKey maps a manifest key to the document it is of; nil until asked.
+	byKey map[string]input
 
 	// warningsFor gives a document's collector, for a title declared by more
 	// than one; nil only logs. warned holds the titles already said so about.
@@ -137,6 +141,23 @@ func (r *runTitles) declaring(space, kind, title string) []input {
 	}
 
 	return r.documents[runTitleKey(space, kind, title)]
+}
+
+// keyed returns the document of the run the manifest keys by key.
+func (r *runTitles) keyed(key string) (input, bool) {
+	if r == nil {
+		return input{}, false
+	}
+	if r.byKey == nil {
+		r.byKey = make(map[string]input, len(r.inputs))
+		for _, in := range r.inputs {
+			r.byKey[manifest.Key(in.key)] = in
+		}
+	}
+
+	in, ok := r.byKey[key]
+
+	return in, ok
 }
 
 // warnAmbiguous says, when more than one of the run's documents declare the

@@ -1765,6 +1765,26 @@ func (s *Store) Recorded(ctx context.Context, spaceKey, path string) (Entry, boo
 	return s.lookup(ctx, spaceKey, path, false)
 }
 
+// RecordedFor returns the path whose entry names the page, and whether there
+// is one. It marks nothing as seen.
+func (s *Store) RecordedFor(ctx context.Context, spaceKey, pageID string) (string, bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	state, err := s.load(ctx, spaceKey)
+	if err != nil {
+		return "", false, err
+	}
+
+	// byPage keeps a path that has since recorded another page.
+	path, ok := state.byPage[pageID]
+	if !ok || state.shards[shardFor(path)].pages[path].PageID != pageID {
+		return "", false, nil
+	}
+
+	return path, true, nil
+}
+
 // Forget drops a recorded path: one whose page no longer exists, or an orphan
 // that has been dealt with. A document followed to its new name is not
 // forgotten here; Record hands its old entry over, version included.

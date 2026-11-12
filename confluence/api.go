@@ -1637,6 +1637,10 @@ func (api *API) UpdatePage(ctx context.Context, page *PageInfo, content string, 
 	// costs one lookup and keeps the cache from asserting something untrue.
 	api.forgetMissesForTitle(page.Title, page.Type)
 
+	// And the other way round: a lookup of the title the page had found it,
+	// and the title is now free for another page.
+	api.forgetOtherTitles(page.ID, page.Title, page.Type)
+
 	// v2 keeps properties on an endpoint of their own, so they are written
 	// only once the content is. The version is bumped first: the new one
 	// exists the moment the content is in, and a caller holding the old
@@ -1900,9 +1904,8 @@ func (api *API) confirmVersion(ctx context.Context, page *PageInfo, version int6
 // the miss was recorded from: the next caller is told the page does not exist,
 // tries to create one, and Confluence rejects the duplicate title.
 //
-// Only misses are dropped. A cached page filed under a title it no longer
-// carries is a different and older question, and one this is not the place to
-// answer. The space is not part of the match because PageInfo does not carry
+// Only misses are dropped; forgetOtherTitles drops a cached page filed under
+// a title it no longer carries. The space is not part of the match because PageInfo does not carry
 // one; over-invalidating costs a lookup, and under-invalidating costs a failed
 // publish.
 func (api *API) forgetMissesForTitle(title string, pageType ContentType) {
@@ -1913,6 +1916,23 @@ func (api *API) forgetMissesForTitle(title string, pageType ContentType) {
 	suffix := pageCacheKey("", title, pageType)
 	for key, entry := range api.pageCache {
 		if entry == nil && strings.HasSuffix(key, suffix) {
+			delete(api.pageCache, key)
+		}
+	}
+}
+
+// forgetOtherTitles drops the lookups that found page id under a title other
+// than the one it has just been given. Left cached, the old title would go on
+// finding the page, and a document taking that title would be published over
+// it rather than to a page of its own.
+func (api *API) forgetOtherTitles(id, title string, pageType ContentType) {
+	api.lazyInit()
+	api.pageCacheMutex.Lock()
+	defer api.pageCacheMutex.Unlock()
+
+	suffix := pageCacheKey("", title, pageType)
+	for key, entry := range api.pageCache {
+		if entry != nil && entry.ID == id && !strings.HasSuffix(key, suffix) {
 			delete(api.pageCache, key)
 		}
 	}

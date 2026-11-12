@@ -129,6 +129,98 @@ func resolveTrackedPage(
 	return pg, nil
 }
 
+// titleHeldError refuses a document a title that still names the page of
+// another document of the run, one that publishes the page under a new title.
+type titleHeldError struct {
+	title, pageID string
+	// holder is the document the page is recorded for, and retitled the
+	// title it now declares.
+	holder   input
+	retitled string
+}
+
+func (e *titleHeldError) Error() string {
+	return fmt.Sprintf(
+		"the title %q belongs to page %s until %s, which publishes that page, has retitled it %q",
+		e.title, e.pageID, e.holder.file, e.retitled,
+	)
+}
+
+// titleHolder returns, as the error refusing it, the other document of the
+// run whose page the document's title finds while that document now declares
+// another title; nil when there is none.
+//
+// The title lookup cannot tell that page from the document's own: it is the
+// page of the title until its document has retitled it. Publishing to it
+// would put two documents on one page and leave the title without one.
+func (r *publishRun) titleHolder(
+	ctx context.Context, file, key string, meta *metadata.Meta,
+) (*titleHeldError, error) {
+	if r.tracker == nil || meta == nil {
+		return nil, nil
+	}
+
+	// Memoised, and the question resolving the page asks next.
+	pg, err := r.api.FindPage(ctx, meta.Space, meta.Title, confluence.ContentType(meta.Type))
+	if err != nil {
+		return nil, fmt.Errorf("error while finding page %q: %w", meta.Title, err)
+	}
+	if pg == nil {
+		return nil, nil
+	}
+
+	recorded, ok, err := r.tracker.RecordedFor(ctx, meta.Space, pg.ID)
+	if err != nil {
+		return nil, fmt.Errorf("unable to read page mapping for page %s: %w", pg.ID, err)
+	}
+	if !ok || recorded == manifest.Key(key) {
+		return nil, nil
+	}
+
+	holder, ok := r.titles.keyed(recorded)
+	if !ok || holder.file == file {
+		return nil, nil
+	}
+
+	// A holder that keeps the title, or publishes nothing, leaves the page
+	// to be found by its title.
+	declared := r.titles.readAhead(holder).meta
+	if declared == nil || !declared.Publish() || declared.Title == "" ||
+		declared.Space != meta.Space || declared.Type != meta.Type ||
+		strings.EqualFold(declared.Title, pg.Title) {
+		return nil, nil
+	}
+
+	return &titleHeldError{title: meta.Title, pageID: pg.ID, holder: holder, retitled: declared.Title}, nil
+}
+
+// titleFreed reports, for a dry run, whether the page the document's title
+// finds would have been retitled by its own document by the document's turn,
+// leaving the title to a new page. It would when that document's new title
+// is itself free, or freed the same way; visiting holds the documents asked
+// about, so that titles swapped between documents are found as they are.
+func (r *publishRun) titleFreed(
+	ctx context.Context, file, key string, meta *metadata.Meta, visiting map[string]bool,
+) (bool, error) {
+	held, err := r.titleHolder(ctx, file, key, meta)
+	if err != nil || held == nil || visiting[held.holder.file] {
+		return false, err
+	}
+
+	declared := r.titles.readAhead(held.holder).meta
+	taken, err := r.api.FindPage(ctx, declared.Space, declared.Title, confluence.ContentType(declared.Type))
+	if err != nil {
+		return false, fmt.Errorf("error while finding page %q: %w", declared.Title, err)
+	}
+	if taken == nil {
+		return true, nil
+	}
+
+	visiting[file] = true
+
+	return r.titleFreed(ctx, held.holder.file, held.holder.key, declared, visiting)
+}
+
 // refreshStaleParents rewrites parent titles that no longer resolve to the
 // titles those pages carry now.
 //

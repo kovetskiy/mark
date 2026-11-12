@@ -1215,8 +1215,15 @@ func Run(ctx context.Context, config Config) (err error) {
 		return fileErr
 	}
 
-	for _, in := range inputs {
+	// turned holds the documents that have had their turn, in order or ahead
+	// of it.
+	turned := map[string]bool{}
+
+	// publish is one document's turn, returning what the run stops with.
+	var publish func(in input) error
+	publish = func(in input) error {
 		file := in.file
+		turned[file] = true
 
 		if err := ctx.Err(); err != nil {
 			return err
@@ -1225,15 +1232,31 @@ func Run(ctx context.Context, config Config) (err error) {
 		log.Info().Msgf("processing %s", file)
 
 		target, placement, err := pub.processFile(ctx, in)
+
+		// A title that still names the page of a document retitling it is
+		// free once that document has published, so it goes first. One that
+		// has had its turn and still holds the title leaves this one refused.
+		var held *titleHeldError
+		if errors.As(err, &held) && !turned[held.holder.file] {
+			log.Info().Msgf("%s; publishing it first", held)
+
+			pub.yielded[file] = true
+			stop := publish(held.holder)
+			delete(pub.yielded, file)
+			if stop != nil {
+				return stop
+			}
+
+			log.Info().Msgf("processing %s", file)
+
+			target, placement, err = pub.processFile(ctx, in)
+		}
+
 		if placement != nil {
 			ordered = append(ordered, *placement)
 		}
 		if err != nil {
-			if stop := fail(file, err); stop != nil {
-				return stop
-			}
-
-			continue
+			return fail(file, err)
 		}
 
 		if target != nil {
@@ -1276,6 +1299,18 @@ func Run(ctx context.Context, config Config) (err error) {
 					}
 				}
 			}
+		}
+
+		return nil
+	}
+
+	for _, in := range inputs {
+		if turned[in.file] {
+			continue
+		}
+
+		if err := publish(in); err != nil {
+			return err
 		}
 	}
 
@@ -1641,6 +1676,7 @@ func newPublishRun(
 		checker:          page.NewLinkChecker(checks),
 		globalProperties: globalProperties,
 		titleClaims:      map[string]string{},
+		yielded:          map[string]bool{},
 	}, nil
 }
 
@@ -1890,6 +1926,10 @@ type publishRun struct {
 
 	// titleClaims names the document publishing each title, by runTitleKey.
 	titleClaims map[string]string
+
+	// yielded holds the documents waiting for the one retitling the page
+	// their title finds, which the run publishes ahead of its turn.
+	yielded map[string]bool
 
 	// warnings holds each document's warnings for the run's report: a second
 	// pass keeps what only the first found, such as a comment it dropped, and
@@ -2466,6 +2506,17 @@ func (r *publishRun) previewLocation(ctx context.Context, doc *document) (pagePr
 		return found, fmt.Errorf("unable to resolve page location: %w", err)
 	}
 
+	if pg != nil {
+		// A real run publishes the document that retitles this page first.
+		freed, err := r.titleFreed(ctx, file, doc.key, meta, map[string]bool{})
+		if err != nil {
+			return found, err
+		}
+		if freed {
+			pg = nil
+		}
+	}
+
 	if pg == nil {
 		// The title found nothing, which is where a real run consults
 		// the manifest. Saying so is the whole point of a dry run:
@@ -2754,6 +2805,15 @@ func (r *publishRun) resolveDestination(ctx context.Context, doc *document) (*de
 func (r *publishRun) resolveDocumentPage(ctx context.Context, doc *document) (*destination, error) {
 	api, meta := r.api, doc.meta
 	dest := &destination{}
+
+	// Before anything is moved or written. A holder waiting on this document
+	// cannot go first: the two swapped titles, and each takes the page its
+	// title finds.
+	if held, err := r.titleHolder(ctx, doc.file, doc.key, meta); err != nil {
+		return nil, err
+	} else if held != nil && !r.yielded[held.holder.file] {
+		return nil, held
+	}
 
 	// Parents are named by title, so a parent that has itself been renamed
 	// leaves this document pointing at a name nothing carries any more.
