@@ -2011,12 +2011,23 @@ func (r *publishRun) processFile(ctx context.Context, in input) (*confluence.Pag
 	}
 
 	if shouldUpdatePage {
+		// The manifest is read ahead of the write, so that recording the
+		// write asks nothing more of Confluence: a run stopped while the
+		// update is on its way could no longer read it.
+		if r.tracker != nil && doc.meta != nil {
+			if _, _, err := r.tracker.Recorded(ctx, doc.meta.Space, doc.key); err != nil {
+				return nil, nil, fmt.Errorf("unable to read page mapping for %q: %w", doc.key, err)
+			}
+		}
+
 		read := dest.page.Version.Number
 		if err := r.writePage(ctx, doc, dest.page, html, versionMessage); err != nil {
 			// An update can fail after its body is in, on what it writes
 			// next. The version that made is mark's own all the same.
 			if dest.page.Version.Number != read {
-				err = errors.Join(err, r.recordPublished(ctx, doc, dest.page))
+				if recordErr := r.recordPublished(ctx, doc, dest.page); recordErr != nil {
+					err = errors.Join(err, recordErr)
+				}
 			}
 
 			return nil, nil, err
