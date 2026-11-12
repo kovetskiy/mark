@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/kovetskiy/mark/v17/confluence"
@@ -984,4 +985,29 @@ func TestOnOrphanStillRemovesAPageOfAFileMovedOutOfEveryPattern(t *testing.T) {
 	require.NoError(t, Run(context.Background(), guides))
 
 	assert.Empty(t, pageIDTitled(t, server, "Doc"), "a page no other path records is removed")
+}
+
+// TestOnOrphanRemovesThePageADocumentLeftInItsOldSpace: a document whose
+// Space changed is still among the run's files, but publishes nothing to the
+// space it left, so the page it had there is an orphan of that space.
+func TestOnOrphanRemovesThePageADocumentLeftInItsOldSpace(t *testing.T) {
+	server, _ := docsSpace(t)
+	home := server.AddPage("OPS", "Home", "page", "")
+	server.SetHomepage("OPS", home.ID)
+	server.AddPage("OPS", "Parent", "page", home.ID)
+	dir := t.TempDir()
+
+	writeFile(t, dir, "doc.md", markdownWithTitle("Doc"))
+	writeFile(t, dir, "keep.md", markdownWithTitle("Keep"))
+
+	config := trackingConfig(server, filepath.Join(dir, "*.md"))
+	config.Tracking.OnOrphan = report.OnOrphanDelete
+	require.NoError(t, Run(context.Background(), config))
+	require.NotEmpty(t, pageIDTitled(t, server, "Doc"))
+
+	writeFile(t, dir, "doc.md", strings.Replace(markdownWithTitle("Doc"), "Space: DOCS", "Space: OPS", 1))
+	require.NoError(t, Run(context.Background(), config))
+
+	assert.Empty(t, pageIDTitled(t, server, "Doc"), "the page left in DOCS is removed")
+	assert.NotEmpty(t, pageIDTitled(t, server, "Keep"))
 }

@@ -1809,3 +1809,21 @@ func TestOrphansOfOnePageAreAllReturned(t *testing.T) {
 
 	assert.Equal(t, []string{"a.md", "b.md"}, next.Orphans("DOCS"))
 }
+
+// TestOrphansIncludeARunFileTheSpaceDidNotSee: a path among the run's files
+// that published nothing to the space is gone from it, and records no page
+// there for itself.
+func TestOrphansIncludeARunFileTheSpaceDidNotSee(t *testing.T) {
+	ctx := t.Context()
+	server := confluencetest.New(t)
+	server.AddSpace("DOCS")
+	store := runStore(t, server, "doc.md", "kept.md")
+	require.NoError(t, store.Record(ctx, "DOCS", "doc.md", "1", "Doc", "h"))
+	require.NoError(t, store.Record(ctx, "DOCS", "kept.md", "2", "Kept", "k"))
+	require.NoError(t, store.Save(ctx))
+
+	next := runStore(t, server, "doc.md", "kept.md")
+	require.NoError(t, next.Record(ctx, "DOCS", "kept.md", "2", "Kept", "k"))
+
+	assert.Equal(t, []string{"doc.md"}, next.Orphans("DOCS"))
+}
