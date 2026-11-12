@@ -2,6 +2,7 @@ package mdsource
 
 import (
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -39,6 +40,10 @@ func TestCodeRegionsStillFindCodeBesideContinuations(t *testing.T) {
 		"block after a footnote ends":    "Text[^1].\n\n[^1]: first\n\nNext.\n\n    MARK code\n",
 		"block after a definition ends":  "Term\n: first\n\nNext.\n\n    MARK code\n",
 		"a colon line that defines none": "Text.\n\n    : MARK code\n",
+		"block after a table's caption":  "| a | b |\n|---|---|\n| c | d |\n\n: Caption\n\n    MARK code\n",
+		"block after a table and colon":  "| a | b |\n|---|---|\n| c | d |\n: x\n\n    MARK code\n",
+		"span in a table cell":           "| a | b |\n|---|---|\n| `MARK code` | d |\n",
+		"span with a pipe in a cell":     "| a | b |\n|---|---|\n| `x \\| MARK code` | d |\n",
 	} {
 		t.Run(name, func(t *testing.T) {
 			offset := strings.Index(doc, "MARK")
@@ -47,4 +52,22 @@ func TestCodeRegionsStillFindCodeBesideContinuations(t *testing.T) {
 			assert.True(t, InCode(CodeRegions([]byte(doc)), offset))
 		})
 	}
+}
+
+// One parser serves every call, so calls from several goroutines must not
+// disturb each other; the race detector is what fails this.
+func TestCodeRegionsConcurrentCalls(t *testing.T) {
+	doc := []byte("Text[^1].\n\n[^1]: first\n\n    para\n\n| a |\n|---|\n| `x \\| y` |\n\n    code\n")
+	want := CodeRegions(doc)
+	require.Len(t, want, 2)
+
+	var wg sync.WaitGroup
+	for range 8 {
+		wg.Go(func() {
+			for range 50 {
+				assert.Equal(t, want, CodeRegions(doc))
+			}
+		})
+	}
+	wg.Wait()
 }

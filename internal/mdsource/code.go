@@ -1,9 +1,13 @@
 package mdsource
 
 import (
+	"sync"
+
 	"github.com/yuin/goldmark/v2/ast"
 	"github.com/yuin/goldmark/v2/extension"
 	"github.com/yuin/goldmark/v2/parser"
+	"github.com/yuin/goldmark/v2/text"
+	"github.com/yuin/goldmark/v2/util"
 )
 
 // Region is a half-open byte range within a document.
@@ -40,16 +44,43 @@ func InCode(regions []Region, offset int) bool {
 // indented blocks, closing fences longer than their opener and nesting are all
 // easy to get subtly wrong, and goldmark already knows.
 //
-// The parser reads footnotes and definition lists, as the one a document is
-// compiled with always does: both hold their later paragraphs indented by four
-// spaces, which without them is an indented code block.
+// The parser reads footnotes, definition lists and tables, as the one a
+// document is compiled with always does. A footnote and a definition hold their
+// later paragraphs indented by four spaces, which without them is an indented
+// code block; and a line starting with a colon defines nothing after a table,
+// which without the table parser is a paragraph it would make a term of.
 func CodeRegions(data []byte) []Region {
-	var regions []Region
+	pc := parser.NewContext()
+	codeParser().Parse(data, parser.WithContext(pc))
 
-	doc := parser.New(parser.WithExtensions(
-		extension.NewFootnoteParser(),
-		extension.NewDefinitionListParser(),
-	)).Parse(data)
+	regions, _ := pc.Get(codeRegionsKey).([]Region)
+
+	return regions
+}
+
+// codeParser is built once: a goldmark parser keeps no state from one Parse to
+// the next, and neither do the parsers and the transformer it holds.
+var codeParser = sync.OnceValue(func() parser.Parser {
+	return parser.New(
+		parser.WithExtensions(
+			extension.NewFootnoteParser(),
+			extension.NewDefinitionListParser(),
+			extension.NewTableParser(),
+		),
+		// Ahead of the table parser's own transformer at 0, which gives a code
+		// span holding an escaped pipe a value with no place in the source.
+		parser.WithASTTransformers(util.Prioritized[parser.ASTTransformer](codeCollector{}, -1)),
+	)
+})
+
+// codeRegionsKey is where codeCollector leaves the regions of one parse.
+var codeRegionsKey = parser.NewContextKey()
+
+// codeCollector gathers the code regions of the document it is run on.
+type codeCollector struct{}
+
+func (codeCollector) Transform(doc *ast.Document, _ text.Reader, pc parser.Context) {
+	var regions []Region
 
 	_ = ast.Walk(doc, func(node ast.Node, entering bool) (ast.WalkStatus, error) {
 		if !entering {
@@ -84,5 +115,5 @@ func CodeRegions(data []byte) []Region {
 		return ast.WalkContinue, nil
 	})
 
-	return regions
+	pc.Set(codeRegionsKey, regions)
 }
