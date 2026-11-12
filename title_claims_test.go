@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -337,4 +338,59 @@ func TestATitleChangedOnlyInCaseIsRetitled(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestAPublisherKnowsAFileHoweverItIsSpelled: one file named two ways is one
+// document, and keeps its title.
+func TestAPublisherKnowsAFileHoweverItIsSpelled(t *testing.T) {
+	server, api := docsSpace(t)
+	dir := t.TempDir()
+	one := writeFile(t, dir, "one.md", titledDoc("Shared", "Body of one."))
+
+	ctx := context.Background()
+	publisher, err := NewPublisher(ctx, api, publishConfig(server.URL, "").PublishConfig)
+	require.NoError(t, err)
+	defer publisher.Close()
+
+	_, err = publisher.Publish(ctx, one)
+	require.NoError(t, err)
+
+	_, err = publisher.Publish(ctx, dir+string(filepath.Separator)+"."+string(filepath.Separator)+"one.md")
+	require.NoError(t, err)
+}
+
+// TestAPublisherLeavesATitleAFileGaveUpToAnother: a file published again
+// under a new title holds that one, and the title it had goes to the next
+// file naming it. A file renamed is another file, and is refused its title.
+func TestAPublisherLeavesATitleAFileGaveUpToAnother(t *testing.T) {
+	server, api := docsSpace(t)
+	dir := t.TempDir()
+	one := writeFile(t, dir, "one.md", titledDoc("First", "Body of one."))
+
+	ctx := context.Background()
+	publisher, err := NewPublisher(ctx, api, publishConfig(server.URL, "").PublishConfig)
+	require.NoError(t, err)
+	defer publisher.Close()
+
+	_, err = publisher.Publish(ctx, one)
+	require.NoError(t, err)
+
+	writeFile(t, dir, "one.md", titledDoc("Second", "Body of one."))
+	_, err = publisher.Publish(ctx, one)
+	require.NoError(t, err)
+
+	two := writeFile(t, dir, "two.md", titledDoc("First", "Body of two."))
+	_, err = publisher.Publish(ctx, two)
+	require.NoError(t, err, "the title one.md gave up is free")
+	assert.Contains(t, bodyOfPageTitled(t, server, "First"), "Body of two.")
+
+	three := writeFile(t, dir, "three.md", titledDoc("Second", "Body of three."))
+	_, err = publisher.Publish(ctx, three)
+	require.Error(t, err, "one.md holds the title it was published under last")
+
+	renamed := filepath.Join(dir, "renamed.md")
+	require.NoError(t, os.Rename(one, renamed))
+	_, err = publisher.Publish(ctx, renamed)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "one.md already publishes")
 }

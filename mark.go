@@ -1515,7 +1515,9 @@ func stepPast(ctx context.Context, continueOnError bool, file string, err error)
 // holding them open.
 //
 // A space holds one page of a title, so a Publisher refuses a file whose
-// space, type and title another file it published has, as Run does.
+// space, type and title another file it published has, as Run does. A file
+// published again, under the same title or a new one, is not refused; a file
+// renamed between two publishes is another file to it, and is.
 //
 // A Publisher sees one file at a time, never the run's whole list, so it does
 // none of what Run does across files, and PublishConfig has no setting for any
@@ -1676,6 +1678,7 @@ func newPublishRun(
 		checker:          page.NewLinkChecker(checks),
 		globalProperties: globalProperties,
 		titleClaims:      map[string]string{},
+		claimedTitles:    map[string]string{},
 		yielded:          map[string]bool{},
 	}, nil
 }
@@ -1924,8 +1927,10 @@ type publishRun struct {
 	// pageFile is the file published to Page.PageID, once there is one.
 	pageFile string
 
-	// titleClaims names the document publishing each title, by runTitleKey.
-	titleClaims map[string]string
+	// titleClaims names the document publishing each title, by runTitleKey,
+	// and claimedTitles the title each document holds, by absPath.
+	titleClaims   map[string]string
+	claimedTitles map[string]string
 
 	// yielded holds the documents waiting for the one retitling the page
 	// their title finds, which the run publishes ahead of its turn.
@@ -2158,21 +2163,28 @@ func (r *publishRun) processFile(ctx context.Context, in input) (*confluence.Pag
 // document that is not synchronized, or publishes to a page id, names none.
 // Titles are compared as Confluence compares them, without regard to case,
 // and a page and a blog post of one title are two pieces of content.
+//
+// A document holds the title it was last published under: one published
+// again under another title leaves the first to whichever document takes it.
 func (r *publishRun) claimTitle(doc *document) error {
 	meta := doc.meta
 	if meta == nil || meta.Title == "" {
 		return nil
 	}
 
-	key := runTitleKey(meta.Space, meta.Type, meta.Title)
-	if previous, taken := r.titleClaims[key]; taken && previous != doc.file {
+	key, name := runTitleKey(meta.Space, meta.Type, meta.Title), absPath(doc.file)
+	if previous, taken := r.titleClaims[key]; taken && absPath(previous) != name {
 		return fmt.Errorf(
 			"%s already publishes %q in space %q, and a space holds one page of a title: "+
 				"rename one of them, or use --title-append-generated-hash",
 			previous, meta.Title, meta.Space,
 		)
 	}
-	r.titleClaims[key] = doc.file
+
+	if held, ok := r.claimedTitles[name]; ok && held != key {
+		delete(r.titleClaims, held)
+	}
+	r.titleClaims[key], r.claimedTitles[name] = doc.file, key
 
 	return nil
 }
