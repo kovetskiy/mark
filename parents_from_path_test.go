@@ -327,6 +327,96 @@ func TestEmptiedDirectoryBecomesAnOrphan(t *testing.T) {
 		"the page standing for the directory is an orphan too")
 }
 
+// TestPageFoundForADirectoryIsNotAnOrphan: a page that was already there
+// under a directory's title is used as the directory's page, and mark writes
+// nothing to it. It is nobody's orphan once the directory's documents go.
+func TestPageFoundForADirectoryIsNotAnOrphan(t *testing.T) {
+	server := hierarchyServer(t)
+	home := pageIDTitled(t, server, "Home")
+	guides := server.AddPage("DOCS", "Guides", "page", home)
+	server.EditPage(guides.ID, "<p>written by hand</p>")
+	version := server.Page(guides.ID).Version
+
+	dir := t.TempDir()
+	writeAt(t, dir, "guides/setup.md", space+"<!-- Title: Setup -->\n\nSetup.\n")
+	writeAt(t, dir, "keep.md", space+"<!-- Title: Keep -->\n\nKeep.\n")
+
+	config := trackingConfig(server, filepath.Join(dir, "**", "*.md"))
+	config.ParentsFromPath = true
+	config.ParentsFromPathRoot = dir
+	config.Tracking.OnOrphan = report.OnOrphanDelete
+	require.NoError(t, Run(t.Context(), config))
+
+	setup := pageIDTitled(t, server, "Setup")
+	require.Equal(t, guides.ID, server.Page(setup).ParentID, "the page found is the directory's")
+
+	api := confluence.NewAPI(server.URL, confluence.Options{Username: "user", Password: "token"})
+	_, ok, err := manifest.NewStore(api).Lookup(t.Context(), "DOCS", filepath.Join(dir, "guides"))
+	require.NoError(t, err)
+	assert.False(t, ok, "a page mark found is not recorded as one it made")
+
+	require.NoError(t, os.RemoveAll(filepath.Join(dir, "guides")))
+	require.NoError(t, Run(t.Context(), config))
+	assert.True(t, server.Page(setup).Trashed, "the document's page is an orphan")
+
+	require.NoError(t, Run(t.Context(), config))
+	found := server.Page(guides.ID)
+	assert.False(t, found.Trashed, "the page found for the directory stays")
+	assert.Equal(t, version, found.Version, "and was never written to")
+}
+
+// TestDirectoryPageStaysRecordedOnLaterRuns: a directory's page is found, not
+// made, on every run after the one that made it, and is still mark's.
+func TestDirectoryPageStaysRecordedOnLaterRuns(t *testing.T) {
+	server := hierarchyServer(t)
+	dir := t.TempDir()
+	writeAt(t, dir, "guides/setup.md", space+"<!-- Title: Setup -->\n\nSetup.\n")
+	writeAt(t, dir, "keep.md", space+"<!-- Title: Keep -->\n\nKeep.\n")
+
+	config := trackingConfig(server, filepath.Join(dir, "**", "*.md"))
+	config.ParentsFromPath = true
+	config.ParentsFromPathRoot = dir
+	config.Tracking.OnOrphan = report.OnOrphanDelete
+	require.NoError(t, Run(t.Context(), config))
+	require.NoError(t, Run(t.Context(), config))
+
+	guides, setup := pageIDTitled(t, server, "Guides"), pageIDTitled(t, server, "Setup")
+	require.NotEmpty(t, guides)
+
+	require.NoError(t, os.RemoveAll(filepath.Join(dir, "guides")))
+	require.NoError(t, Run(t.Context(), config))
+	assert.True(t, server.Page(setup).Trashed)
+	assert.False(t, server.Page(guides).Trashed, "a page with children is left alone")
+
+	require.NoError(t, Run(t.Context(), config))
+	assert.True(t, server.Page(guides).Trashed, "the page mark made for the directory is an orphan")
+}
+
+// TestDirectoryPageMadeForAFailedDocumentIsRecorded: the page is made while
+// the first document under the directory is resolved, and recorded by
+// whichever document of the directory is published.
+func TestDirectoryPageMadeForAFailedDocumentIsRecorded(t *testing.T) {
+	server := hierarchyServer(t)
+	dir := t.TempDir()
+	writeAt(t, dir, "guides/a.md", space+"<!-- Title: A -->\n\n<ac:link>\n")
+	writeAt(t, dir, "guides/b.md", space+"<!-- Title: B -->\n\nSecond document.\n")
+
+	config := trackingConfig(server, filepath.Join(dir, "**", "*.md"))
+	config.ParentsFromPath = true
+	config.ParentsFromPathRoot = dir
+	config.ContinueOnError = true
+	require.Error(t, Run(t.Context(), config))
+
+	guides := pageIDTitled(t, server, "Guides")
+	require.NotEmpty(t, guides)
+
+	api := confluence.NewAPI(server.URL, confluence.Options{Username: "user", Password: "token"})
+	entry, ok, err := manifest.NewStore(api).Lookup(t.Context(), "DOCS", filepath.Join(dir, "guides"))
+	require.NoError(t, err)
+	require.True(t, ok, "the directory's page is recorded")
+	assert.Equal(t, guides, entry.PageID)
+}
+
 // TestDirectoryWithAnIndexIsNotRecordedTwice: a directory holding its own
 // document has that document's entry for its page already, and two entries
 // claiming one page is what the manifest complains about.

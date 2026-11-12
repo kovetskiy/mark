@@ -106,6 +106,12 @@ A directory's page is only removable once it holds nothing, since a page with
 children is always left alone. So a directory and everything in it takes two
 runs to disappear: the documents first, then the page that held them.
 
+Only a page Mark created is remembered. A page that was already there under a
+directory's title is used as the directory's page, but Mark writes nothing to
+it and never treats it as an orphan, so it stays when the directory's documents
+go. That holds for a directory page Mark created while `--track-pages` was off,
+too: nothing recorded it.
+
 A directory holding its own `index.md` or `README.md` is not remembered this
 way, that document's own entry having the page already. Directories are
 remembered by their path as the run names it, so as with the files themselves,

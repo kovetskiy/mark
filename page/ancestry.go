@@ -183,6 +183,9 @@ type AncestryOptions struct {
 	// resolved to; nil remembers nothing. An AncestryTracker serves as both.
 	Parents ParentTracker
 	Folders FolderTracker
+	// Created is told of each parent page EnsureAncestry creates, and of none
+	// it finds; nil is told nothing.
+	Created func(page *confluence.PageInfo)
 	// Warnings collects what is worth saying about where the document's page
 	// was found; nil only logs it.
 	Warnings *report.Warnings
@@ -571,6 +574,10 @@ func EnsureAncestry(
 			page, err := api.CreatePage(ctx, space, confluence.ContentPage, parent, title, ``)
 			if err != nil {
 				return nil, fmt.Errorf("error during creating parent page with title %q: %w", title, err)
+			}
+
+			if options.Created != nil {
+				options.Created(page)
 			}
 
 			if options.Parents != nil {

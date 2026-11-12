@@ -135,6 +135,30 @@ func TestEnsureAncestryCreatesMissingParentsUnderTheHomePage(t *testing.T) {
 	assert.NoError(t, err, "what was just created must validate against the home page")
 }
 
+// TestEnsureAncestryTellsCreatedOfThePagesItCreates: a parent that was there
+// already is found, and only the ones made to complete the chain are told.
+func TestEnsureAncestryTellsCreatedOfThePagesItCreates(t *testing.T) {
+	ctx := t.Context()
+	api, server := newAPI(t)
+	home := server.AddPage("DOCS", "Home", "page", "")
+	server.SetHomepage("DOCS", home.ID)
+	server.AddPage("DOCS", "Team", "page", home.ID)
+
+	var created []string
+	options := page.AncestryOptions{Created: func(made *confluence.PageInfo) {
+		created = append(created, made.Title)
+	}}
+
+	_, err := page.EnsureAncestry(ctx, api, "DOCS", []string{"Team", "Guides", "Setup"}, options)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"Guides", "Setup"}, created)
+
+	created = nil
+	_, err = page.EnsureAncestry(ctx, api, "DOCS", []string{"Team", "Guides", "Setup"}, options)
+	require.NoError(t, err)
+	assert.Empty(t, created, "a chain that is all there creates nothing")
+}
+
 // ancestorTitles reports the titles a page sits under, outermost first, as the
 // server stores them.
 func ancestorTitles(t *testing.T, api *confluence.API, title string) []string {

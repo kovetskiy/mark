@@ -1631,6 +1631,7 @@ func newPublishRun(
 		config:           config,
 		res:              res,
 		folders:          page.NewFolderCache(),
+		createdParents:   &createdPages{},
 		users:            users,
 		std:              std,
 		pageHeader:       pageHeader,
@@ -1864,6 +1865,10 @@ type publishRun struct {
 	results          *report.Report
 	hierarchy        *page.Hierarchy
 	titles           *runTitles
+
+	// createdParents holds the parent pages the run created, which is what
+	// makes a directory's page one of mark's own.
+	createdParents *createdPages
 
 	// directoryKeys names the manifest key of each directory of the
 	// hierarchy that only documents lie in; one not here is keyed by its
@@ -2399,6 +2404,7 @@ func (r *publishRun) ancestryOptions(doc *document) page.AncestryOptions {
 		FolderCache: r.folders,
 		Parents:     r.ancestryTracker,
 		Folders:     r.ancestryTracker,
+		Created:     r.createdParents.add,
 		Warnings:    doc.warnings,
 	}
 }

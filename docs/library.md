@@ -156,7 +156,7 @@ config.ParentsFromPath = true
 config.ParentsFromPathRoot = "reference" // documents' Paths lie under it
 ```
 
-Under `TrackPages`, the page standing for a directory that a file lies in is
+Under `TrackPages`, the page mark created for a directory that a file lies in is
 remembered by its path, under the files' pattern, as for a run of files. One
 that only documents lie in is remembered under a key of its own,
 `manifest.DocumentDirectoryKey(DocumentScope, directory)`, in the documents'
