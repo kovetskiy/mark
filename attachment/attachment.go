@@ -360,7 +360,7 @@ func (b Boundary) checkPath(base, resolved, named string) error {
 
 		var err error
 		if path, ok, err = withinDir(dir, resolved); err != nil {
-			return err
+			return fmt.Errorf("unable to hold %q to the attachment root: %w", named, err)
 		}
 	}
 
