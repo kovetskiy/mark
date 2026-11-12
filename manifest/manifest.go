@@ -2082,7 +2082,8 @@ func (s *Store) orphans(spaceKey string) []string {
 		return nil
 	}
 
-	held := s.heldPages(state)
+	// Built for the first candidate that asks: most runs have none.
+	var held map[string]string
 
 	var orphans, left []string
 	for i := range state.shards {
@@ -2107,26 +2108,26 @@ func (s *Store) orphans(spaceKey string) []string {
 			// warning that two documents share a page one of which is gone.
 			// Kept only for a path this run still publishes: unseen there means
 			// it failed before it was recorded, not that it went away.
-			if state.claimed[entry.PageID] {
-				if !s.runFiles[path] {
-					log.Info().Msgf(
-						"%s is gone and its page %s is now published by %s; forgetting it",
-						path, entry.PageID, state.byPage[entry.PageID],
-					)
-					delete(state.shards[i].pages, path)
-					state.shards[i].dirty = true
-				}
-				continue
-			}
+			//
 			// Nor a page another path still records: that path's run publishes
-			// it, and is the one to say when it is gone. This entry is stale
-			// like the one above, and forgotten on the same terms.
-			if holder, ok := held[entry.PageID]; ok {
+			// it, and is the one to say when it is gone.
+			claimed := state.claimed[entry.PageID]
+			if !claimed && held == nil {
+				held = s.heldPages(state)
+			}
+			if holder, ok := held[entry.PageID]; claimed || ok {
 				if !s.runFiles[path] {
-					log.Info().Msgf(
-						"%s is gone and its page %s is still tracked under %s; forgetting it",
-						path, entry.PageID, holder,
-					)
+					if claimed {
+						log.Info().Msgf(
+							"%s is gone and its page %s is now published by %s; forgetting it",
+							path, entry.PageID, state.byPage[entry.PageID],
+						)
+					} else {
+						log.Info().Msgf(
+							"%s is gone and its page %s is still tracked under %s; forgetting it",
+							path, entry.PageID, holder,
+						)
+					}
 					delete(state.shards[i].pages, path)
 					state.shards[i].dirty = true
 				}
@@ -2150,17 +2151,14 @@ func (s *Store) orphans(spaceKey string) []string {
 	return orphans
 }
 
-// heldPages returns the pages recorded under a path this run does not take as
-// gone, each with the first such path: one the run publishes or saw, or one it
-// does not cover, which is another run's to look for. Called with s.mu held.
+// heldPages returns the pages recorded under a path orphans does not weigh,
+// each with the first such path: one the run saw, or one it does not cover,
+// which is another run's to look for. Called with s.mu held.
 func (s *Store) heldPages(state *spaceState) map[string]string {
 	held := map[string]string{}
 	for i := range state.shards {
 		for path, entry := range state.shards[i].pages {
-			if entry.PageID == "" {
-				continue
-			}
-			if s.absent(state, path) && s.covers(path, entry) && !s.leftToOwner(path, entry) {
+			if entry.PageID == "" || !state.seen[path] && s.covers(path, entry) {
 				continue
 			}
 			if holder, ok := held[entry.PageID]; !ok || path < holder {
