@@ -16,8 +16,8 @@ type Orphan struct {
 	Path   string
 	PageID string
 	Title  string
-	// Space is the key of the space the page is in, when the caller knows
-	// it. Left empty, HandleOrphans reads it from the page.
+	// Space is the key of the space the page is in, which HandleOrphans
+	// takes as given. Left empty, it reads the space from the page.
 	Space string
 }
 
@@ -159,7 +159,8 @@ func InScopeOf(ctx context.Context, api *confluence.API, scopeID string, page *c
 
 // HandleOrphans acts on the pages whose source files are gone.
 //
-// Every orphan given here is acted on: the caller decides what is in scope,
+// Every orphan given here is acted on, bar a page with children and the space
+// homepage, which are left where they are: the caller decides what is in scope,
 // because it has to name the same set in what it reports and in what it stops
 // tracking. Asking again here meant a second GetPageByIDExpanded for every
 // candidate -- twice the API cost of the one operation in mark that deletes
@@ -201,6 +202,20 @@ func HandleOrphansKeeping(
 	for _, orphan := range orphans {
 		if action == report.OnOrphanReport {
 			handled = append(handled, orphan.Path)
+
+			continue
+		}
+
+		// The homepage holds the whole tree, and the page commands refuse to
+		// remove it too. Asked first: its children are most of the space, and
+		// listing them would not change the answer.
+		home, unsure, err := homepageOf(ctx, api, orphan)
+		if err != nil {
+			return handled, kept, err
+		}
+
+		if home != "" {
+			keep(orphan, fmt.Sprintf("it is the homepage of space %s, and mark does not remove it", home))
 
 			continue
 		}
@@ -248,15 +263,10 @@ func HandleOrphansKeeping(
 			continue
 		}
 
-		// The homepage holds the whole tree, and the page commands refuse to
-		// remove it too.
-		reason, err := homepageReason(ctx, api, orphan)
-		if err != nil {
-			return handled, kept, err
-		}
-
-		if reason != "" {
-			keep(orphan, reason)
+		// After the listings, which find a page already gone: that one is
+		// done with, whatever its space would not say.
+		if unsure != "" {
+			keep(orphan, unsure)
 
 			continue
 		}
@@ -285,38 +295,46 @@ func HandleOrphansKeeping(
 	return handled, kept, nil
 }
 
-// homepageReason is why an orphan that is its space's homepage, or may be, is
-// left alone, and "" for any other page.
-func homepageReason(ctx context.Context, api *confluence.API, orphan Orphan) (string, error) {
-	space := orphan.Space
+// homepageOf names the space an orphan is the homepage of, and "" for any
+// other page. unsure is why it could not be told, and so why the page is left
+// alone: a homepage that cannot be read is no reason to stop, since publishing
+// goes on without one too, and the next run asks again.
+func homepageOf(ctx context.Context, api *confluence.API, orphan Orphan) (space, unsure string, err error) {
+	space = orphan.Space
 	if space == "" {
 		found, err := api.GetPageByIDExpanded(ctx, orphan.PageID, "space")
+		if errors.Is(err, confluence.ErrNotFound) {
+			// Already gone, which the caller finds out for itself.
+			return "", "", nil
+		}
 		if err != nil {
-			return "", fmt.Errorf("unable to read page %s: %w", orphan.PageID, err)
+			return "", "", fmt.Errorf("unable to read page %s: %w", orphan.PageID, err)
 		}
 
 		space = found.Space.Key
 		if space == "" {
-			return "mark could not tell which space it is in, and so whether it is that space's homepage", nil
+			return "", "mark could not tell which space it is in, and so whether it is that space's homepage", nil
 		}
 	}
 
 	home, err := api.FindHomePage(ctx, space)
-	if errors.Is(err, confluence.ErrNoHomePage) {
-		return "", nil
-	}
-	if err != nil {
-		return "", fmt.Errorf(
+	switch {
+	case errors.Is(err, confluence.ErrNoHomePage):
+		return "", "", nil
+	case confluence.IsCancellation(err):
+		return "", "", fmt.Errorf(
 			"unable to tell whether page %q (%s) is the homepage of space %s: %w",
 			orphan.Title, orphan.PageID, space, err,
 		)
+	case err != nil:
+		return "", fmt.Sprintf("mark could not tell whether it is the homepage of space %s: %s", space, err), nil
 	}
 
 	if home != nil && home.ID == orphan.PageID {
-		return fmt.Sprintf("it is the homepage of space %s, and mark does not remove it", space), nil
+		return space, "", nil
 	}
 
-	return "", nil
+	return "", "", nil
 }
 
 // pageGone reports whether Confluence no longer has the page. Asked of the page

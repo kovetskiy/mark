@@ -3,6 +3,7 @@ package page_test
 import (
 	"context"
 	"net/http"
+	"strings"
 	"testing"
 
 	"github.com/kovetskiy/mark/v17/confluence"
@@ -207,15 +208,10 @@ func TestHandleOrphansRemovesAPageOfASpaceWithoutHomepage(t *testing.T) {
 	assert.True(t, server.Page(gone.ID).Trashed)
 }
 
-// TestHandleOrphansFailsWhenTheHomepageCannotBeRead: a homepage that could
-// not be asked about is not taken as some other page.
-func TestHandleOrphansFailsWhenTheHomepageCannotBeRead(t *testing.T) {
-	ctx := t.Context()
-	api, server := newAPI(t)
-	server.SetDataCenter()
-	home := server.AddPage("DOCS", "Home", "page", "")
-	server.SetHomepage("DOCS", home.ID)
-
+// unreadableSpace makes the fake answer every read of the DOCS space with a
+// 503, so that its homepage cannot be asked about.
+func unreadableSpace(server *confluencetest.Server) {
+	// Retry-After: 0 lets retryTransport run out of retries at once.
 	server.SetFailHeaders(http.Header{"Retry-After": []string{"0"}})
 	server.SetFail(func(r *http.Request) (int, string, bool) {
 		if r.URL.Path == "/rest/api/space/DOCS" {
@@ -223,11 +219,113 @@ func TestHandleOrphansFailsWhenTheHomepageCannotBeRead(t *testing.T) {
 		}
 		return 0, "", false
 	})
+}
 
-	handled, err := page.HandleOrphans(ctx, api, report.OnOrphanDelete, []page.Orphan{
+// TestHandleOrphansLeavesAPageWhenTheHomepageCannotBeRead: a homepage that
+// could not be asked about is not taken as some other page, and is no reason
+// to stop either, since publishing goes on without one.
+func TestHandleOrphansLeavesAPageWhenTheHomepageCannotBeRead(t *testing.T) {
+	ctx := t.Context()
+	api, server := newAPI(t)
+	server.SetDataCenter()
+	home := server.AddPage("DOCS", "Home", "page", "")
+	server.SetHomepage("DOCS", home.ID)
+	other := server.AddPage("DOCS", "Other", "page", "")
+	unreadableSpace(server)
+
+	handled, kept, err := page.HandleOrphansKeeping(ctx, api, report.OnOrphanDelete, []page.Orphan{
+		{Path: "home.md", PageID: home.ID, Title: "Home", Space: "DOCS"},
+		{Path: "other.md", PageID: other.ID, Title: "Other", Space: "DOCS"},
+	}, false)
+	require.NoError(t, err)
+	assert.Empty(t, handled)
+	require.Len(t, kept, 2)
+	assert.Contains(t, kept["home.md"], "mark could not tell whether it is the homepage of space DOCS: ")
+	assert.Contains(t, kept["other.md"], "mark could not tell whether it is the homepage of space DOCS: ")
+	assert.False(t, server.Page(home.ID).Trashed)
+	assert.False(t, server.Page(other.ID).Trashed)
+}
+
+// TestHandleOrphansTakesAPageGoneAsHandledWhenTheHomepageCannotBeRead: a page
+// already gone is done with, whatever its space would not say.
+func TestHandleOrphansTakesAPageGoneAsHandledWhenTheHomepageCannotBeRead(t *testing.T) {
+	ctx := t.Context()
+	api, server := newAPI(t)
+	server.SetDataCenter()
+	gone := server.AddPage("DOCS", "Gone", "page", "")
+	require.NoError(t, api.DeletePage(ctx, gone.ID))
+	unreadableSpace(server)
+
+	handled, kept, err := page.HandleOrphansKeeping(ctx, api, report.OnOrphanDelete, []page.Orphan{
+		{Path: "gone.md", PageID: gone.ID, Title: "Gone", Space: "DOCS"},
+	}, false)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"gone.md"}, handled)
+	assert.Empty(t, kept)
+}
+
+// TestHandleOrphansStopsWhenCancelled: a run that was stopped says so, and
+// does not report its pages as left alone.
+func TestHandleOrphansStopsWhenCancelled(t *testing.T) {
+	api, server := newAPI(t)
+	home := server.AddPage("DOCS", "Home", "page", "")
+	server.SetHomepage("DOCS", home.ID)
+
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+
+	handled, kept, err := page.HandleOrphansKeeping(ctx, api, report.OnOrphanDelete, []page.Orphan{
 		{Path: "home.md", PageID: home.ID, Title: "Home", Space: "DOCS"},
 	}, false)
-	require.Error(t, err)
+	require.ErrorIs(t, err, context.Canceled)
 	assert.Empty(t, handled)
+	assert.Empty(t, kept)
+}
+
+// TestHandleOrphansSaysAHomepageWithChildrenIsTheHomepage: the homepage is
+// kept whatever is beneath it, so that is the reason given, and its children,
+// most of the space, are not listed to find it.
+func TestHandleOrphansSaysAHomepageWithChildrenIsTheHomepage(t *testing.T) {
+	ctx := t.Context()
+	api, server := newAPI(t)
+	home := server.AddPage("DOCS", "Home", "page", "")
+	server.SetHomepage("DOCS", home.ID)
+	server.AddPage("DOCS", "Child", "page", home.ID)
+
+	_, kept, err := page.HandleOrphansKeeping(ctx, api, report.OnOrphanDelete, []page.Orphan{
+		{Path: "home.md", PageID: home.ID, Title: "Home", Space: "DOCS"},
+	}, false)
+	require.NoError(t, err)
+	assert.Equal(t, map[string]string{
+		"home.md": "it is the homepage of space DOCS, and mark does not remove it",
+	}, kept)
+	assert.Zero(t, server.CountRequests(http.MethodGet, "/child/page"))
+}
+
+// TestHandleOrphansLeavesAPageWhoseSpaceCannotBeRead: through the gateway a
+// page names its space by id, and without the key nothing says which homepage
+// to compare the page with.
+func TestHandleOrphansLeavesAPageWhoseSpaceCannotBeRead(t *testing.T) {
+	ctx := t.Context()
+	server := confluencetest.New(t)
+	api := confluence.NewAPI(server.URL+"/ex/confluence/cloud-id", confluence.Options{Username: "user", Password: "token"})
+	home := server.AddPage("DOCS", "Home", "page", "")
+	server.SetHomepage("DOCS", home.ID)
+
+	server.SetFail(func(r *http.Request) (int, string, bool) {
+		if strings.Contains(r.URL.Path, "/api/v2/spaces/") {
+			return http.StatusForbidden, `{"message":"forbidden"}`, true
+		}
+		return 0, "", false
+	})
+
+	handled, kept, err := page.HandleOrphansKeeping(ctx, api, report.OnOrphanDelete, []page.Orphan{
+		{Path: "home.md", PageID: home.ID, Title: "Home"},
+	}, false)
+	require.NoError(t, err)
+	assert.Empty(t, handled)
+	assert.Equal(t, map[string]string{
+		"home.md": "mark could not tell which space it is in, and so whether it is that space's homepage",
+	}, kept)
 	assert.False(t, server.Page(home.ID).Trashed)
 }

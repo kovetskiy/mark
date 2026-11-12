@@ -464,8 +464,9 @@ where the mapping cannot apply -- is a warning.
   (`--manifest-page`, or the homepage on Server and Data Center) are left alone
   and reported, as `mark page delete` and `archive` leave the homepage. A
   document titled like one of them publishes to it, and removing the document
-  does not remove the page. Run once with `--on-orphan report` to stop
-  tracking it.
+  does not remove the page. So is every page of a space whose homepage Mark
+  could not read, since any of them may be it. A run with `--on-orphan report`
+  stops tracking such a page, as it does every page it reports.
 * A document that opted out with `Synchronized: false` still counts as present.
 * `--dry-run` reports what would go and touches nothing.
 
