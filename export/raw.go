@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/kovetskiy/mark/v17/attachment"
+	"github.com/kovetskiy/mark/v17/internal/syntax"
 	"github.com/kovetskiy/mark/v17/stdlib"
 )
 
@@ -80,6 +81,11 @@ func (c *converter) writeRaw(b *strings.Builder, n *node, mode rawMode) {
 			return
 		}
 
+		if mode == rawInline && n.parent != nil && syntax.IsLiteralElement(n.parent.name) {
+			b.WriteString(literalText(n.text))
+			return
+		}
+
 		b.WriteString(rawText(n.text, mode))
 		return
 	}
@@ -150,6 +156,16 @@ func cdata(text string) string {
 
 	return b.String()
 }
+
+// literalText escapes the text of an element mark publishes as written, such
+// as a macro parameter: it is not read as Markdown, so only XML is escaped. A
+// pipe is a reference because a table cell would end at one, and a backslash
+// before it would be published outside a table.
+func literalText(text string) string {
+	return literalEscaper.Replace(escapeXMLText(text))
+}
+
+var literalEscaper = strings.NewReplacer("\n", "&#10;", "|", "&#124;")
 
 // rawText escapes text between tags written out verbatim.
 func rawText(text string, mode rawMode) string {

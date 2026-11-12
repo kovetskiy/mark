@@ -81,6 +81,37 @@ func TestRoundTripTextFeaturesWouldParse(t *testing.T) {
 	}
 }
 
+// TestRoundTripMacroParameterText: the text of a macro parameter, which mark
+// publishes as written, is exported as written, in a paragraph and in a table
+// cell.
+func TestRoundTripMacroParameterText(t *testing.T) {
+	for _, text := range []string{
+		".*Guide.*", "a_b_ __init__", `C:\dir\*.txt`, "a `b` c", "Guide|Notes", `Guide\|Notes`,
+		"a & b < c > d", "&amp; &#42;", "[x](https://example.com)", "two\nlines", "$x$ :smile: @date(2024-01-01)",
+	} {
+		t.Run(text, func(t *testing.T) {
+			macro := `<ac:structured-macro ac:name="x"><ac:parameter ac:name="v">` + escapeXMLText(text) +
+				`</ac:parameter><ac:rich-text-body><p>body</p></ac:rich-text-body></ac:structured-macro>`
+			inline := `<ac:structured-macro ac:name="status"><ac:parameter ac:name="title">` + escapeXMLText(text) +
+				`</ac:parameter></ac:structured-macro>`
+
+			for _, storage := range []string{
+				macro,
+				"<p>before " + inline + " after</p>",
+				"<table><thead><tr><th>h</th></tr></thead><tbody><tr><td>" + inline + "</td></tr></tbody></table>",
+			} {
+				doc, err := Convert(storage, Options{})
+				require.NoError(t, err)
+
+				published := compileWith(t, doc.Markdown, filepath.Join(t.TempDir(), "page.md"),
+					"mention", "math", "emoji", "date")
+				assert.Equal(t, canonical(t, storage), canonical(t, published),
+					"exported Markdown:\n%s", doc.Markdown)
+			}
+		})
+	}
+}
+
 // TestRoundTripTextLikeDirectives: page text that reads like one of the HTML
 // comments mark acts on before goldmark -- an include, a macro, a header, an
 // ignored region -- publishes back as that text, wherever on the page it
