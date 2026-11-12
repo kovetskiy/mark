@@ -3,6 +3,7 @@ package transformer
 import (
 	"bytes"
 	"fmt"
+	"slices"
 	"text/template"
 
 	"github.com/kovetskiy/mark/v17/attachment"
@@ -12,6 +13,42 @@ import (
 	"github.com/yuin/goldmark/v2/parser"
 	"github.com/yuin/goldmark/v2/text"
 )
+
+// macroText is the text a macro is applied to: one piece of the document's
+// text. Each piece is matched by itself, since a match over several joined
+// would be rewritten without the markup between them.
+func macroText(node ast.Node, source []byte) []byte {
+	switch n := node.(type) {
+	case *ast.Text:
+		return valueBytes(n.Value, source)
+	case *String:
+		if !n.Code {
+			return slices.Clip(n.Value)
+		}
+	}
+
+	return nil
+}
+
+// keepOuterSpace gives the first and last paragraphs of subDoc the spaces
+// that expanded starts and ends with. Parsing drops them, and they are what
+// separates a piece of text from the markup on either side of it.
+func keepOuterSpace(subDoc ast.Node, expanded []byte) {
+	const space = " \t"
+
+	isText := func(n ast.Node) bool {
+		return n != nil && (n.Kind() == ast.KindParagraph || n.Kind() == KindTextBlock)
+	}
+
+	if lead := expanded[:len(expanded)-len(bytes.TrimLeft(expanded, space))]; len(lead) > 0 && isText(subDoc.FirstChild()) {
+		first := subDoc.FirstChild()
+		first.InsertBefore(first.FirstChild(), NewString(bytes.Clone(lead)))
+	}
+
+	if trail := expanded[len(bytes.TrimRight(expanded, space)):]; len(trail) > 0 && isText(subDoc.LastChild()) {
+		subDoc.LastChild().AppendChild(NewString(bytes.Clone(trail)))
+	}
+}
 
 // MacroTransformer extracts macro directives from HTML comment blocks in the Goldmark AST,
 // removes the definition nodes, and expands matching document text nodes into sub-ASTs.
@@ -51,17 +88,15 @@ func (t *MacroTransformer) Transform(doc *ast.Document, reader text.Reader, pc p
 // TransformWithModified transforms the AST and returns true if any modifications were made.
 func (t *MacroTransformer) TransformWithModified(doc *ast.Document, reader text.Reader, pc parser.Context) bool {
 	type macroTarget struct {
-		startNode      ast.Node
-		nodesToRemove  []ast.Node
-		fullRawContent []byte
-		lineNum        int
+		node       ast.Node
+		rawContent []byte
+		lineNum    int
 	}
 
 	var targets []macroTarget
-	visited := make(map[ast.Node]bool)
 
 	_ = ast.Walk(doc, func(node ast.Node, entering bool) (ast.WalkStatus, error) {
-		if !entering || visited[node] {
+		if !entering {
 			return ast.WalkContinue, nil
 		}
 
@@ -72,34 +107,17 @@ func (t *MacroTransformer) TransformWithModified(doc *ast.Document, reader text.
 			return ast.WalkSkipChildren, nil
 		}
 
-		rawContent := ExtractDirectiveContent(node, reader.Source())
+		rawContent := directiveSource(node, reader.Source())
+		if rawContent == nil {
+			return ast.WalkContinue, nil
+		}
 
-		dir, _ := macro.ParseMacroDirective(rawContent)
-		if dir != nil {
-			target := macroTarget{
-				startNode:      node,
-				nodesToRemove:  []ast.Node{node},
-				fullRawContent: rawContent,
-				lineNum:        getNodeLineNumber(node, reader.Source()),
-			}
-			visited[node] = true
-
-			if !bytes.Contains(rawContent, []byte("-->")) {
-				var combined bytes.Buffer
-				combined.Write(rawContent)
-				for sibling := node.NextSibling(); sibling != nil; sibling = sibling.NextSibling() {
-					sibContent := ExtractDirectiveContent(sibling, reader.Source())
-					combined.Write(sibContent)
-					target.nodesToRemove = append(target.nodesToRemove, sibling)
-					visited[sibling] = true
-					if bytes.Contains(sibContent, []byte("-->")) {
-						break
-					}
-				}
-				target.fullRawContent = combined.Bytes()
-			}
-
-			targets = append(targets, target)
+		if dir, _ := macro.ParseMacroDirective(rawContent); dir != nil {
+			targets = append(targets, macroTarget{
+				node:       node,
+				rawContent: rawContent,
+				lineNum:    getNodeLineNumber(node, reader.Source()),
+			})
 		}
 
 		return ast.WalkContinue, nil
@@ -109,7 +127,7 @@ func (t *MacroTransformer) TransformWithModified(doc *ast.Document, reader text.
 	var extractedMacros []macro.Macro
 
 	for _, target := range targets {
-		macros, _, err := macro.ExtractMacrosIn(t.Root, t.BaseDir, t.IncludePath, target.fullRawContent, t.Templates)
+		macros, _, err := macro.ExtractMacrosIn(t.Root, t.BaseDir, t.IncludePath, target.rawContent, t.Templates)
 		if err != nil {
 			t.Err = err
 			log.Error().
@@ -124,10 +142,8 @@ func (t *MacroTransformer) TransformWithModified(doc *ast.Document, reader text.
 		}
 		extractedMacros = append(extractedMacros, macros...)
 
-		for _, n := range target.nodesToRemove {
-			if n.Parent() != nil {
-				n.Parent().RemoveChild(n)
-			}
+		if parent := target.node.Parent(); parent != nil {
+			parent.RemoveChild(target.node)
 		}
 
 		modified = true
@@ -149,13 +165,7 @@ func (t *MacroTransformer) TransformWithModified(doc *ast.Document, reader text.
 				return ast.WalkSkipChildren, nil
 			}
 
-			switch node.(type) {
-			case *ast.Paragraph, *ast.Text:
-			default:
-				return ast.WalkContinue, nil
-			}
-
-			raw := ExtractDirectiveContent(node, reader.Source())
+			raw := macroText(node, reader.Source())
 			if len(raw) > 0 && m.Regexp.Match(raw) {
 				textNodesToReplace = append(textNodesToReplace, struct {
 					node    ast.Node
@@ -200,20 +210,8 @@ func (t *MacroTransformer) TransformWithModified(doc *ast.Document, reader text.
 				return false
 			}
 
-			parent := item.node.Parent()
-			if parent == nil {
-				continue
-			}
-
-			for subDoc.FirstChild() != nil {
-				child := subDoc.FirstChild()
-				subDoc.RemoveChild(child)
-				parent.InsertBefore(item.node, child)
-			}
-
-			if item.node.Parent() != nil {
-				item.node.Parent().RemoveChild(item.node)
-			}
+			keepOuterSpace(subDoc, expanded)
+			replaceWith(item.node, subDoc)
 
 			modified = true
 		}
