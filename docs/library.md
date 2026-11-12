@@ -23,8 +23,8 @@ renderers cannot act on.
   pass `markdown.DefaultFeatures()` for its `mermaid` and `mention`. `none` on
   its own also means no optional feature; beside another name it is refused,
   as is a name mark does not know.
-* `ImageAlign` is `left`, `center` or `right`, in any case, or empty for no
-  alignment. A document's `Image-Align` header takes its place for that
+* `ImageAlign` is `left`, `center` or `right`, in any case and with space
+  around it, or empty for no alignment. A document's `Image-Align` header takes its place for that
   document.
 
 ## Publishing documents from memory

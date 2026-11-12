@@ -46,10 +46,15 @@ func requireNothingWritten(t *testing.T, server *confluencetest.Server) {
 // rendering settings rather than at the first compile, which comes after the
 // document's page has been created.
 func TestImageAlignIsCheckedBeforeAnythingIsPublished(t *testing.T) {
-	for _, align := range []string{"diagonal", "middle", " "} {
+	for _, align := range []string{"diagonal", "middle", "left right"} {
 		rendering := RenderingConfig{ImageAlign: align}
 
 		err := PublishConfig{Rendering: rendering}.Validate()
+		require.Error(t, err, "%q", align)
+		assert.Contains(t, err.Error(), "ImageAlign")
+
+		// Refused before the client is used at all.
+		_, err = NewPublisher(context.Background(), nil, PublishConfig{Rendering: rendering})
 		require.Error(t, err, "%q", align)
 		assert.Contains(t, err.Error(), "ImageAlign")
 
@@ -58,15 +63,14 @@ func TestImageAlignIsCheckedBeforeAnythingIsPublished(t *testing.T) {
 		require.Error(t, err, "%q", align)
 		assert.Contains(t, err.Error(), "ImageAlign")
 		requireNothingWritten(t, server)
-
 	}
 }
 
 // TestImageAlignAcceptsWhatADocumentHeaderDoes: the field is read as the
-// Image-Align header is, in any case and with space around it, and empty
-// leaves images where they are.
+// Image-Align header is, in any case and with space around it, and empty or
+// nothing but space leaves images where they are.
 func TestImageAlignAcceptsWhatADocumentHeaderDoes(t *testing.T) {
-	for _, align := range []string{"", "left", "center", "right", "Center", " right "} {
+	for _, align := range []string{"", " ", "left", "center", "right", "Center", " right "} {
 		config, _ := renderingFixture(t, RenderingConfig{ImageAlign: align})
 
 		require.NoError(t, config.Validate(), "%q", align)
@@ -89,6 +93,11 @@ func TestFeaturesRejectsANameMarkDoesNotKnow(t *testing.T) {
 		require.Error(t, err, "%q", features)
 		assert.Contains(t, err.Error(), "Features")
 
+		// Refused before the client is used at all.
+		_, err = NewPublisher(context.Background(), nil, PublishConfig{Rendering: rendering})
+		require.Error(t, err, "%q", features)
+		assert.Contains(t, err.Error(), "Features")
+
 		config, server := renderingFixture(t, rendering)
 		err = Run(context.Background(), config)
 		require.Error(t, err, "%q", features)
@@ -106,6 +115,11 @@ func TestFeaturesNoneStandsAlone(t *testing.T) {
 		assert.Contains(t, err.Error(), "Features")
 		assert.Contains(t, err.Error(), "cannot be combined")
 	}
+
+	// The list is settled before the scales it decides the checks of.
+	err := PublishConfig{Rendering: RenderingConfig{Features: []string{"none", "d2"}}}.Validate()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "Features")
 }
 
 // TestFeaturesAcceptsEveryKnownNameAndNoFeatures: nil, an empty list and
