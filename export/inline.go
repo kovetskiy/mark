@@ -23,12 +23,9 @@ type inlineWriter struct {
 	ctx inlineContext
 	b   strings.Builder
 
-	// afterBreak is set by a hard line break, whose own newline replaces the
-	// one the text after it starts with.
-	afterBreak bool
-
 	// trailingBreaks counts the hard line breaks, written with a backslash,
-	// that what has been written so far ends in.
+	// that what has been written so far ends in. The newline of the last one
+	// replaces the one the text after it starts with.
 	trailingBreaks int
 }
 
@@ -48,7 +45,6 @@ func (w *inlineWriter) write(s string) {
 		return
 	}
 	w.b.WriteString(s)
-	w.afterBreak = false
 	w.trailingBreaks = 0
 }
 
@@ -174,7 +170,7 @@ func (w *inlineWriter) text(text string) {
 		text = softBreakSpaces.ReplaceAllString(text, "\n")
 	}
 
-	if w.afterBreak {
+	if w.trailingBreaks > 0 {
 		text = strings.TrimLeft(text, " \t\n")
 	}
 
@@ -195,7 +191,6 @@ func (w *inlineWriter) lineBreak() {
 
 	breaks := w.trailingBreaks
 	w.write(hardBreak)
-	w.afterBreak = true
 	w.trailingBreaks = breaks + 1
 }
 
