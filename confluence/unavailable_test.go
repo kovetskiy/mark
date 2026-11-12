@@ -667,16 +667,23 @@ func TestRememberWatchKeepsTheFirstState(t *testing.T) {
 	assert.Equal(t, wasUnwatched, api.watchedBefore["1"])
 }
 
-// newRestrictUnavailableAPI is a Cloud fake with one page for --edit-lock to
-// lock, whose first `times` restriction POSTs fail with a 500 before
-// Confluence does anything, the way Cloud now and then fails them.
-func newRestrictUnavailableAPI(t *testing.T, times int) (*API, *confluencetest.Server, *PageInfo) {
+// newRestrictUnavailableAPI is a Cloud fake behind newUnavailableAPI's
+// gateway, with one page for --edit-lock to lock.
+func newRestrictUnavailableAPI(
+	t *testing.T, times int, match func(*http.Request) bool,
+) (*API, *confluencetest.Server, *PageInfo) {
 	t.Helper()
-	api, server := newUnavailableAPI(t, false, 0, nil)
+	api, server := newUnavailableAPI(t, false, times, match)
 	server.AddSpace("DOCS")
 	stored := server.AddPage("DOCS", "Locked", "page", "")
 	server.SetCurrentUser(confluencetest.User{AccountID: "acct-me", FullName: "Mark Bot"})
 
+	return api, server, &PageInfo{ID: stored.ID, Title: stored.Title}
+}
+
+// fail500s fails the first `times` restriction POSTs with a 500 before
+// Confluence does anything, the way Cloud now and then fails them.
+func fail500s(server *confluencetest.Server, times int) {
 	var failed atomic.Int32
 	failWhen(server, false, func(r *http.Request) (int, string, bool) {
 		if isPost("/restriction")(r) && int(failed.Add(1)) <= times {
@@ -685,14 +692,13 @@ func newRestrictUnavailableAPI(t *testing.T, times int) (*API, *confluencetest.S
 		}
 		return 0, "", false
 	})
-
-	return api, server, &PageInfo{ID: stored.ID, Title: stored.Title}
 }
 
 // Adding the user who may update is safe to send again, so a 500 on it is
 // retried, unlike one on any other write.
 func TestRestrictPageUpdatesIsSentAgainAfterA500(t *testing.T) {
-	api, server, page := newRestrictUnavailableAPI(t, 1)
+	api, server, page := newRestrictUnavailableAPI(t, 0, nil)
+	fail500s(server, 1)
 
 	require.NoError(t, api.RestrictPageUpdates(context.Background(), page, ""))
 	assert.Equal(t, []string{"acct-me"}, server.Page(page.ID).UpdateRestrictedTo)
@@ -700,7 +706,8 @@ func TestRestrictPageUpdatesIsSentAgainAfterA500(t *testing.T) {
 }
 
 func TestRestrictPageUpdatesGivesUpAfterMaxAttempts(t *testing.T) {
-	api, server, page := newRestrictUnavailableAPI(t, maxAttempts)
+	api, server, page := newRestrictUnavailableAPI(t, 0, nil)
+	fail500s(server, maxAttempts)
 
 	err := api.RestrictPageUpdates(context.Background(), page, "")
 	var status *StatusError
@@ -715,7 +722,7 @@ func TestRestrictPageUpdatesGivesUpAfterMaxAttempts(t *testing.T) {
 // the lock is sent as it would be without the read. The page is locked
 // already, so the POST goes out only because the read failed.
 func TestRestrictPageUpdatesLocksWhenTheRestrictionCannotBeRead(t *testing.T) {
-	api, server, page := newRestrictUnavailableAPI(t, 0)
+	api, server, page := newRestrictUnavailableAPI(t, 0, nil)
 	server.SetRestrictions(page.ID, RestrictUpdate, []string{"acct-me"}, nil)
 	failWhen(server, false, func(r *http.Request) (int, string, bool) {
 		if r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/restriction/byOperation") {
@@ -733,22 +740,19 @@ func TestRestrictPageUpdatesLocksWhenTheRestrictionCannotBeRead(t *testing.T) {
 // A 503 on the lock is already marked unavailable, with the Retry-After it
 // came with; marking it again for the 500s must not drop that wait.
 func TestRestrictPageUpdatesWaitsForRetryAfter(t *testing.T) {
-	api, server := newUnavailableAPI(t, false, 1, isPost("/restriction"))
+	api, server, page := newRestrictUnavailableAPI(t, 1, isPost("/restriction"))
 	var waited []string
 	api.unavailableWait = func(_ context.Context, _ int, retryAfter string) { waited = append(waited, retryAfter) }
-	server.AddSpace("DOCS")
-	stored := server.AddPage("DOCS", "Locked", "page", "")
-	server.SetCurrentUser(confluencetest.User{AccountID: "acct-me", FullName: "Mark Bot"})
 
-	require.NoError(t, api.RestrictPageUpdates(context.Background(), &PageInfo{ID: stored.ID, Title: stored.Title}, ""))
-	assert.Equal(t, []string{"acct-me"}, server.Page(stored.ID).UpdateRestrictedTo)
+	require.NoError(t, api.RestrictPageUpdates(context.Background(), page, ""))
+	assert.Equal(t, []string{"acct-me"}, server.Page(page.ID).UpdateRestrictedTo)
 	assert.Equal(t, []string{"7"}, waited)
 }
 
 // Only a 5xx is sent again: a 4xx says what was asked is wrong, and would
 // be answered the same way every time.
 func TestRestrictPageUpdatesDoesNotSendAgainAfterA4xx(t *testing.T) {
-	api, server, page := newRestrictUnavailableAPI(t, 0)
+	api, server, page := newRestrictUnavailableAPI(t, 0, nil)
 	failWhen(server, false, func(r *http.Request) (int, string, bool) {
 		if isPost("/restriction")(r) {
 			return http.StatusBadRequest, `{"message":"bad"}`, true

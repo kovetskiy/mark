@@ -156,6 +156,16 @@ func waitUnavailable(ctx context.Context, attempt int, retryAfter string) {
 	}
 }
 
+// markRepeatable is err, from a write that is safe to send again, marked for
+// retryUnavailable on any 5xx but 501 rather than only on the answers that say
+// Confluence was unavailable. One marked already keeps its Retry-After.
+func markRepeatable(err error) error {
+	if status := statusOf(err); status >= 500 && status != http.StatusNotImplemented && !isUnavailable(err) {
+		return unavailableError{error: err}
+	}
+	return err
+}
+
 // markUnavailable is err, the error a request with method ended with, marked
 // as an unavailableError when it says a write may or may not have happened:
 // answer is a 502, 503 or 504, or there was no answer at all and the request
