@@ -466,3 +466,42 @@ func TestGatewayPageVersionTimeAndAuthor(t *testing.T) {
 	require.NotNil(t, got.Version.By)
 	assert.Equal(t, "acct-current", got.Version.By.AccountID)
 }
+
+// TestGatewayReadsATrashedPageAsNotFound: v1 answers a read of a page in the
+// trash with 404, and callers take that as the page being gone. v2 hands the
+// page back with its status, so the read by id says the same thing there.
+func TestGatewayReadsATrashedPageAsNotFound(t *testing.T) {
+	for _, pageType := range []string{"page", "blogpost"} {
+		t.Run(pageType, func(t *testing.T) {
+			ctx := context.Background()
+			api, server := newGatewayAPI(t)
+			parent := server.AddPage("DOCS", "Parent", "page", "")
+			gone := server.AddPage("DOCS", "Gone", pageType, parent.ID)
+			server.TrashPage(gone.ID)
+
+			_, err := api.GetPageByIDExpanded(ctx, gone.ID, "ancestors,version,space")
+			require.ErrorIs(t, err, confluence.ErrNotFound)
+			assert.Contains(t, err.Error(), "trash", "the error says why a page v2 answered is not found")
+
+			_, _, err = api.ParentOfV2(ctx, gone.ID)
+			require.ErrorIs(t, err, confluence.ErrNotFound)
+
+			_, err = api.AncestryV2(ctx, gone.ID)
+			require.ErrorIs(t, err, confluence.ErrNotFound)
+		})
+	}
+}
+
+// TestGatewayReadsAnArchivedPage: an archived page is still a page, on v1 and
+// on v2 alike.
+func TestGatewayReadsAnArchivedPage(t *testing.T) {
+	ctx := context.Background()
+	server := confluencetest.New(t)
+	api := confluence.NewAPI(server.URL+"/ex/confluence/cloud-id", confluence.Options{Username: "user", Password: "token"})
+	kept := server.AddPage("DOCS", "Kept", "page", "")
+	require.NoError(t, api.ArchivePage(ctx, kept.ID))
+
+	page, err := api.GetPageByID(ctx, kept.ID)
+	require.NoError(t, err)
+	assert.Equal(t, "archived", page.Status)
+}

@@ -442,3 +442,32 @@ func TestCreatePageRefusesATitleDifferingOnlyInCase(t *testing.T) {
 		t.Fatalf("status %d, want 400 for a title differing only in case", status)
 	}
 }
+
+// A page in the trash is not there to update on either API, though v2 still
+// reads it, with its status.
+func TestTrashedContentIsNotUpdated(t *testing.T) {
+	s := New(t)
+	page := s.AddPage("DOCS", "Page", "page", "")
+	s.TrashPage(page.ID)
+
+	if status, body := get(t, s.URL+"/api/v2/pages/"+page.ID); status != http.StatusOK || body["status"] != "trashed" {
+		t.Errorf("v2 read: status %d, page status %v, want the page with its status", status, body["status"])
+	}
+
+	for _, update := range []struct{ path, payload string }{
+		{"/rest/api/content/" + page.ID, `{"version":{"number":2},"body":{"storage":{"value":"new"}}}`},
+		{"/api/v2/pages/" + page.ID, `{"version":{"number":2},"body":{"value":"new"}}`},
+	} {
+		req, err := http.NewRequest(http.MethodPut, s.URL+update.path, strings.NewReader(update.payload))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if status, _ := do(t, req); status != http.StatusNotFound {
+			t.Errorf("PUT %s: status %d, want 404", update.path, status)
+		}
+	}
+
+	if got := s.Page(page.ID); got.Version != 1 || got.Body != "" {
+		t.Errorf("the page was written to: version %d, body %q", got.Version, got.Body)
+	}
+}

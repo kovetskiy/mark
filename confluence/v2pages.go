@@ -337,12 +337,32 @@ func (api *API) readContentV2(ctx context.Context, collection, id string, withBo
 // token minted with the page scopes and not the blogpost ones is refused
 // /blogposts outright, and that says nothing about the page that was not found
 // -- which callers act on as gone rather than as a failure.
+//
+// A page in the trash is not found either. v2 answers it with its status
+// where v1 answers 404, and callers know one way of being told a page is
+// gone.
 func (api *API) lookupContentV2(ctx context.Context, id string, withBody bool) (*contentV2, ContentType, error) {
 	first, second := ContentPage, ContentBlogPost
 	if known, ok := api.contentTypesV2.Load(id); ok && known == ContentBlogPost {
 		first, second = second, first
 	}
 
+	content, found, err := api.readEitherContentV2(ctx, first, second, id, withBody)
+	if err != nil {
+		return nil, "", err
+	}
+	if content.Status == "trashed" {
+		return nil, "", fmt.Errorf("%s %s is in the trash: %w", found, id, ErrNotFound)
+	}
+
+	return content, found, nil
+}
+
+// readEitherContentV2 reads id from the first collection, and from the second
+// when the first does not have it.
+func (api *API) readEitherContentV2(
+	ctx context.Context, first, second ContentType, id string, withBody bool,
+) (*contentV2, ContentType, error) {
 	content, err := api.readContentV2(ctx, v2Collection(first), id, withBody)
 	if errors.Is(err, ErrNotFound) {
 		other, otherErr := api.readContentV2(ctx, v2Collection(second), id, withBody)

@@ -271,11 +271,10 @@ func HandleOrphansKeeping(
 
 // pageGone reports whether Confluence no longer has the page. Asked of the page
 // itself, since a 404 from a listing alone could also be an endpoint or a proxy
-// that is not there, and forgetting a live page would lose sight of it. v1
-// answers a page in the trash with a 404, while v2, which the gateway reads
-// through, hands it back with its status.
+// that is not there, and forgetting a live page would lose sight of it. A page
+// in the trash is not found either.
 func pageGone(ctx context.Context, api *confluence.API, pageID string) (bool, error) {
-	found, err := api.GetPageByIDExpanded(ctx, pageID, "version")
+	_, err := api.GetPageByIDExpanded(ctx, pageID, "version")
 	if errors.Is(err, confluence.ErrNotFound) {
 		return true, nil
 	}
@@ -283,5 +282,5 @@ func pageGone(ctx context.Context, api *confluence.API, pageID string) (bool, er
 		return false, fmt.Errorf("unable to read page %s: %w", pageID, err)
 	}
 
-	return found.Status == "trashed", nil
+	return false, nil
 }

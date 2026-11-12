@@ -134,6 +134,46 @@ func TestTrackedPageDeletedInConfluenceIsRecreated(t *testing.T) {
 		"the page should have been created afresh")
 }
 
+// TestTrackedPageTrashedInConfluenceIsRecreated: a page moved to the trash is
+// gone as far as publishing goes, whichever API reads it. The document gets a
+// new page, and the one in the trash is left as it was put there.
+func TestTrackedPageTrashedInConfluenceIsRecreated(t *testing.T) {
+	for _, prefix := range []string{"", "/ex/confluence/cloud-id"} {
+		name := "v1"
+		if prefix != "" {
+			name = "gateway"
+		}
+		t.Run(name, func(t *testing.T) {
+			server, _ := docsSpace(t)
+			dir := t.TempDir()
+
+			file := writeFile(t, dir, "doc.md", markdownWithTitle("Doc"))
+			config := trackingConfig(server, file)
+			config.Connection.BaseURL = server.URL + prefix
+			require.NoError(t, Run(context.Background(), config))
+
+			trashedID := pageIDTitled(t, server, "Doc")
+			require.NotEmpty(t, trashedID)
+			before := server.Page(trashedID)
+			server.TrashPage(trashedID)
+
+			// Retitled, so that only the record leads to the page.
+			writeFile(t, dir, "doc.md", markdownWithTitle("Doc Renamed"))
+			require.NoError(t, Run(context.Background(), config))
+
+			after := server.Page(trashedID)
+			assert.True(t, after.Trashed)
+			assert.Equal(t, "Doc", after.Title, "the page in the trash is not written to")
+			assert.Equal(t, before.Version, after.Version)
+
+			renamedID := pageIDTitled(t, server, "Doc Renamed")
+			require.NotEmpty(t, renamedID, "the document has a page again")
+			assert.NotEqual(t, trashedID, renamedID)
+			assert.False(t, server.Page(renamedID).Trashed)
+		})
+	}
+}
+
 // TestTrackingSavesManifestEvenWhenAFileFails covers the case --continue-on-error
 // exists for. The manifest used to be written only after an early return on
 // hasErrors, so one unpublishable file discarded the mapping for every page that
