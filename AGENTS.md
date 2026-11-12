@@ -224,7 +224,9 @@ safe first.
 turns every non-2xx answer into a `*confluence.StatusError` (`errors.Is` matches
 `ErrUnauthorized`, `ErrForbidden`, `ErrNotFound` and `ErrConflict` for a 401, 403, 404 and
 409; its message is Confluence's own when the body is v1's or v2's error shape), marks a
-write answered 502, 503 or 504, or left unanswered, for `retryUnavailable`, turns a login
+write answered 502, 503 or 504, or left unanswered, for `retryUnavailable` (a call site
+may mark more: `RestrictPageUpdates` also marks any other 5xx but 501, since adding a
+user who may already update is safe to repeat), turns a login
 page into `ErrLoginPage`, and decodes a 2xx
 as it streams in, whatever its Content-Type: one value and nothing after it, an empty
 body as success -- except to `get` and `send`, which are asked for a value and refuse an
