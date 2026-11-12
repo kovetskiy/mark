@@ -126,7 +126,8 @@ func frontMatterKeys() []string {
 // itself, or a string holding "<!--", which opens a directive.
 //
 // A value has to be of a kind its key holds, or it is ErrUnrepresentable
-// rather than dropped as front matter drops it: a string for space, title,
+// rather than written as something mark reads back differently or leaves
+// out: a string for space, title,
 // type, layout, sidebar, emoji and image-align; a string or a list of strings
 // for parents, folders, attachments and labels; a map with string keys for
 // properties. How mark then reads each key is as for any front matter:

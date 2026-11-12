@@ -59,6 +59,24 @@ func TestFrontMatterQuotesWhatYAMLWouldMisread(t *testing.T) {
 	}
 }
 
+// TestFrontMatterReadsBackTextYAMLWouldTakeForAnotherKind: a title, space or
+// emoji that looks like a number, a boolean, a date or null is written so
+// that it reads back as the text it is.
+func TestFrontMatterReadsBackTextYAMLWouldTakeForAnotherKind(t *testing.T) {
+	for _, value := range []string{
+		"2024", "1.0", "1e3", "0x1F", "007", "-5", "true", "no", "2024-01-31", ".inf", "null", "~",
+	} {
+		h := pageHeaders{Space: value, Title: value, Emoji: value, Type: "page"}
+		frontMatter, err := h.frontMatter()
+		require.NoError(t, err, value)
+
+		meta := readMeta(t, frontMatter)
+		assert.Equal(t, value, meta.Space, frontMatter)
+		assert.Equal(t, value, meta.Title, frontMatter)
+		assert.Equal(t, value, meta.Emoji, frontMatter)
+	}
+}
+
 // TestFrontMatterHoldsTheSidebarCommentsCannot: a sidebar with "-->" in it
 // stays in the body under comment headers, and goes to the sidebar key in
 // front matter.
