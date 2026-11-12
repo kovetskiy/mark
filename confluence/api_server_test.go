@@ -927,3 +927,69 @@ func mustCloud(t *testing.T, api *confluence.API) bool {
 
 	return cloud
 }
+
+// TestFindPageAfterTheAPIRemovedThePage: a page this API trashed or archived
+// is not a live page any more, and FindPage answers as a fresh lookup would
+// rather than from what it read before.
+func TestFindPageAfterTheAPIRemovedThePage(t *testing.T) {
+	removals := map[string]func(*confluence.API, context.Context, string) error{
+		"delete":  (*confluence.API).DeletePage,
+		"archive": (*confluence.API).ArchivePage,
+	}
+	for name, remove := range removals {
+		for _, prefix := range []string{"", "/ex/confluence/cloud-id"} {
+			t.Run(name+prefix, func(t *testing.T) {
+				ctx := context.Background()
+				server := confluencetest.New(t)
+				api := confluence.NewAPI(server.URL+prefix, confluence.Options{Username: "user", Password: "token"})
+				gone := server.AddPage("DOCS", "Gone", "page", "")
+				kept := server.AddPage("DOCS", "Kept", "page", "")
+
+				for _, title := range []string{"Gone", "Kept"} {
+					found, err := api.FindPage(ctx, "DOCS", title, confluence.ContentPage)
+					require.NoError(t, err)
+					require.NotNil(t, found)
+				}
+
+				require.NoError(t, remove(api, ctx, gone.ID))
+
+				found, err := api.FindPage(ctx, "DOCS", "Gone", confluence.ContentPage)
+				require.NoError(t, err)
+				assert.Nil(t, found)
+
+				server.ResetRequests()
+				found, err = api.FindPage(ctx, "DOCS", "Kept", confluence.ContentPage)
+				require.NoError(t, err)
+				require.NotNil(t, found)
+				assert.Equal(t, kept.ID, found.ID)
+				assert.Empty(t, server.Requests(), "another page's answer is kept")
+			})
+		}
+	}
+}
+
+// TestFindPageKeepsItsAnswerWhenTheRemovalFails: a delete Confluence refused
+// removed nothing, so what was read of the page stands.
+func TestFindPageKeepsItsAnswerWhenTheRemovalFails(t *testing.T) {
+	ctx := context.Background()
+	server := confluencetest.New(t)
+	api := confluence.NewAPI(server.URL, confluence.Options{Username: "user", Password: "token"})
+	page := server.AddPage("DOCS", "Page", "page", "")
+
+	_, err := api.FindPage(ctx, "DOCS", "Page", confluence.ContentPage)
+	require.NoError(t, err)
+
+	server.SetFail(func(r *http.Request) (int, string, bool) {
+		if r.Method == http.MethodDelete {
+			return http.StatusForbidden, `{"message":"not permitted"}`, true
+		}
+		return 0, "", false
+	})
+	require.ErrorIs(t, api.DeletePage(ctx, page.ID), confluence.ErrForbidden)
+
+	server.ResetRequests()
+	found, err := api.FindPage(ctx, "DOCS", "Page", confluence.ContentPage)
+	require.NoError(t, err)
+	require.NotNil(t, found)
+	assert.Empty(t, server.Requests())
+}

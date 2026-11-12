@@ -259,6 +259,21 @@ func (api *API) invalidatePage(space, title string, pageType ContentType) {
 	api.pageCacheMutex.Unlock()
 }
 
+// forgetPage drops what FindPage remembers of page id, under every title it
+// was found by, so the next lookup asks Confluence.
+func (api *API) forgetPage(id string) {
+	api.lazyInit()
+	api.pageCacheMutex.Lock()
+	defer api.pageCacheMutex.Unlock()
+
+	delete(api.pageCacheByID, id)
+	for key, entry := range api.pageCache {
+		if entry != nil && entry.ID == id {
+			delete(api.pageCache, key)
+		}
+	}
+}
+
 // updateCachedPageVersion records that page id is now at newVersion. The
 // time, author and message the entry had describe the version before, so they
 // are dropped rather than handed out as the new one's.
@@ -650,6 +665,12 @@ type Options struct {
 }
 
 // NewAPI returns an API for the Confluence at baseURL.
+//
+// An API is meant for one run. It remembers what it reads for as long as it
+// lives -- FindPage's answers, a title that named no page included, the
+// users it resolved, the platform -- so a page that something else creates,
+// retitles, trashes or archives in the meantime is not noticed. A long-lived
+// program makes a new API for each batch of work.
 func NewAPI(baseURL string, opts Options) *API {
 	// Normalize baseURL once before building all derived endpoints.
 	baseURL = strings.TrimSuffix(baseURL, "/")
@@ -924,6 +945,9 @@ func (api *API) fetchHomePage(ctx context.Context, space string) (*PageInfo, err
 	return api.GetPageByID(ctx, v2Result.Results[0].HomepageID)
 }
 
+// FindPage looks a live page up by its title, and returns nil when the space
+// has none. The answer, either one, is kept for the life of the API; see
+// NewAPI.
 func (api *API) FindPage(
 	ctx context.Context,
 	space string,
@@ -2758,6 +2782,7 @@ func (api *API) DeletePage(ctx context.Context, contentID string) error {
 	if err != nil && !errors.Is(err, ErrNotFound) {
 		return requestError("delete content "+contentID, err)
 	}
+	api.forgetPage(contentID)
 
 	return nil
 }
@@ -2792,6 +2817,8 @@ func (api *API) ArchivePage(ctx context.Context, contentID string) error {
 	if err != nil {
 		return requestError("archive content "+contentID, err)
 	}
+	// FindPage finds live pages only.
+	api.forgetPage(contentID)
 
 	return nil
 }
