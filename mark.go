@@ -2031,19 +2031,29 @@ func (r *publishRun) processFile(ctx context.Context, in input) (*confluence.Pag
 	}
 
 	if shouldUpdatePage {
+		read := dest.page.Version.Number
 		if err := r.writePage(ctx, doc, dest.page, html, versionMessage); err != nil {
+			// An update can fail after its body is in, on what it writes
+			// next. The version that made is mark's own all the same.
+			if dest.page.Version.Number != read {
+				err = errors.Join(err, r.recordPublished(ctx, doc, dest.page))
+			}
+
 			return nil, nil, err
 		}
+	}
+
+	// Ahead of everything else asked of the page: the body is on it from
+	// here, so the version --no-overwrite compares against is this one
+	// whether or not the rest succeeds.
+	if err := r.recordPublished(ctx, doc, dest.page); err != nil {
+		return nil, nil, err
 	}
 
 	if restrictionPlan != nil {
 		if err := r.api.ApplyFinal(ctx, restrictionPlan); err != nil {
 			return nil, nil, fmt.Errorf("unable to set page restrictions: %w", err)
 		}
-	}
-
-	if err := r.recordPublished(ctx, doc, dest.page); err != nil {
-		return nil, nil, err
 	}
 
 	placement, err := r.applySettings(ctx, doc, dest)
