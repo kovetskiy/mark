@@ -108,7 +108,8 @@ func (c *converter) writeRaw(b *strings.Builder, n *node, mode rawMode) {
 // relativeImg writes an <img> whose address names no host as the ac:image
 // publishing makes of one it finds no file for. Left an <img>, publishing
 // would look beside the document for the file; on the page the address is
-// relative to the page. An <img> in a <picture> is published as written.
+// relative to the page. An align or a style it has is not carried over.
+// An <img> in a <picture> is published as written.
 func (c *converter) relativeImg(n *node) (string, bool) {
 	src := n.attr("src")
 	if !n.is("img") || src == "" || c.opts.Reading || !imageNamesFile(src) {
