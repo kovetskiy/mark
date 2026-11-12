@@ -17,15 +17,15 @@ import (
 	"github.com/yuin/goldmark/v2/util"
 )
 
-// convertDirectives renders Markdown through the include and macro
-// transformers alone, as the pipeline runs them, with dir as the document's
-// directory.
+// convertDirectives renders Markdown through the macro and include
+// transformers alone, in the order markdown's pipeline runs them, with dir as
+// the document's directory.
 func convertDirectives(t *testing.T, dir, markdown string) (string, error) {
 	t.Helper()
 
 	pipeline := ctransformer.NewPipelineTransformer(
-		ctransformer.NewIncludeTransformer("test.md", dir, "", template.New("test")),
 		ctransformer.NewMacroTransformer("test.md", dir, "", template.New("test")),
+		ctransformer.NewIncludeTransformer("test.md", dir, "", template.New("test")),
 	)
 
 	gm := goldmarktest.New(
@@ -180,17 +180,124 @@ func TestMacroAppliesToEachPieceOfText(t *testing.T) {
 			"- a MARKER\n- b\n",
 			"<ul>\n<li>a replaced</li>\n<li>b</li>\n</ul>\n",
 		},
-		"in an included fragment": {
+		"after markup, where it would open a list by itself": {
+			"replaced",
+			"**Owner** - MARKER\n\n**Step** 1. MARKER\n",
+			"<p><strong>Owner</strong> - replaced</p>\n<p><strong>Step</strong> 1. replaced</p>\n",
+		},
+		"after markup, where it would open a heading or a quote": {
+			"replaced",
+			"**a** # MARKER\n\n# **b** > MARKER\n",
+			"<p><strong>a</strong> # replaced</p>\n<h1><strong>b</strong> &gt; replaced</h1>\n",
+		},
+		"inside emphasis, where it would open a list by itself": {
+			"replaced",
+			"**- MARKER**\n",
+			"<p><strong>- replaced</strong></p>\n",
+		},
+		"after a line break, where it would open a list by itself": {
+			"replaced",
+			"a\n2. MARKER b\n",
+			"<p>a\n2. replaced b</p>\n",
+		},
+		"markup after markup": {
+			"\"<div>replaced</div>\"",
+			"**a** MARKER *b*\n",
+			"<p><strong>a</strong> <div>replaced</div> <em>b</em></p>\n",
+		},
+		"nothing after markup": {
+			"\"\"",
+			"**a**MARKER*b*\n",
+			"<p><strong>a</strong><em>b</em></p>\n",
+		},
+		"a block at the start of a paragraph": {
+			"\"# replaced\"",
+			"MARKER\n",
+			"<h1>replaced</h1>\n",
+		},
+		"in an included fragment that defines it": {
 			"replaced",
 			"<!-- Include: uses.txt -->\n",
 			"<p>a replaced b</p>\n",
 		},
+		"in a heading, where it would open a list by itself": {
+			"replaced",
+			"## 1. MARKER\n",
+			"<h2>1. replaced</h2>\n",
+		},
+		"spaces alone between markup": {
+			"\"\"",
+			"**a** MARKER *b*\n",
+			"<p><strong>a</strong>  <em>b</em></p>\n",
+		},
+		"not in an image's description": {
+			"\"<b>replaced</b>\"",
+			"![MARKER](https://example.com/x.png) MARKER\n",
+			"<p><img src=\"https://example.com/x.png\" alt=\"MARKER\"> <b>replaced</b></p>\n",
+		},
 	} {
 		t.Run(name, func(t *testing.T) {
 			dir := t.TempDir()
-			require.NoError(t, os.WriteFile(filepath.Join(dir, "uses.txt"), []byte("a MARKER b\n"), 0o600))
+			require.NoError(t, os.WriteFile(filepath.Join(dir, "uses.txt"), []byte(fmt.Sprintf(define, test.expansion)+"a MARKER b\n"), 0o600))
 
 			output, err := convertDirectives(t, dir, fmt.Sprintf(define, test.expansion)+test.markdown)
+			require.NoError(t, err)
+			assert.Equal(t, test.want, output)
+		})
+	}
+}
+
+// A pattern is matched against the text as it is written: a "[" or a "*"
+// that opens no markup is part of the text around it.
+func TestMacroPatternHoldsMarkupCharacters(t *testing.T) {
+	const define = "<!-- Macro: %s\nTemplate: #x\nx: replaced -->\n\n"
+
+	for name, test := range map[string]struct {
+		pattern  string
+		markdown string
+		want     string
+	}{
+		"brackets": {
+			`\[T-1\]`,
+			"see [T-1] here\n",
+			"<p>see replaced here</p>\n",
+		},
+		"brackets next to markup and line breaks": {
+			`\[T-1\]`,
+			"a *[T-1]* [T-1]\n[T-1]  \n[T-1] `[T-1]`\n",
+			"<p>a <em>replaced</em> replaced\nreplaced<br>\nreplaced <code>[T-1]</code></p>\n",
+		},
+		"brackets in a list item": {
+			`\[T-1\]`,
+			"- a [T-1] b\n",
+			"<ul>\n<li>a replaced b</li>\n</ul>\n",
+		},
+		"brackets in an included fragment that defines it": {
+			`\[T-1\]`,
+			"<!-- Include: uses.txt -->\n",
+			"<p>a replaced <em>replaced</em></p>\n",
+		},
+		"an asterisk": {
+			`A\*B`,
+			"see A*B here\n",
+			"<p>see replaced here</p>\n",
+		},
+		"a link's text is not its brackets": {
+			`\[T-1\]`,
+			"a [T-1](https://example.com)\n",
+			"<p>a <a href=\"https://example.com\">T-1</a></p>\n",
+		},
+		"not over a line break": {
+			"a b",
+			"see a\nb here\n",
+			"<p>see a\nb here</p>\n",
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			dir := t.TempDir()
+			require.NoError(t, os.WriteFile(filepath.Join(dir, "uses.txt"), []byte(fmt.Sprintf(define, test.pattern)+"a [T-1] *[T-1]*\n"), 0o600))
+
+			output, err := convertDirectives(t, dir, fmt.Sprintf(define, test.pattern)+test.markdown)
 			require.NoError(t, err)
 			assert.Equal(t, test.want, output)
 		})
