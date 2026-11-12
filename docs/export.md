@@ -336,7 +336,9 @@ or `chart.png` (for an image, any address without a `://`): on the page it is
 relative to the page, and written as Markdown it would name a file beside the
 document, which publishing links to as a page or uploads. Such a link stays an
 `<a>` and such an image an `<ac:image>`, which an `<img>` with such an address
-becomes too. An export to read (`--format okf`) writes them as Markdown.
+becomes too, with its `width`, `height`, `title` and `alt`; an `align` or a
+`style` it has is not carried over. An export to read (`--format okf`) writes
+them as Markdown.
 Lists and blockquotes are Markdown down to a hundred of them one inside the
 other, and storage format below that, where the indentation Markdown needs on
 every line would outgrow the page.
