@@ -233,10 +233,16 @@ func coalesceInlineDetails(node ast.Node, raw []byte, source []byte) ([]byte, []
 		}
 
 		sibRaw := ExtractNodeRawContent(sib, source)
+		markup := isMarkup(sib)
+		if !markup {
+			// Text joins the fragment as the page will show it, so a tag the
+			// author escaped is not read as one.
+			sibRaw = []byte(stdlib.XMLEscape(string(DecodeMarkdown(sibRaw))))
+		}
 		combined = append(combined, sibRaw...)
 		folded = append(folded, sib)
 
-		if bytes.Contains(bytes.ToLower(sibRaw), []byte("</summary")) {
+		if markup && bytes.Contains(bytes.ToLower(sibRaw), []byte("</summary")) {
 			return combined, folded
 		}
 		// A summary is a short leading element; give up rather than swallow the
@@ -246,4 +252,18 @@ func coalesceInlineDetails(node ast.Node, raw []byte, source []byte) ([]byte, []
 		}
 	}
 	return raw, nil
+}
+
+// isMarkup reports whether node holds markup an author wrote as such, rather
+// than text: an escaped "<details>" is text, with its backslash still in its
+// bytes.
+func isMarkup(node ast.Node) bool {
+	switch n := node.(type) {
+	case *ast.HTMLBlock, *ast.RawHTML:
+		return true
+	case *String:
+		return n.Code
+	default:
+		return false
+	}
 }

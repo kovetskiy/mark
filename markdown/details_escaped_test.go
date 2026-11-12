@@ -2,6 +2,7 @@ package markdown_test
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/kovetskiy/mark/v17/markdown"
@@ -9,6 +10,18 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func compileDetails(t *testing.T, source string) string {
+	t.Helper()
+
+	std, err := stdlib.New(context.Background(), nil)
+	require.NoError(t, err)
+
+	out, _, err := markdown.CompileMarkdown(t.Context(), []byte(source), std, "test.md", markdown.Options{})
+	require.NoError(t, err)
+
+	return out
+}
 
 // A backslash before "<" makes it text: the author is writing about the tag,
 // as with `&lt;details&gt;` or a code span, and the page shows it literally.
@@ -49,6 +62,11 @@ func TestEscapedDetailsTagIsText(t *testing.T) {
 			want:  "use &lt;details&gt; here",
 		},
 		{
+			name:  "character references in an HTML block",
+			input: "<div>\nWrite &lt;details&gt; for it.\n</div>\n",
+			want:  "Write &lt;details&gt; for it.",
+		},
+		{
 			name:  "character references",
 			input: "Write &lt;details&gt; for it.\n",
 			want:  "<p>Write &lt;details&gt; for it.</p>",
@@ -57,11 +75,7 @@ func TestEscapedDetailsTagIsText(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			std, err := stdlib.New(context.Background(), nil)
-			require.NoError(t, err)
-
-			out, _, err := markdown.CompileMarkdown(t.Context(), []byte(tt.input), std, "test.md", markdown.Options{})
-			require.NoError(t, err)
+			out := compileDetails(t, tt.input)
 
 			assert.Contains(t, out, tt.want)
 			assert.NotContains(t, out, `ac:name="expand"`, "an escaped tag opens no macro")
@@ -73,14 +87,8 @@ func TestEscapedDetailsTagIsText(t *testing.T) {
 
 // An escaped tag beside a real element leaves the element a macro.
 func TestEscapedDetailsTagBesideAnElement(t *testing.T) {
-	std, err := stdlib.New(context.Background(), nil)
-	require.NoError(t, err)
-
-	const input = "- item <details><summary>s</summary>x</details> written as \\<details>\n\n" +
-		"<details>\n<summary>Block</summary>\n\nThe \\<details> tag, and 1 < 2.\n\n</details>\n"
-
-	out, _, err := markdown.CompileMarkdown(t.Context(), []byte(input), std, "test.md", markdown.Options{})
-	require.NoError(t, err)
+	out := compileDetails(t, "- item <details><summary>s</summary>x</details> written as \\<details>\n\n"+
+		"<details>\n<summary>Block</summary>\n\nThe \\<details> tag, and 1 < 2.\n\n</details>\n")
 
 	assert.Contains(t, out, `<ac:structured-macro ac:name="expand">`+
 		`<ac:parameter ac:name="title">s</ac:parameter>`+
@@ -90,15 +98,55 @@ func TestEscapedDetailsTagBesideAnElement(t *testing.T) {
 	assertWellFormed(t, out)
 }
 
+// Text beside an inline element's summary is folded into the macro, and an
+// escaped tag in it stays text there too.
+func TestEscapedTagInInlineDetailsSummary(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{
+			name:  "in the summary",
+			input: "a <details><summary>The \\<details> tag</summary>x</details> b\n",
+			want: `<ac:parameter ac:name="title">The &lt;details&gt; tag</ac:parameter>` +
+				`<ac:rich-text-body>x</ac:rich-text-body>`,
+		},
+		{
+			name:  "escaped closing tag in the summary",
+			input: "a <details><summary>About \\</details></summary>x</details> b\n",
+			want: `<ac:parameter ac:name="title">About &lt;/details&gt;</ac:parameter>` +
+				`<ac:rich-text-body>x</ac:rich-text-body>`,
+		},
+		{
+			name:  "before the summary",
+			input: "a <details>1 < 2 & \\<b> <summary>s</summary>x</details> b\n",
+			want: `<ac:parameter ac:name="title">s</ac:parameter>` +
+				`<ac:rich-text-body>1 &lt; 2 &amp; &lt;b&gt; x</ac:rich-text-body>`,
+		},
+		{
+			name:  "escaped summary",
+			input: "a <details>\\<summary>s\\</summary>x</details> b\n",
+			want:  `<ac:rich-text-body>&lt;summary&gt;s&lt;/summary&gt;x</ac:rich-text-body>`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			out := compileDetails(t, tt.input)
+
+			assert.Contains(t, out, tt.want)
+			assert.Equal(t, 1, strings.Count(out, `ac:name="expand"`), "one element, one macro")
+			assert.NotContains(t, out, `\`, "the escaping backslash is not shown")
+			assertWellFormed(t, out)
+		})
+	}
+}
+
 // An escaped closing tag inside an element is part of its body, and the
 // element ends at its own closing tag.
 func TestEscapedClosingTagInsideDetails(t *testing.T) {
-	std, err := stdlib.New(context.Background(), nil)
-	require.NoError(t, err)
-
-	out, _, err := markdown.CompileMarkdown(t.Context(),
-		[]byte("a <details>x \\</details> y</details> b\n"), std, "test.md", markdown.Options{})
-	require.NoError(t, err)
+	out := compileDetails(t, "a <details>x \\</details> y</details> b\n")
 
 	assert.Equal(t, `<p>a <ac:structured-macro ac:name="expand"><ac:rich-text-body>`+
 		`x &lt;/details&gt; y</ac:rich-text-body></ac:structured-macro> b</p>`+"\n", out)
@@ -117,13 +165,7 @@ func TestInlineDetailsTagSpellings(t *testing.T) {
 		"over two lines": "a <details\nopen>x</details> b\n",
 	} {
 		t.Run(name, func(t *testing.T) {
-			std, err := stdlib.New(context.Background(), nil)
-			require.NoError(t, err)
-
-			out, _, err := markdown.CompileMarkdown(t.Context(), []byte(input), std, "test.md", markdown.Options{})
-			require.NoError(t, err)
-
-			assert.Equal(t, want, out)
+			assert.Equal(t, want, compileDetails(t, input))
 		})
 	}
 }

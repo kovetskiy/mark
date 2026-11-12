@@ -41,11 +41,9 @@ func (t *DetailsTransformer) Transform(doc *ast.Document, reader text.Reader, pc
 			return ast.WalkContinue, nil
 		}
 
-		switch n := node.(type) {
-		// Not *ast.Text: goldmark gives a tag as raw HTML, so a "<details>" left
-		// in text is one the author escaped, and its bytes still hold the
-		// backslash.
-		case *ast.HTMLBlock, *ast.RawHTML, *String:
+		// Markup only: goldmark gives a tag as raw HTML, so a "<details>" left in
+		// text is one it did not read as a tag, such as an escaped one.
+		if isMarkup(node) {
 			// Text inside an inline code span is literal by definition:
 			// `<details>` in prose documents the tag, it does not open one.
 			if parent := node.Parent(); parent != nil && parent.Kind() == ast.KindCodeSpan {
@@ -57,7 +55,7 @@ func (t *DetailsTransformer) Transform(doc *ast.Document, reader text.Reader, pc
 				return ast.WalkContinue, nil
 			}
 
-			raw := ExtractNodeRawContent(n, source)
+			raw := ExtractNodeRawContent(node, source)
 			if len(raw) == 0 {
 				return ast.WalkContinue, nil
 			}
@@ -68,7 +66,7 @@ func (t *DetailsTransformer) Transform(doc *ast.Document, reader text.Reader, pc
 			// inline siblings in so the element is seen whole, exactly as a block
 			// context already sees it.
 			var folded []ast.Node
-			raw, folded = coalesceInlineDetails(n, raw, source)
+			raw, folded = coalesceInlineDetails(node, raw, source)
 			for _, f := range folded {
 				absorbed[f] = true
 			}
@@ -78,7 +76,7 @@ func (t *DetailsTransformer) Transform(doc *ast.Document, reader text.Reader, pc
 				nodesToReplace = append(nodesToReplace, struct {
 					node ast.Node
 					newB []byte
-				}{node: n, newB: newRaw})
+				}{node: node, newB: newRaw})
 				// The folded siblings' bytes are now part of newB; drop the
 				// originals so their content is not emitted twice.
 				for _, f := range folded {

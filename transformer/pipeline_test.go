@@ -195,3 +195,36 @@ func TestIncludedDetailsBecomeAnExpandMacro(t *testing.T) {
 	assert.Contains(t, strings.Join(replacements, ""), `ac:name="expand"`)
 	assert.Empty(t, leftover, "raw <details> left in the document")
 }
+
+// TestIncludedEscapedDetailsStaysText: the text of an included file arrives as
+// a String too, and an escaped tag in it is text, as it is in the document.
+func TestIncludedEscapedDetailsStaysText(t *testing.T) {
+	tempDir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(tempDir, "inc.md"),
+		[]byte("Write \\<details> for it.\n"), 0o644))
+
+	std, err := stdlib.New(context.Background(), nil)
+	require.NoError(t, err)
+
+	source := []byte("<!-- Include: inc.md -->\n")
+	doc := parser.New(parser.WithASTTransformers(
+		util.Prioritized[parser.ASTTransformer](
+			NewPipelineTransformer(NewIncludeTransformer("test.md", tempDir, "", std.Templates)), 10),
+		util.Prioritized[parser.ASTTransformer](NewDetailsTransformer(), 110),
+	)).Parse(source)
+
+	var text []string
+	_ = ast.Walk(doc, func(node ast.Node, entering bool) (ast.WalkStatus, error) {
+		if !entering {
+			return ast.WalkContinue, nil
+		}
+		_, replaced := AttributeText(node, ReplacementContentAttribute, source)
+		assert.False(t, replaced, "the escaped tag was rewritten")
+		if s, ok := node.(*String); ok {
+			text = append(text, string(s.Value))
+		}
+		return ast.WalkContinue, nil
+	})
+
+	assert.Equal(t, []string{`Write \<details> for it.`}, text)
+}

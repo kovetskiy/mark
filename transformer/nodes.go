@@ -14,9 +14,8 @@ import (
 
 // String is an inline node that owns its text: markup written to the page as
 // it stands (Code), or Markdown text decoded and escaped. goldmark has no such
-// node, and a Text or RawHTML node will not do: the <details>, <img> and
-// well-formedness passes rewrite the one, and the paragraph renderer unwraps
-// the other.
+// node, and a Text or RawHTML node will not do: the <img> and well-formedness
+// passes rewrite the one, and the paragraph renderer unwraps the other.
 type String struct {
 	ast.BaseInline
 
