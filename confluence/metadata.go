@@ -36,12 +36,14 @@ const (
 // Missing objects and unsupported endpoints return errors.
 func (api *API) ListLabels(ctx context.Context, query LabelQuery) ([]Label, error) {
 	path := []string{"labels"}
+
 	switch {
 	case query.Space != "":
 		id, err := api.GetSpaceID(ctx, query.Space)
 		if err != nil {
 			return nil, err
 		}
+
 		path = []string{LabelCollectionSpaces, id, "content", "labels"}
 	case query.Collection != "":
 		switch query.Collection {
@@ -50,17 +52,22 @@ func (api *API) ListLabels(ctx context.Context, query LabelQuery) ([]Label, erro
 		default:
 			return nil, fmt.Errorf("unsupported label collection %q", query.Collection)
 		}
+
 		if query.ID == "" {
 			return nil, fmt.Errorf("label collection %q requires an id", query.Collection)
 		}
+
 		path = []string{query.Collection, query.ID, "labels"}
 	}
+
 	type labelV2 struct {
 		ID     json.Number `json:"id"`
 		Name   string      `json:"name"`
 		Prefix string      `json:"prefix"`
 	}
+
 	labels := []Label{}
+
 	err := eachV2Required(ctx, api, path, url.Values{"limit": {"250"}}, "list labels (Confluence Cloud endpoint)", func(label labelV2) bool {
 		labels = append(labels, Label{ID: label.ID.String(), Name: label.Name, Prefix: label.Prefix})
 		return false
@@ -68,6 +75,7 @@ func (api *API) ListLabels(ctx context.Context, query LabelQuery) ([]Label, erro
 	if err != nil {
 		return nil, err
 	}
+
 	return labels, nil
 }
 
@@ -77,9 +85,11 @@ func (api *API) GetSpaceContentStatuses(ctx context.Context, space string) ([]Co
 	if err != nil {
 		return nil, requestError("list space statuses (Confluence Cloud endpoint)", err)
 	}
+
 	if statuses == nil {
 		statuses = []ContentStatus{}
 	}
+
 	return statuses, nil
 }
 
@@ -89,9 +99,11 @@ func (api *API) GetPersonalContentStatuses(ctx context.Context) ([]ContentStatus
 	if err != nil {
 		return nil, requestError("list personal statuses (Confluence Cloud endpoint)", err)
 	}
+
 	if statuses == nil {
 		statuses = []ContentStatus{}
 	}
+
 	return statuses, nil
 }
 
@@ -100,13 +112,16 @@ func (api *API) GetPageContentStatus(ctx context.Context, pageID string) ([]Cont
 	type stateResponse struct {
 		ContentState *ContentStatus `json:"contentState"`
 	}
+
 	state, err := get[stateResponse](ctx, api.v1, []string{"content", pageID, "state"}, nil)
 	if err != nil {
 		return nil, requestError("read page status (Confluence Cloud endpoint)", err)
 	}
+
 	statuses := []ContentStatus{}
 	if state.ContentState != nil {
 		statuses = append(statuses, *state.ContentState)
 	}
+
 	return statuses, nil
 }
