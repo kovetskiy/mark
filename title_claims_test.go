@@ -394,3 +394,30 @@ func TestAPublisherLeavesATitleAFileGaveUpToAnother(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "one.md already publishes")
 }
+
+// TestADryRunRefusesATitleOfAPageThatWouldBeLeftAlone: the dry run of
+// TestATitleOfAPageLeftAloneIsNotTakenOver fails the document the run fails.
+func TestADryRunRefusesATitleOfAPageThatWouldBeLeftAlone(t *testing.T) {
+	server, dir, config, legacyID := overviewPublished(t)
+	config.Tracking.NoOverwrite = true
+	config.ContinueOnError = true
+	config.Mode.DryRun = true
+
+	server.EditPage(legacyID, "<p>Written by a person.</p>")
+
+	writeFile(t, dir, "b-old.md", titledDoc("Legacy overview", "Old body."))
+	writeFile(t, dir, "a-new.md", titledDoc("Overview", "New body."))
+
+	pages, err := reportOf(t, config)
+	require.Error(t, err)
+
+	require.Len(t, pages, 2)
+	for _, reported := range pages {
+		if strings.HasSuffix(reported.File, "a-new.md") {
+			assert.Equal(t, report.StatusFailed, reported.Status)
+			assert.Contains(t, reported.Reason, "b-old.md")
+		} else {
+			assert.Equal(t, report.StatusSkipped, reported.Status)
+		}
+	}
+}
