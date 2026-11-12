@@ -507,7 +507,7 @@ nothing.
 | `move` | moves the page, and everything beneath it, under `--parent` or beside a sibling. `--parent` with `--before` or `--after` checks the sibling is that parent's child | a blog post; another space; a page beneath itself; a sibling at the top of the space |
 | `rename` | sets the title and keeps the content, as a minor edit with the version message `renamed from "<old title>"` | a title another page in the space already has |
 | `archive` | asks Confluence to archive the page; Confluence archives it afterwards | a page with children; the space homepage |
-| `delete` | moves the page to the trash. `--recursive` trashes its descendants too, deepest first | a page with children without `--recursive`; a page with a folder beneath it; the space homepage |
+| `delete` | moves the page to the trash. `--recursive` trashes its descendants too, deepest first | a page with children without `--recursive`; a page with a folder beneath it; the space homepage, or with `--recursive` a page it is beneath |
 | `watch`, `unwatch` | starts or stops Confluence notifying you of the page's changes, or each `--user`. `--recursive` does the same for every page beneath it, from the top down | a `--user` on Cloud whose full name matches no user, or more than one; with `--recursive`, a page with a folder anywhere beneath it |
 
 `copy` names the top copy `--title`, or else `--prefix` and the page's own

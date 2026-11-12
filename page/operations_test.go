@@ -227,6 +227,39 @@ func TestDeleteRefusesTheHomepageAndFolders(t *testing.T) {
 	assert.False(t, server.Page(holder.ID).Trashed)
 }
 
+// TestDeleteRecursiveRefusesAHomepageBeneathTheTarget: a space's homepage need
+// not be at the top of its tree, and a recursive delete refuses it wherever it
+// is among the pages it would trash, before trashing any of them.
+func TestDeleteRecursiveRefusesAHomepageBeneathTheTarget(t *testing.T) {
+	api, server := newAPI(t)
+	server.AddSpace("DOCS")
+	top := server.AddPage("DOCS", "Top", "page", "")
+	first := server.AddPage("DOCS", "First", "page", top.ID)
+	middle := server.AddPage("DOCS", "Middle", "page", top.ID)
+	home := server.AddPage("DOCS", "Home", "page", middle.ID)
+	server.SetHomepage("DOCS", home.ID)
+
+	for _, dryRun := range []bool{true, false} {
+		var out bytes.Buffer
+		err := page.Delete(context.Background(), api, page.Ref{ID: top.ID}, page.DeleteOptions{Recursive: true, DryRun: dryRun}, &out)
+		require.ErrorContains(t, err, `"Home" (`+home.ID+`) is the homepage of space DOCS`)
+		require.ErrorContains(t, err, `beneath "Top" (`+top.ID+`)`)
+		assert.Empty(t, out.String(), "nothing is trashed, or said to be")
+	}
+	for _, id := range []string{top.ID, first.ID, middle.ID, home.ID} {
+		assert.False(t, server.Page(id).Trashed, id)
+	}
+
+	require.ErrorContains(t, page.Delete(context.Background(), api, page.Ref{ID: home.ID}, page.DeleteOptions{}, &bytes.Buffer{}), "homepage")
+
+	// A sibling subtree that does not hold the homepage is trashed as before.
+	leaf := server.AddPage("DOCS", "Leaf", "page", first.ID)
+	require.NoError(t, page.Delete(context.Background(), api, page.Ref{ID: first.ID}, page.DeleteOptions{Recursive: true}, &bytes.Buffer{}))
+	assert.True(t, server.Page(first.ID).Trashed)
+	assert.True(t, server.Page(leaf.ID).Trashed)
+	assert.False(t, server.Page(home.ID).Trashed)
+}
+
 func TestArchive(t *testing.T) {
 	api, server := newAPI(t)
 	server.AddSpace("DOCS")
