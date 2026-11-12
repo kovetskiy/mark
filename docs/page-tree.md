@@ -149,7 +149,7 @@ file, no commit. The record lives in Confluence.
 | folder renamed in Confluence | the recorded folder ID, reused rather than duplicated |
 | source file deleted | a recorded path absent from a run whose pattern covered it |
 | two files claiming one page | the reverse index, when the second one is recorded |
-| document changed `Space` | the same path recorded against another space |
+| document changed `Space` | the same path recorded against another space; the page left behind is not removed |
 
 A retitle is written even under `--changes-only`. The content fingerprint would
 otherwise match, the update would be skipped, and the page would keep its old
@@ -467,6 +467,15 @@ where the mapping cannot apply -- is a warning.
   does not remove the page. So is every page of a space whose homepage Mark
   could not read, since any of them may be it. A run with `--on-orphan report`
   stops tracking such a page, as it does every page it reports.
+* A page in **a space the run was not given** is left alone and reported, and
+  stays tracked. With `--space`, a run looks for orphans in that space alone: a
+  document's `Space` header says where that document is published, not that the
+  other pages tracked in its space are this run's to remove. A run with no
+  `--space` takes its spaces from its documents and looks for orphans in each,
+  so publish such a space in a run given it, or none.
+* A document whose **`Space` changed** is not gone. The page it published
+  before is left behind in the space it left, which stops tracking it; the run
+  says so and reports no orphan.
 * A document that opted out with `Synchronized: false` still counts as present.
 * `--dry-run` reports what would go and touches nothing.
 

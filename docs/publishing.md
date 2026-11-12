@@ -256,10 +256,10 @@ gone](page-tree.md#removing-pages-whose-files-are-gone), under `--track-pages`, 
 where it is, `archive` or `delete` for one that was archived or trashed. A page
 `--on-orphan` would have removed but left where it is -- because it has child
 pages or folders, because it is in another space than the manifest that records
-it, because it is the space homepage or the page the manifest is kept on,
-because the space homepage could not be read, or
-because nothing was published in its space this run -- is
-`report`, with a `reason` saying why.
+it, because its space is not the one `--space` gave the run, because it is
+the space homepage or the page the manifest is kept on, because the space
+homepage could not be read, or because nothing was published in its space
+this run -- is `report`, with a `reason` saying why.
 
 `untracked` lists the spaces published to without a page manifest under
 [`--manifest-page-optional`](page-tree.md#when-the-manifest-page-does-not-exist-yet),

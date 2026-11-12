@@ -2061,9 +2061,10 @@ func (s *Store) Survivors(spaceKey, glob string) int {
 //
 // It is not a pure query. A recorded path that is gone from the run, and whose
 // page another document published this run, is not returned but forgotten:
-// its entry is dropped and its shard marked for writing. The change is in
-// memory until Save, so a dry run, whose read-only store never writes, leaves
-// the stored manifest as it was.
+// its entry is dropped and its shard marked for writing. So is the entry of a
+// document the run recorded in another space, whose page here is left behind.
+// The change is in memory until Save, so a dry run, whose read-only store
+// never writes, leaves the stored manifest as it was.
 func (s *Store) Orphans(spaceKey string) []string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -2114,6 +2115,21 @@ func (s *Store) orphans(spaceKey string) []string {
 				}
 				continue
 			}
+			// A document this run publishes into another space is not gone: it
+			// changed space, and the page it left here is left behind. Once it
+			// is recorded there this space stops tracking it, so the page is
+			// not looked for again.
+			if other, ok := s.publishedElsewhere(spaceKey, path); ok {
+				if _, recorded := s.spaces[other].shards[i].pages[path]; recorded {
+					log.Info().Msgf(
+						"%s now publishes to space %q; its page %s in space %q is left behind and no longer tracked",
+						path, other, entry.PageID, spaceKey,
+					)
+					delete(state.shards[i].pages, path)
+					state.shards[i].dirty = true
+				}
+				continue
+			}
 			orphans = append(orphans, path)
 		}
 	}
@@ -2130,6 +2146,23 @@ func (s *Store) orphans(spaceKey string) []string {
 
 	sort.Strings(orphans)
 	return orphans
+}
+
+// publishedElsewhere returns the space other than spaceKey in which this run
+// looked up or recorded path, one of the documents it publishes. Called with
+// s.mu held.
+func (s *Store) publishedElsewhere(spaceKey, path string) (string, bool) {
+	if !s.runFiles[path] {
+		return "", false
+	}
+
+	for _, other := range s.sortedSpaces() {
+		if other != spaceKey && s.spaces[other].seen[path] {
+			return other, true
+		}
+	}
+
+	return "", false
 }
 
 // Spaces returns the space keys this store has loaded, sorted.

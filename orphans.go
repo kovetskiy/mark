@@ -56,6 +56,17 @@ func handleOrphans(
 			continue
 		}
 
+		// The space a run is given is the one it speaks for. Another is in the
+		// run only because a document's Space header names it, which says
+		// where that document goes and nothing of the other pages tracked
+		// there: they stay as they are, entries included, for a run given
+		// that space or none.
+		if own := config.Page.Space; own != "" && !strings.EqualFold(own, space) {
+			leaveOtherSpace(config, space, own, orphans, action, results)
+
+			continue
+		}
+
 		scopeID, err := page.ResolveScope(ctx, api, space, config.Tracking.OrphanUnder)
 		if err != nil {
 			return err
@@ -269,6 +280,35 @@ func handleOrphans(
 	}
 
 	return nil
+}
+
+// leaveOtherSpace says which tracked pages of a space other than the run's own
+// had no source file in the run, and lists those --on-orphan was to remove as
+// left where they are. Before any scope is resolved: --orphan-under names a
+// place in the run's own space.
+func leaveOtherSpace(
+	config Config, space, own string, orphans []manifest.Orphan, action report.OnOrphan, results *report.Report,
+) {
+	paths := make([]string, 0, len(orphans))
+	for _, orphan := range orphans {
+		paths = append(paths, orphan.Path)
+	}
+
+	reason := fmt.Sprintf("space %q is not the run's space, %q", space, own)
+	log.Warn().Msgf(
+		"space %q: %d tracked page(s) had no matching source file in this run and are left alone, still tracked, since %s: %s",
+		space, len(paths), reason, strings.Join(paths, ", "),
+	)
+
+	if action == report.OnOrphanReport || config.Mode.readOnly() {
+		return
+	}
+
+	for _, orphan := range orphans {
+		reportKept(results, page.Orphan{
+			Path: orphan.Path, PageID: orphan.Entry.PageID, Title: orphan.Entry.Title,
+		}, reason)
+	}
 }
 
 // listedScope reports whether the orphans of glob are keys a partial run's
