@@ -110,11 +110,12 @@ concept name has only letters, digits and dashes.
 An attachment is also written under another name where publishing the export
 back would read its own as something other than that one file:
 
-* A name ending in `.md`, in any case, gets `.txt` after it, `notes.md`
-  becoming `notes.md.txt`. The documents are then the only `.md` files an
-  export writes, so a glob such as `docs/**/*.md` publishes the pages and
-  nothing else; an attachment under its own name would be published as a
-  document, with whatever headers it holds.
+* A name ending in `.md`, in any case and with any trailing dots or spaces,
+  gets `.txt` after it, `notes.md` becoming `notes.md.txt`. The documents
+  are then the only `.md` files an export writes, so a glob such as
+  `docs/**/*.md` publishes the pages and nothing else; an attachment under
+  its own name would be published as a document, with whatever headers it
+  holds.
 * `*`, `?`, `[`, `]`, `{` and `}` are each written as `_`, `report[2024].pdf`
   becoming `report_2024_.pdf`. An `Attachment` header holding one of them is
   [a pattern](attachments.md#declaring-attachments), which can match other files beside the document.
