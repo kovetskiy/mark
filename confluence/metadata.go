@@ -2,9 +2,9 @@ package confluence
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"net/url"
+	"strconv"
 )
 
 // LabelQuery selects site labels, labels used in a space, or labels on an object.
@@ -60,20 +60,17 @@ func (api *API) ListLabels(ctx context.Context, query LabelQuery) ([]Label, erro
 		path = []string{query.Collection, query.ID, "labels"}
 	}
 
-	type labelV2 struct {
-		ID     json.Number `json:"id"`
-		Name   string      `json:"name"`
-		Prefix string      `json:"prefix"`
-	}
-
-	labels := []Label{}
-
-	err := eachV2Required(ctx, api, path, url.Values{"limit": {"250"}}, "list labels (Confluence Cloud endpoint)", func(label labelV2) bool {
-		labels = append(labels, Label{ID: label.ID.String(), Name: label.Name, Prefix: label.Prefix})
-		return false
-	})
+	found, err := listV2[labelV2](
+		ctx, api, path, url.Values{"limit": {strconv.Itoa(labelPageSize)}},
+		"list labels (Confluence Cloud endpoint)", false,
+	)
 	if err != nil {
 		return nil, err
+	}
+
+	labels := make([]Label, 0, len(found))
+	for _, label := range found {
+		labels = append(labels, Label{ID: label.ID.String(), Name: label.Name, Prefix: label.Prefix})
 	}
 
 	return labels, nil
