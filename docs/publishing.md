@@ -241,7 +241,7 @@ A `kind` is one of:
 | `include` | an include in a fragment that now resolves beside the fragment, not the document |
 | `placement` | a page not placed where its document asks: found outside its declared parents, outside `--parents-from-path-root`, under a parent title several documents declare, given an `Order` its parent cannot be found for, or left behind in the space it used to publish to |
 | `shared-page` | a page the manifest records for this document and another, listed against both |
-| `missing-page` | a page or folder the manifest recorded, for the document or a parent, that no longer exists |
+| `missing-page` | a page or folder the manifest recorded, for the document or a parent, that no longer exists or, for a page, is in the trash |
 | `other-space` | a page or folder the manifest recorded, for the document, the file it was renamed from or a parent, that is in another space; it is left alone and the document is published by title |
 
 Each is also logged, and listed once even when a document is published twice in

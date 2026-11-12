@@ -389,6 +389,16 @@ func (s *Server) DeletePage(id string) {
 	delete(s.pages, id)
 }
 
+// TrashPage moves a page to the trash, as someone deleting it in the
+// Confluence UI does: the page keeps its id and is no longer live.
+func (s *Server) TrashPage(id string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if p, ok := s.pages[id]; ok {
+		p.Trashed = true
+	}
+}
+
 // archiveContent serves the bulk archive endpoint, which takes a list of pages
 // rather than addressing one by id.
 func (s *Server) archiveContent(w http.ResponseWriter, r *http.Request) {
@@ -1902,6 +1912,11 @@ func (s *Server) contentByID(w http.ResponseWriter, r *http.Request, id string) 
 		}
 		writeJSON(w, http.StatusOK, s.pageJSON(p, expansions(r, "version")))
 	case http.MethodPut:
+		// A page in the trash is no more there to update than to read.
+		if p.Trashed {
+			writeJSON(w, http.StatusNotFound, map[string]any{"message": "no content with id " + id})
+			return
+		}
 		var payload struct {
 			Title string `json:"title"`
 			// A pointer, so that an absent key and an empty list are different
@@ -3015,6 +3030,11 @@ func (s *Server) contentV2ByID(w http.ResponseWriter, r *http.Request, id, pageT
 		writeJSON(w, http.StatusOK, s.contentJSONV2(p, r.URL.Query().Get("body-format") != ""))
 
 	case http.MethodPut:
+		// The trash is read with its status, and is not written to.
+		if p.Trashed {
+			writeJSON(w, http.StatusNotFound, map[string]any{"message": "no content with id " + id})
+			return
+		}
 		var payload struct {
 			Title    string `json:"title"`
 			Status   string `json:"status"`

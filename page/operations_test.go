@@ -5,6 +5,8 @@ import (
 	"context"
 	"testing"
 
+	"github.com/kovetskiy/mark/v17/confluence"
+	"github.com/kovetskiy/mark/v17/confluence/confluencetest"
 	"github.com/kovetskiy/mark/v17/page"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -307,4 +309,24 @@ func TestWatchRecursiveRefusesAFolderBeforeWatchingAnything(t *testing.T) {
 
 	require.NoError(t, page.Watch(context.Background(), api, page.Ref{ID: top.ID}, page.WatchOptions{}, &bytes.Buffer{}),
 		"without --recursive the folder is no concern")
+}
+
+// TestResolveTakesATrashedPageAsNotFound: a page named by id that is in the
+// trash is not a page to move, rename or archive, whichever API reads it.
+func TestResolveTakesATrashedPageAsNotFound(t *testing.T) {
+	for name, prefix := range map[string]string{"v1": "", "gateway": "/ex/confluence/cloud-id"} {
+		t.Run(name, func(t *testing.T) {
+			server := confluencetest.New(t)
+			api := confluence.NewAPI(server.URL+prefix, confluence.Options{Username: "user", Password: "token"})
+			gone := server.AddPage("DOCS", "Gone", "page", "")
+			server.TrashPage(gone.ID)
+
+			_, err := page.Resolve(context.Background(), api, page.Ref{ID: gone.ID})
+			require.ErrorIs(t, err, confluence.ErrNotFound)
+
+			err = page.Rename(context.Background(), api, page.Ref{ID: gone.ID}, "Back", page.RenameOptions{}, &bytes.Buffer{})
+			require.ErrorIs(t, err, confluence.ErrNotFound)
+			assert.Equal(t, "Gone", server.Page(gone.ID).Title)
+		})
+	}
 }
