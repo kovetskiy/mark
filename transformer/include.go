@@ -54,40 +54,10 @@ func (t *IncludeTransformer) Transform(doc *ast.Document, reader text.Reader, pc
 
 // TransformWithModified transforms the AST and returns true if any modifications were made.
 func (t *IncludeTransformer) TransformWithModified(doc *ast.Document, reader text.Reader, pc parser.Context) bool {
-	type includeTarget struct {
-		node       ast.Node
-		rawContent []byte
-		lineNum    int
-	}
+	targets := directiveNodes(doc, reader.Source(), func(raw []byte) bool {
+		dir, _ := includes.ParseIncludeDirective(raw)
 
-	var targets []includeTarget
-
-	_ = ast.Walk(doc, func(node ast.Node, entering bool) (ast.WalkStatus, error) {
-		if !entering {
-			return ast.WalkContinue, nil
-		}
-
-		// A directive written as an example is not a directive. The span
-		// itself contributes nothing, and its children are skipped too or the
-		// walk simply finds the directive one level further down.
-		if node.Kind() == ast.KindCodeSpan {
-			return ast.WalkSkipChildren, nil
-		}
-
-		rawContent := directiveSource(node, reader.Source())
-		if rawContent == nil {
-			return ast.WalkContinue, nil
-		}
-
-		if dir, _ := includes.ParseIncludeDirective(rawContent); dir != nil {
-			targets = append(targets, includeTarget{
-				node:       node,
-				rawContent: rawContent,
-				lineNum:    getNodeLineNumber(node, reader.Source()),
-			})
-		}
-
-		return ast.WalkContinue, nil
+		return dir != nil
 	})
 
 	if len(targets) == 0 {
@@ -96,27 +66,27 @@ func (t *IncludeTransformer) TransformWithModified(doc *ast.Document, reader tex
 
 	modified := false
 	for _, target := range targets {
-		tmpl, expanded, _, err := includes.ProcessIncludesIn(t.Root, t.BaseDir, t.IncludePath, target.rawContent, t.Templates, nil, t.Warnings)
+		tmpl, expanded, _, err := includes.ProcessIncludesIn(t.Root, t.BaseDir, t.IncludePath, target.raw, t.Templates, nil, t.Warnings)
 		if err != nil {
 			t.Err = err
 			log.Error().
 				Str("file", t.FilePath).
-				Int("line", target.lineNum).
+				Int("line", target.line).
 				Err(err).
 				Msg("unable to process include")
 			return false
 		}
-		if bytes.Equal(expanded, target.rawContent) {
+		if bytes.Equal(expanded, target.raw) {
 			continue
 		}
 		t.Templates = tmpl
 
 		subDoc := parseSubDocument(expanded)
 		if err := convertSegmentsToStrings(subDoc, expanded); err != nil {
-			t.Err = fmt.Errorf("unable to process include at line %d: %w", target.lineNum, err)
+			t.Err = fmt.Errorf("unable to process include at line %d: %w", target.line, err)
 			log.Error().
 				Str("file", t.FilePath).
-				Int("line", target.lineNum).
+				Int("line", target.line).
 				Err(err).
 				Msg("unable to process include")
 			return false

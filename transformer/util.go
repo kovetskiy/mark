@@ -148,6 +148,33 @@ func directiveSource(node ast.Node, source []byte) []byte {
 	return nil
 }
 
+// directiveNode is a node a directive is read from.
+type directiveNode struct {
+	node ast.Node
+	raw  []byte
+	line int
+}
+
+// directiveNodes are the nodes under doc whose markup isDirective takes for
+// a directive, in document order.
+func directiveNodes(doc ast.Node, source []byte, isDirective func(raw []byte) bool) []directiveNode {
+	var found []directiveNode
+
+	_ = ast.Walk(doc, func(node ast.Node, entering bool) (ast.WalkStatus, error) {
+		if !entering {
+			return ast.WalkContinue, nil
+		}
+
+		if raw := directiveSource(node, source); raw != nil && isDirective(raw) {
+			found = append(found, directiveNode{node: node, raw: raw, line: getNodeLineNumber(node, source)})
+		}
+
+		return ast.WalkContinue, nil
+	})
+
+	return found
+}
+
 // holdsInlines reports whether node's children are inline content.
 func holdsInlines(node ast.Node) bool {
 	if _, ok := node.(ast.InlineNode); ok {
