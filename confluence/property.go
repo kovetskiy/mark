@@ -82,6 +82,7 @@ func (api *API) listPropertiesV2(ctx context.Context, collection, ownerID string
 		[]string{collection, ownerID, "properties"},
 		url.Values{"limit": {strconv.Itoa(propertyPageSize)}},
 		fmt.Sprintf("read properties of %s %s", strings.TrimSuffix(collection, "s"), ownerID),
+		true,
 	)
 }
 
