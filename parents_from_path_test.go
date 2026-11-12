@@ -413,11 +413,11 @@ func TestDirectoryPageMadeForAFailedDocumentIsRecorded(t *testing.T) {
 	assert.Equal(t, guides, entry.PageID)
 }
 
-// TestDirectoryPageReplacedByHandStaysWhileTheDirectoryDoes: the page mark made
-// for a directory was retitled and another written under its title. The new
-// one is not mark's, and the old one is no orphan while the directory is
-// there; it goes with the directory.
-func TestDirectoryPageReplacedByHandStaysWhileTheDirectoryDoes(t *testing.T) {
+// TestDirectoryPageReplacedByHandIsLeftAlone: the page mark made for a
+// directory was retitled and another written under its title. Neither is an
+// orphan: the new one is not mark's, and the old one no longer stands for the
+// directory.
+func TestDirectoryPageReplacedByHandIsLeftAlone(t *testing.T) {
 	server := hierarchyServer(t)
 	dir := t.TempDir()
 	writeAt(t, dir, "guides/setup.md", space+"<!-- Title: Setup -->\n\nSetup.\n")
@@ -435,16 +435,14 @@ func TestDirectoryPageReplacedByHandStaysWhileTheDirectoryDoes(t *testing.T) {
 	server.MovePage(setup, written.ID)
 
 	require.NoError(t, Run(t.Context(), config))
-	require.NoError(t, Run(t.Context(), config))
 	assert.False(t, server.Page(made).Trashed, "the directory is still there")
-	entry, ok := lookupKey(t, server, filepath.Join(dir, "guides"))
-	require.True(t, ok)
-	assert.Equal(t, made, entry.PageID, "the page written by hand is not recorded")
+	_, ok := lookupKey(t, server, filepath.Join(dir, "guides"))
+	assert.False(t, ok, "the page written by hand is not recorded")
 
 	require.NoError(t, os.RemoveAll(filepath.Join(dir, "guides")))
 	require.NoError(t, Run(t.Context(), config))
 	require.NoError(t, Run(t.Context(), config))
-	assert.True(t, server.Page(made).Trashed, "the page mark made goes with its directory")
+	assert.False(t, server.Page(made).Trashed, "the retitled page stays")
 	assert.False(t, server.Page(written.ID).Trashed, "the page written by hand stays")
 }
 

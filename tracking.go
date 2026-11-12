@@ -508,24 +508,29 @@ func recordDirectoryPages(
 // created: in this run, or in an earlier one that recorded it, under this key
 // or under one the run finds gone, as after the directory was renamed.
 //
-// The key is marked seen either way. The directory is there, so an entry
-// naming another page under it is no orphan yet.
+// An entry naming another page under the key is dropped when the page found
+// is not mark's: the directory is there, so that page is no orphan, and it no
+// longer stands for the directory.
 func ownDirectoryPage(
 	ctx context.Context,
 	tracker *manifest.Store,
 	created map[string]bool,
 	space, key, pageID string,
 ) (bool, error) {
-	entry, ok, err := tracker.Lookup(ctx, space, key)
+	entry, recorded, err := tracker.Recorded(ctx, space, key)
 	if err != nil {
 		return false, err
 	}
-	if created[pageID] || ok && entry.PageID == pageID {
+	if created[pageID] || recorded && entry.PageID == pageID {
 		return true, nil
 	}
 
 	_, moved, err := tracker.LookupMoved(ctx, space, key, pageID)
-	return moved, err
+	if err != nil || moved || !recorded {
+		return moved, err
+	}
+
+	return false, tracker.Forget(ctx, space, key)
 }
 
 // recordPublished records in the manifest the page a document was published
