@@ -8,6 +8,8 @@ import (
 	"net/url"
 	"slices"
 	"strings"
+
+	"github.com/rs/zerolog/log"
 )
 
 // The operations a page can be restricted on.
@@ -52,6 +54,10 @@ func (n names) add(list ...string) names {
 		}
 	}
 	return n
+}
+
+func (n names) has(name string) bool {
+	return n[strings.ToLower(name)] != ""
 }
 
 func (n names) intersect(other names) names {
@@ -390,6 +396,20 @@ func (api *API) getPageRestrictions(ctx context.Context, pageID string) (restric
 	}
 
 	return current, nil
+}
+
+// updatesRestrictedTo reports whether user is among those the page's update
+// restriction names. A restriction that cannot be read is taken for one that
+// does not name the user, so that the caller goes on to set it as it would
+// have without asking.
+func (api *API) updatesRestrictedTo(ctx context.Context, pageID, user string) bool {
+	current, err := api.getPageRestrictions(ctx, pageID)
+	if err != nil {
+		log.Debug().Err(err).Msgf("unable to read the update restriction of page %s; setting it regardless", pageID)
+		return false
+	}
+
+	return current[RestrictUpdate].users.has(user)
 }
 
 // putPageRestrictions replaces every read and update restriction on the page
