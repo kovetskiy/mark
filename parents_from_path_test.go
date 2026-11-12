@@ -350,9 +350,7 @@ func TestPageFoundForADirectoryIsNotAnOrphan(t *testing.T) {
 	setup := pageIDTitled(t, server, "Setup")
 	require.Equal(t, guides.ID, server.Page(setup).ParentID, "the page found is the directory's")
 
-	api := confluence.NewAPI(server.URL, confluence.Options{Username: "user", Password: "token"})
-	_, ok, err := manifest.NewStore(api).Lookup(t.Context(), "DOCS", filepath.Join(dir, "guides"))
-	require.NoError(t, err)
+	_, ok := lookupKey(t, server, filepath.Join(dir, "guides"))
 	assert.False(t, ok, "a page mark found is not recorded as one it made")
 
 	require.NoError(t, os.RemoveAll(filepath.Join(dir, "guides")))
@@ -410,11 +408,77 @@ func TestDirectoryPageMadeForAFailedDocumentIsRecorded(t *testing.T) {
 	guides := pageIDTitled(t, server, "Guides")
 	require.NotEmpty(t, guides)
 
-	api := confluence.NewAPI(server.URL, confluence.Options{Username: "user", Password: "token"})
-	entry, ok, err := manifest.NewStore(api).Lookup(t.Context(), "DOCS", filepath.Join(dir, "guides"))
-	require.NoError(t, err)
+	entry, ok := lookupKey(t, server, filepath.Join(dir, "guides"))
 	require.True(t, ok, "the directory's page is recorded")
 	assert.Equal(t, guides, entry.PageID)
+}
+
+// TestDirectoryPageReplacedByHandStaysWhileTheDirectoryDoes: the page mark made
+// for a directory was retitled and another written under its title. The new
+// one is not mark's, and the old one is no orphan while the directory is
+// there; it goes with the directory.
+func TestDirectoryPageReplacedByHandStaysWhileTheDirectoryDoes(t *testing.T) {
+	server := hierarchyServer(t)
+	dir := t.TempDir()
+	writeAt(t, dir, "guides/setup.md", space+"<!-- Title: Setup -->\n\nSetup.\n")
+	writeAt(t, dir, "keep.md", space+"<!-- Title: Keep -->\n\nKeep.\n")
+
+	config := trackingConfig(server, filepath.Join(dir, "**", "*.md"))
+	config.ParentsFromPath = true
+	config.ParentsFromPathRoot = dir
+	config.Tracking.OnOrphan = report.OnOrphanDelete
+	require.NoError(t, Run(t.Context(), config))
+
+	made, setup := pageIDTitled(t, server, "Guides"), pageIDTitled(t, server, "Setup")
+	server.RenamePage(made, "Old guides")
+	written := server.AddPage("DOCS", "Guides", "page", pageIDTitled(t, server, "Home"))
+	server.MovePage(setup, written.ID)
+
+	require.NoError(t, Run(t.Context(), config))
+	require.NoError(t, Run(t.Context(), config))
+	assert.False(t, server.Page(made).Trashed, "the directory is still there")
+	entry, ok := lookupKey(t, server, filepath.Join(dir, "guides"))
+	require.True(t, ok)
+	assert.Equal(t, made, entry.PageID, "the page written by hand is not recorded")
+
+	require.NoError(t, os.RemoveAll(filepath.Join(dir, "guides")))
+	require.NoError(t, Run(t.Context(), config))
+	require.NoError(t, Run(t.Context(), config))
+	assert.True(t, server.Page(made).Trashed, "the page mark made goes with its directory")
+	assert.False(t, server.Page(written.ID).Trashed, "the page written by hand stays")
+}
+
+// TestRenamedDirectoryKeepsItsRecordedPage: a directory whose title a .pages
+// file holds is renamed, so its page is found under a key the manifest does
+// not have. It is still the page mark made, and is recorded under the new key.
+func TestRenamedDirectoryKeepsItsRecordedPage(t *testing.T) {
+	server := hierarchyServer(t)
+	dir := t.TempDir()
+	writeAt(t, dir, "guides/.pages", "title: Guides\n")
+	writeAt(t, dir, "guides/setup.md", space+"<!-- Title: Setup -->\n\nSetup.\n")
+	writeAt(t, dir, "keep.md", space+"<!-- Title: Keep -->\n\nKeep.\n")
+
+	config := trackingConfig(server, filepath.Join(dir, "**", "*.md"))
+	config.ParentsFromPath = true
+	config.ParentsFromPathRoot = dir
+	config.Tracking.OnOrphan = report.OnOrphanDelete
+	require.NoError(t, Run(t.Context(), config))
+	guides := pageIDTitled(t, server, "Guides")
+
+	require.NoError(t, os.Rename(filepath.Join(dir, "guides"), filepath.Join(dir, "manuals")))
+	require.NoError(t, Run(t.Context(), config))
+
+	_, ok := lookupKey(t, server, filepath.Join(dir, "guides"))
+	assert.False(t, ok, "the old key is gone")
+	entry, ok := lookupKey(t, server, filepath.Join(dir, "manuals"))
+	require.True(t, ok, "the page follows the directory")
+	assert.Equal(t, guides, entry.PageID)
+	assert.False(t, server.Page(guides).Trashed)
+
+	require.NoError(t, os.RemoveAll(filepath.Join(dir, "manuals")))
+	require.NoError(t, Run(t.Context(), config))
+	require.NoError(t, Run(t.Context(), config))
+	assert.True(t, server.Page(guides).Trashed, "and is removed once the directory is empty")
 }
 
 // TestDirectoryWithAnIndexIsNotRecordedTwice: a directory holding its own

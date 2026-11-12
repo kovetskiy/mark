@@ -110,7 +110,8 @@ Only a page Mark created is remembered. A page that was already there under a
 directory's title is used as the directory's page, but Mark writes nothing to
 it and never treats it as an orphan, so it stays when the directory's documents
 go. That holds for a directory page Mark created while `--track-pages` was off,
-too: nothing recorded it.
+or in a run that published none of the directory's documents, too: nothing
+recorded it.
 
 A directory holding its own `index.md` or `README.md` is not remembered this
 way, that document's own entry having the page already. Directories are

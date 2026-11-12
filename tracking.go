@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"slices"
 	"strings"
-	"sync"
 
 	"github.com/kovetskiy/mark/v17/confluence"
 	"github.com/kovetskiy/mark/v17/manifest"
@@ -441,14 +440,13 @@ func resolveRenamedFile(
 // A directory only documents lie in is recorded under its key in
 // directoryKeys, in their scope; any other by its path.
 //
-// Only a page mark created is recorded: one of created, or one the manifest
-// already holds. mark writes nothing to a directory's page, so one that was
-// there before it is somebody else's, and --on-orphan must never be offered
-// it.
+// Only a page mark created is recorded: it writes nothing to a directory's
+// page, so one that was there before it is somebody else's, and --on-orphan
+// must never be offered it.
 func recordDirectoryPages(
 	ctx context.Context,
 	tracker *manifest.Store,
-	created *createdPages,
+	created map[string]bool,
 	target *confluence.PageInfo,
 	hierarchy *page.Hierarchy,
 	directoryKeys map[string]string,
@@ -509,49 +507,25 @@ func recordDirectoryPages(
 // ownDirectoryPage reports whether the page found for a directory is one mark
 // created: in this run, or in an earlier one that recorded it, under this key
 // or under one the run finds gone, as after the directory was renamed.
+//
+// The key is marked seen either way. The directory is there, so an entry
+// naming another page under it is no orphan yet.
 func ownDirectoryPage(
 	ctx context.Context,
 	tracker *manifest.Store,
-	created *createdPages,
+	created map[string]bool,
 	space, key, pageID string,
 ) (bool, error) {
-	if created.has(pageID) {
-		return true, nil
-	}
-
-	entry, ok, err := tracker.Recorded(ctx, space, key)
+	entry, ok, err := tracker.Lookup(ctx, space, key)
 	if err != nil {
 		return false, err
 	}
-	if ok && entry.PageID == pageID {
+	if created[pageID] || ok && entry.PageID == pageID {
 		return true, nil
 	}
 
 	_, moved, err := tracker.LookupMoved(ctx, space, key, pageID)
 	return moved, err
-}
-
-// createdPages is the set of pages a run created as parents, by id.
-type createdPages struct {
-	mu  sync.Mutex
-	ids map[string]bool
-}
-
-func (c *createdPages) add(page *confluence.PageInfo) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	if c.ids == nil {
-		c.ids = map[string]bool{}
-	}
-	c.ids[page.ID] = true
-}
-
-func (c *createdPages) has(id string) bool {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	return c.ids[id]
 }
 
 // recordPublished records in the manifest the page a document was published
