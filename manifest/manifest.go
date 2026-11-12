@@ -2115,7 +2115,7 @@ func (s *Store) sortedSpaces() []string {
 //
 // A space that gained no new mapping is not written at all, so a repeat run over
 // unchanged files leaves the property -- and its version number -- alone.
-func (s *Store) Save(ctx context.Context) (err error) {
+func (s *Store) Save(ctx context.Context) error {
 	if s.readOnly {
 		return nil
 	}
@@ -2123,20 +2123,17 @@ func (s *Store) Save(ctx context.Context) (err error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	// A space whose manifest page could not be looked for again keeps no other
-	// space from being saved, nor is its failure lost to a later one's.
-	// Nor does a shard another run kept this one from saving.
-	var lateErrs, unsaved []error
-	defer func() {
-		err = errors.Join(append(append(lateErrs, unsaved...), err)...)
-	}()
+	// Each property describes pages or parents the others say nothing about,
+	// so one that cannot be written keeps no other from being saved, nor is
+	// its failure lost to a later one's.
+	var errs []error
 	for _, spaceKey := range s.sortedSpaces() {
 		state := s.spaces[spaceKey]
 
 		if state.untracked {
 			attached, err := s.attachLatePage(ctx, spaceKey, state)
 			if err != nil {
-				lateErrs = append(lateErrs, err)
+				errs = append(errs, err)
 				continue
 			}
 			if !attached {
@@ -2145,39 +2142,25 @@ func (s *Store) Save(ctx context.Context) (err error) {
 		}
 
 		if state.foldersDirty {
-			value, err := json.Marshal(folderDocument{
-				Version: formatVersion,
-				Folders: state.folders,
-			})
-			if err != nil {
-				return fmt.Errorf("unable to encode folder mapping for space %q: %w", spaceKey, err)
-			}
-
-			written, err := state.writeMapping(
-				ctx,
-				s.api, spaceKey, FolderPropertyKeyFor(s.prefix), value, state.folderProperty, "folder mapping",
+			written, err := s.saveMapping(
+				ctx, spaceKey, state, FolderPropertyKeyFor(s.prefix),
+				folderDocument{Version: formatVersion, Folders: state.folders},
+				state.folderProperty, "folder mapping",
 			)
 			if err != nil {
-				return err
+				errs = append(errs, err)
 			}
 			state.foldersDirty = !written
 		}
 
 		if state.parentsDirty {
-			value, err := json.Marshal(parentDocument{
-				Version: formatVersion,
-				Parents: state.parents,
-			})
-			if err != nil {
-				return fmt.Errorf("unable to encode parent mapping for space %q: %w", spaceKey, err)
-			}
-
-			written, err := state.writeMapping(
-				ctx,
-				s.api, spaceKey, ParentPropertyKeyFor(s.prefix), value, state.parentProperty, "parent mapping",
+			written, err := s.saveMapping(
+				ctx, spaceKey, state, ParentPropertyKeyFor(s.prefix),
+				parentDocument{Version: formatVersion, Parents: state.parents},
+				state.parentProperty, "parent mapping",
 			)
 			if err != nil {
-				return err
+				errs = append(errs, err)
 			}
 			state.parentsDirty = !written
 		}
@@ -2188,17 +2171,31 @@ func (s *Store) Save(ctx context.Context) (err error) {
 			}
 
 			if err := s.saveShard(ctx, spaceKey, state, i); err != nil {
-				if !errors.Is(err, confluence.ErrPropertyConflict) && !errors.Is(err, confluence.ErrPropertyUnseen) {
-					return err
-				}
-				// The other shards describe pages this one says nothing
-				// about, so they are still written.
-				unsaved = append(unsaved, err)
+				errs = append(errs, err)
 			}
 		}
 	}
 
-	return nil
+	return errors.Join(errs...)
+}
+
+// saveMapping encodes and writes one of the mappings that covers the whole
+// space, and reports whether it was written.
+func (s *Store) saveMapping(
+	ctx context.Context,
+	spaceKey string,
+	state *spaceState,
+	key string,
+	mapping any,
+	existing *confluence.Property,
+	what string,
+) (bool, error) {
+	value, err := json.Marshal(mapping)
+	if err != nil {
+		return false, fmt.Errorf("unable to encode %s for space %q: %w", what, spaceKey, err)
+	}
+
+	return state.writeMapping(ctx, s.api, spaceKey, key, value, existing, what)
 }
 
 // saveShard writes one shard. When another run wrote it since this run read
