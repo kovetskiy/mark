@@ -914,3 +914,74 @@ func TestDeletedFileIsReportedOnceThenForgotten(t *testing.T) {
 	assert.NotContains(t, second, "had no matching source file",
 		"and not on every run thereafter")
 }
+
+// TestOnOrphanLeavesAPageAnotherPatternPublishes: a file moved from one run's
+// pattern into another's keeps its page, which the second run records under
+// the new path. The first run finds its own path gone, but the page is still
+// published, so it is neither removed nor reported, and the first run stops
+// tracking it.
+func TestOnOrphanLeavesAPageAnotherPatternPublishes(t *testing.T) {
+	server, _ := docsSpace(t)
+	dir := t.TempDir()
+
+	writeAt(t, dir, "guides/doc.md", markdownWithTitle("Doc"))
+	writeAt(t, dir, "guides/keep.md", markdownWithTitle("Keep"))
+	writeAt(t, dir, "notes/other.md", markdownWithTitle("Other"))
+
+	guides := trackingConfig(server, filepath.Join(dir, "guides", "*.md"))
+	guides.Tracking.OnOrphan = report.OnOrphanDelete
+	notes := trackingConfig(server, filepath.Join(dir, "notes", "*.md"))
+	notes.Tracking.OnOrphan = report.OnOrphanDelete
+
+	require.NoError(t, Run(context.Background(), guides))
+	require.NoError(t, Run(context.Background(), notes))
+	docID := pageIDTitled(t, server, "Doc")
+	require.NotEmpty(t, docID)
+
+	require.NoError(t, os.Rename(filepath.Join(dir, "guides", "doc.md"), filepath.Join(dir, "notes", "doc.md")))
+	require.NoError(t, Run(context.Background(), notes))
+	require.Equal(t, docID, pageIDTitled(t, server, "Doc"), "the moved file publishes to the page it had")
+
+	var out bytes.Buffer
+	guides.Output = &out
+	guides.Report.OutputFormat = report.FormatJSON
+	logged := captureLog(t, func() { require.NoError(t, Run(context.Background(), guides)) })
+
+	assert.Equal(t, docID, pageIDTitled(t, server, "Doc"), "a page another pattern's file publishes is left where it is")
+	assert.NotContains(t, logged, "had no matching source file")
+	assert.NotContains(t, out.String(), "guides/doc.md", "the run reports no orphan for it")
+
+	// Neither run takes the page for an orphan afterwards.
+	require.NoError(t, Run(context.Background(), notes))
+	second := captureLog(t, func() { require.NoError(t, Run(context.Background(), guides)) })
+	assert.Equal(t, docID, pageIDTitled(t, server, "Doc"))
+	assert.NotContains(t, second, "had no matching source file")
+}
+
+// TestOnOrphanStillRemovesAPageOfAFileMovedOutOfEveryPattern: a file moved
+// where no run publishes it leaves no other path recording its page, so the
+// page is removed as any orphan is.
+func TestOnOrphanStillRemovesAPageOfAFileMovedOutOfEveryPattern(t *testing.T) {
+	server, _ := docsSpace(t)
+	dir := t.TempDir()
+
+	writeAt(t, dir, "guides/doc.md", markdownWithTitle("Doc"))
+	writeAt(t, dir, "guides/keep.md", markdownWithTitle("Keep"))
+	writeAt(t, dir, "notes/other.md", markdownWithTitle("Other"))
+
+	guides := trackingConfig(server, filepath.Join(dir, "guides", "*.md"))
+	guides.Tracking.OnOrphan = report.OnOrphanDelete
+	notes := trackingConfig(server, filepath.Join(dir, "notes", "*.md"))
+
+	require.NoError(t, Run(context.Background(), guides))
+	require.NoError(t, Run(context.Background(), notes))
+	require.NotEmpty(t, pageIDTitled(t, server, "Doc"))
+
+	// Moved where no run publishes it: nothing else records the page.
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "drafts"), 0o750))
+	require.NoError(t, os.Rename(filepath.Join(dir, "guides", "doc.md"), filepath.Join(dir, "drafts", "doc.md")))
+	require.NoError(t, Run(context.Background(), notes))
+	require.NoError(t, Run(context.Background(), guides))
+
+	assert.Empty(t, pageIDTitled(t, server, "Doc"), "a page no other path records is removed")
+}

@@ -1756,3 +1756,56 @@ func TestSpacesOfDifferentKeysStayApart(t *testing.T) {
 	assert.Equal(t, 1, store.Published("DOCS"))
 	assert.Equal(t, 1, store.Published("docs2"))
 }
+
+// TestOrphansForgetAPathWhosePageAnotherPatternRecords: a page recorded under
+// a path of another run's pattern is that run's to look for. This run's own
+// path for it, gone from the run, is stale: not offered as an orphan, and
+// forgotten.
+func TestOrphansForgetAPathWhosePageAnotherPatternRecords(t *testing.T) {
+	ctx := t.Context()
+	server := confluencetest.New(t)
+	server.AddSpace("DOCS")
+	api := confluence.NewAPI(server.URL, confluence.Options{Username: "user", Password: "token"})
+
+	guides := manifest.NewStore(api)
+	guides.SetRunFiles("guides/*.md", []string{"guides/doc.md", "guides/keep.md"})
+	require.NoError(t, guides.Record(ctx, "DOCS", "guides/doc.md", "1", "Doc", "h"))
+	require.NoError(t, guides.Record(ctx, "DOCS", "guides/keep.md", "2", "Keep", "k"))
+	require.NoError(t, guides.Save(ctx))
+
+	notes := manifest.NewStore(api)
+	notes.SetRunFiles("notes/*.md", []string{"notes/doc.md"})
+	require.NoError(t, notes.Record(ctx, "DOCS", "notes/doc.md", "1", "Doc", "h"))
+	require.NoError(t, notes.Save(ctx))
+
+	logged := captureLog(t)
+	next := manifest.NewStore(api)
+	next.SetRunFiles("guides/*.md", []string{"guides/keep.md"})
+	require.NoError(t, next.Record(ctx, "DOCS", "guides/keep.md", "2", "Keep", "k"))
+
+	assert.Empty(t, next.Orphans("DOCS"), "a page another path still records is not an orphan")
+	assert.Contains(t, logged.String(), "guides/doc.md is gone and its page 1 is still tracked under notes/doc.md")
+
+	require.NoError(t, next.Save(ctx))
+	assert.Equal(t, map[string]string{"guides/keep.md": "2", "notes/doc.md": "1"},
+		manifestPages(t, server, spaceID(t, server, "DOCS")))
+}
+
+// TestOrphansOfOnePageAreAllReturned: two paths recorded for one page, both
+// gone from the run that covers them, leave no path recording it, so both are
+// orphans.
+func TestOrphansOfOnePageAreAllReturned(t *testing.T) {
+	ctx := t.Context()
+	server := confluencetest.New(t)
+	server.AddSpace("DOCS")
+	store := runStore(t, server, "a.md", "b.md", "kept.md")
+	require.NoError(t, store.Record(ctx, "DOCS", "a.md", "1", "Doc", "h"))
+	require.NoError(t, store.Record(ctx, "DOCS", "b.md", "1", "Doc", "h"))
+	require.NoError(t, store.Record(ctx, "DOCS", "kept.md", "2", "Kept", "k"))
+	require.NoError(t, store.Save(ctx))
+
+	next := runStore(t, server, "kept.md")
+	require.NoError(t, next.Record(ctx, "DOCS", "kept.md", "2", "Kept", "k"))
+
+	assert.Equal(t, []string{"a.md", "b.md"}, next.Orphans("DOCS"))
+}
