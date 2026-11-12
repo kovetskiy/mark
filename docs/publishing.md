@@ -4,9 +4,9 @@
 
 `--url` (`-l`, `MARK_PAGE_URL`, `url` in the configuration file) publishes to
 the page a browser shows at that URL, whatever the document's headers say. It
-takes `.../pages/viewpage.action?pageId=ID` or `.../spaces/KEY/pages/ID/Title`,
-and the instance comes from it too, context path included, unless a base URL
-is set:
+takes `.../pages/viewpage.action?pageId=ID`, `.../spaces/KEY/pages/ID/Title`
+or a short `.../x/...` link, which carries the page id, and the instance comes
+from it too, context path included, unless a base URL is set:
 
 ```bash
 mark publish --url "https://example.atlassian.net/wiki/spaces/DOCS/pages/123456/Setup" --files setup.md
@@ -31,7 +31,18 @@ public alias of the same Confluence, since nothing in either URL says the two
 hosts are one server. Set the base URL to the host in the URL, or leave
 `--url` out and name the page with `Space` and `Title` headers.
 
-`mark export --url` takes the same address, under the same names.
+A URL that names the instance alone -- `https://example.atlassian.net/wiki`,
+or the home page or dashboard a browser opens it on -- gives the base URL and
+no page, and each document names its page with its headers. Any other URL has
+to carry a page id. One that does not is refused before anything is sent,
+since the documents' headers would otherwise decide where they go and the
+page the URL names would stay as it was: a `/display/KEY/Title` address, a
+space's overview, a blog post, or a bare page id in place of a URL. Open the
+page and copy one of the forms above, or leave `--url` out.
+
+`mark export --url` is the same setting, under the same names. It reads
+`/display/KEY/Title` and blog post addresses as well, since it looks the page
+up rather than writing to it.
 
 > **Upgrading to v17:** `--target-url`, `MARK_TARGET_URL` and the configuration
 > key `target-url` are now `--url`, `MARK_PAGE_URL` and `url`, and export's
@@ -63,7 +74,7 @@ executed once per page with:
 | `.Title` | the page title |
 | `.Space` | the page's space key |
 
-With `--page-id`, `.Title` and `.Space` come from the page being updated and
+With `--url`, `.Title` and `.Space` come from the page being updated and
 `--space`. Combined with `--compile-only`, there is no page to read, so `.Title`
 is empty.
 
@@ -219,7 +230,7 @@ A `kind` is one of:
 | `unknown-key` | a front matter key mark does not read: another tool's, or a misspelled setting |
 | `ignored-value` | a value its front matter key cannot hold, such as a number among labels or a list for a title, dropped |
 | `stranded-header` | a header below the opening comments, published as text rather than applied |
-| `metadata-ignored` | the document's metadata set aside, because `--page-id` names the page |
+| `metadata-ignored` | the document's metadata set aside, because `--url` names the page |
 | `attachment` | a file not uploaded, or uploaded and never used |
 | `invalid-characters` | text XML cannot carry, replaced with U+FFFD |
 | `column-widths` | a `Column-Widths` comment that was not applied |

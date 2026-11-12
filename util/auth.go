@@ -26,6 +26,10 @@ const passwordCommandTimeout = 60 * time.Second
 // hold the run open past the timeout.
 const passwordCommandWaitDelay = 2 * time.Second
 
+// ErrNoPageID is a --url that names more than the instance and carries no
+// page id.
+var ErrNoPageID = errors.New("the URL carries no page id")
+
 type Credentials struct {
 	Username string
 	Password string
@@ -86,6 +90,18 @@ func GetCredentials(
 
 	contextPath, pageID := confluence.SplitPageURL(url)
 	pageBase := url.Scheme + "://" + url.Host + contextPath
+
+	if pageURLGiven && pageID == "" {
+		pageID, err = shortLinkOrInstance(url, contextPath)
+		if err != nil {
+			return nil, fmt.Errorf(
+				"--url %q names no page mark can publish to by its id: give the page's address as "+
+					".../pages/viewpage.action?pageId=ID, .../spaces/KEY/pages/ID/Title or a short /x/ link, "+
+					"or leave --url out, set the base URL and name the page with Space and Title headers: %w",
+				pageURL, err,
+			)
+		}
+	}
 
 	if baseURL == "" {
 		baseURL = pageBase
@@ -167,6 +183,40 @@ func GetCredentials(
 	}
 
 	return creds, nil
+}
+
+// instanceLanding are the paths, below the context path, a browser shows for
+// the instance itself, which name no page of it.
+var instanceLanding = map[string]bool{
+	"":                  true,
+	"/home":             true,
+	"/dashboard.action": true,
+	"/index.action":     true,
+}
+
+// shortLinkOrInstance settles a page URL in which SplitPageURL found no page
+// id: a short link carries one, encoded, and a URL that names the instance
+// alone needs none. Anything else names something in the instance that is not
+// a page id, and reading it as the instance alone would publish wherever each
+// document's headers say; it is ErrNoPageID.
+func shortLinkOrInstance(target *url.URL, contextPath string) (string, error) {
+	rest := strings.TrimPrefix(strings.TrimRight(target.EscapedPath(), "/"), contextPath)
+
+	if code, ok := strings.CutPrefix(rest, "/x/"); ok {
+		pageID, err := confluence.DecodeTinyLinkID(code)
+		if err != nil {
+			return "", fmt.Errorf("%w: %w", ErrNoPageID, err)
+		}
+
+		return pageID, nil
+	}
+
+	// Without a host there is no instance for the value to name.
+	if target.Host == "" || !instanceLanding[rest] {
+		return "", ErrNoPageID
+	}
+
+	return "", nil
 }
 
 // checkPageURLInstance refuses a page URL, by its base pageBase, that is not

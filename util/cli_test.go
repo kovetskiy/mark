@@ -456,3 +456,53 @@ func TestPublishURLOnAnotherInstanceIsRefused(t *testing.T) {
 		})
 	}
 }
+
+// TestPublishURLWithoutPageID: a --url that names a page without its id is
+// refused before anything is sent, rather than the document's own headers
+// deciding where it goes; a short link, which carries the id, publishes to
+// the page it names.
+func TestPublishURLWithoutPageID(t *testing.T) {
+	noDefaultConfig(t)
+
+	for _, tc := range []struct {
+		name    string
+		pageURL func(server, id string) string
+		refused bool
+	}{
+		{name: "display form", refused: true, pageURL: func(server, _ string) string {
+			return server + "/display/DOCS/Page"
+		}},
+		{name: "bare id", refused: true, pageURL: func(_, id string) string { return id }},
+		{name: "short link", pageURL: func(server, id string) string {
+			link, err := confluence.GenerateTinyLink(server, id)
+			require.NoError(t, err)
+			return link
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			server := confluencetest.New(t)
+			home := server.AddPage("DOCS", "Home", "page", "")
+			server.SetHomepage("DOCS", home.ID)
+			existing := server.AddPage("DOCS", "Page", "page", home.ID)
+
+			dir := t.TempDir()
+			config := writeConfig(t, dir, "mark.toml", "base-url = \""+server.URL+"\"\n")
+			document := filepath.Join(dir, "page.md")
+			require.NoError(t, os.WriteFile(document,
+				[]byte("<!-- Space: DOCS -->\n<!-- Title: Another page -->\n\nBody.\n"), 0o600))
+
+			_, _, err := runMark(t, "-c", config, "--color", "never", "-u", "user", "-p", "token",
+				"publish", "--url", tc.pageURL(server.URL, existing.ID), "--files", document)
+
+			if tc.refused {
+				require.ErrorIs(t, err, ErrNoPageID)
+				assert.Zero(t, server.CountRequests("POST", ""), "no page was created")
+				assert.Zero(t, server.CountRequests("PUT", ""), "nothing was written")
+				return
+			}
+			require.NoError(t, err)
+			assert.Contains(t, server.Page(existing.ID).Body, "Body.")
+			assert.Zero(t, server.CountRequests("POST", "/content"), "no page was created")
+		})
+	}
+}
