@@ -137,7 +137,8 @@ var knownFeatures = []string{
 var defaultFeatures = []string{"mermaid", "mention"}
 
 // KnownFeatures returns the feature names mark understands, sorted. A name
-// not on it is never switched on, and nothing is said about it.
+// not on it is never switched on: CompileMarkdown says nothing about it, and
+// mark.Run and mark.NewPublisher refuse it.
 func KnownFeatures() []string {
 	return slices.Clone(knownFeatures)
 }

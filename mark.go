@@ -654,6 +654,13 @@ func (r RenderingConfig) validate() error {
 		)
 	}
 
+	// A name that switches nothing on is a feature the caller asked for and
+	// would not get, and the command line refuses the same lists. Ahead of the
+	// scales, which are checked by what the list switches on.
+	if err := rendercheck.Features(r.Features, markdown.KnownFeatures()); err != nil {
+		return fmt.Errorf("invalid Features: %w", err)
+	}
+
 	// Zero is the field a caller never set, which for a scale is not a default
 	// but a diagram rendered at nothing. Only checked where diagrams are drawn
 	// at all, since a configuration that never turns d2 on carries the field
@@ -686,22 +693,15 @@ func (r RenderingConfig) validate() error {
 		)
 	}
 
-	// A name that switches nothing on is a feature the caller asked for and
-	// would not get, and the command line refuses the same lists.
-	if err := rendercheck.Features(r.Features, markdown.KnownFeatures()); err != nil {
-		return fmt.Errorf("invalid Features: %w", err)
-	}
-
 	// The one alignment every document shares, so a value no image can take
 	// fails the run here rather than at each document's compile, which comes
-	// after its page is created. Read as the Image-Align header is.
-	if r.ImageAlign != "" {
-		if _, ok := rendercheck.ImageAlign(r.ImageAlign); !ok {
-			return fmt.Errorf(
-				"invalid ImageAlign %q: expected \"left\", \"center\", \"right\", or \"\" for none",
-				r.ImageAlign,
-			)
-		}
+	// after its page is created. Read as the Image-Align header is, where
+	// nothing but space is no alignment.
+	if align, ok := rendercheck.ImageAlign(r.ImageAlign); !ok && align != "" {
+		return fmt.Errorf(
+			"invalid ImageAlign %q: expected \"left\", \"center\", \"right\", or \"\" for none",
+			r.ImageAlign,
+		)
 	}
 
 	return nil
@@ -3040,18 +3040,16 @@ func getImageAlign(align string, meta *metadata.Meta) (string, error) {
 		align = meta.ImageAlign
 	}
 
-	if align != "" {
-		normalised, ok := rendercheck.ImageAlign(align)
-		if !ok {
-			return "", fmt.Errorf(
-				`unknown image-align %q, expected one of: left, center, right`,
-				normalised,
-			)
-		}
-		return normalised, nil
+	// Nothing but space is no alignment, as RenderingConfig.validate reads it.
+	normalised, ok := rendercheck.ImageAlign(align)
+	if !ok && normalised != "" {
+		return "", fmt.Errorf(
+			`unknown image-align %q, expected one of: left, center, right`,
+			normalised,
+		)
 	}
 
-	return "", nil
+	return normalised, nil
 }
 
 // includeSearchDirs reports the directories of the files a document includes.
@@ -3181,7 +3179,7 @@ func (c RenderingConfig) documentConfig(ctx context.Context, res *resources, doc
 // document, drawing in the run's browsers; the per-document fields are left
 // for the caller to fill in.
 func (c RenderingConfig) markdownOptions(res *resources) markdown.Options {
-	// An invalid value is reported by documentConfig, which every page passes.
+	// RenderingConfig.validate has refused a value that is no alignment.
 	imageAlign, _ := getImageAlign(c.ImageAlign, nil)
 
 	return markdown.Options{
