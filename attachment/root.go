@@ -378,11 +378,17 @@ func (r Root) CheckReadable(base, reference string) error {
 		joined = filepath.Join(base, reference)
 	}
 
-	if err := r.contain(joined, reference); err != nil {
+	return r.holdInFS(base, joined, reference)
+}
+
+// holdInFS holds joined, a name in the fs.FS, inside it and then to r's
+// boundary, drawn around a document in base. named is what the document wrote.
+func (r Root) holdInFS(base, joined, named string) error {
+	if err := r.contain(joined, named); err != nil {
 		return err
 	}
 
-	return r.narrow(base, joined, reference)
+	return r.narrow(base, joined, named)
 }
 
 // contain refuses a joined name that is not a path inside the fs.FS. named is
@@ -424,12 +430,7 @@ func (r Root) checkAttachment(base, name string) error {
 		return r.boundary.checkAttachmentPath(base, name)
 	}
 
-	joined := filepath.Join(base, name)
-	if err := r.contain(joined, name); err != nil {
-		return err
-	}
-
-	return r.narrow(base, joined, name)
+	return r.holdInFS(base, filepath.Join(base, name), name)
 }
 
 // narrow holds joined, a name r reading from an fs.FS has already found
@@ -441,7 +442,7 @@ func (r Root) narrow(base, joined, named string) error {
 		return nil
 	case r.boundary.NamesDirectory():
 		return fmt.Errorf(
-			"%w: %q is read from the document's file system, which the attachment root %q, a directory on disk, does not hold",
+			"%w: %q is named by a document read from an fs.FS, which the attachment root %q, a directory on disk, does not hold",
 			ErrOutsideProject, named, string(r.boundary),
 		)
 	}
