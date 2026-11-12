@@ -210,7 +210,7 @@ func publishFlags(config *configFile) []cli.Flag {
 			Name:    "url",
 			Aliases: []string{"l"},
 			Value:   "",
-			Usage:   "edit the Confluence page at this URL, as a browser shows it: .../pages/viewpage.action?pageId=ID or .../spaces/KEY/pages/ID/Title. The instance is taken from it too, context path included, unless a base URL is set, which must name the same instance. Without it, each file must name its page with Space and Title metadata headers.",
+			Usage:   "edit the Confluence page at this URL, as a browser shows it: .../pages/viewpage.action?pageId=ID, .../spaces/KEY/pages/ID/Title or a short .../x/... link. The instance is taken from it too, context path included, unless a base URL is set, which must name the same instance. Without it, each file must name its page with Space and Title metadata headers.",
 			Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_PAGE_URL"), config.value("url")),
 		},
 		&cli.BoolFlag{

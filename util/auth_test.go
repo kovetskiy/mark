@@ -169,16 +169,6 @@ func TestGetCredentialsPageURLKeepsTheContextPath(t *testing.T) {
 			"https://host", "77",
 		},
 		{
-			"display form",
-			"https://host/confluence/display/DOC/Title",
-			"https://host/confluence", "",
-		},
-		{
-			"space overview names no page",
-			"https://x.atlassian.net/wiki/spaces/DOC/overview",
-			"https://x.atlassian.net/wiki", "",
-		},
-		{
 			"instance only",
 			"https://x.atlassian.net/wiki/",
 			"https://x.atlassian.net/wiki", "",
@@ -221,6 +211,84 @@ func TestGetCredentialsPageURLKeepsTheContextPath(t *testing.T) {
 
 			assert.Equal(t, testcase.base, creds.BaseURL)
 			assert.Equal(t, testcase.pageID, creds.PageID)
+		})
+	}
+}
+
+// TestPageURLShortLink: a short link carries the page id, so --url
+// publishes to that page, as mark export --url reads it.
+func TestPageURLShortLink(t *testing.T) {
+	for _, testcase := range []struct {
+		name, target, base, wantBase string
+	}{
+		{"under a context path", "https://x.atlassian.net/wiki/x/7AM", "", "https://x.atlassian.net/wiki"},
+		{"at the root", "https://host/x/7AM/", "", "https://host"},
+		{"beside a base URL", "https://host/x/7AM", "https://host", "https://host"},
+		{"relative to a base URL", "/x/7AM", "https://host", "https://host"},
+	} {
+		t.Run(testcase.name, func(t *testing.T) {
+			creds, err := GetCredentials(context.Background(), "user", "token", "",
+				testcase.target, testcase.base, false)
+			require.NoError(t, err)
+
+			assert.Equal(t, testcase.wantBase, creds.BaseURL)
+			assert.Equal(t, "1004", creds.PageID)
+		})
+	}
+}
+
+// TestPageURLWithoutPageID: a --url that names more than the
+// instance and carries no page id is refused. Read as the instance alone, the
+// run would publish wherever each document's headers say and leave the page
+// the URL names as it was.
+func TestPageURLWithoutPageID(t *testing.T) {
+	for _, testcase := range []struct {
+		name, target, base string
+	}{
+		{"display form", "https://host/confluence/display/DOC/Title", ""},
+		{"display form beside a base URL", "https://host/display/DOC/Title", "https://host"},
+		{"space overview", "https://x.atlassian.net/wiki/spaces/DOC/overview", ""},
+		{"blog post", "https://x.atlassian.net/wiki/spaces/DOC/blog/2024/01/31/77/Title", ""},
+		{"viewpage.action without a pageId", "https://host/pages/viewpage.action", ""},
+		{"a short link that is not one", "https://host/x/a.b", ""},
+		{"a bare id", "1004", "https://host"},
+		{"a word", "page", "https://host"},
+		{"a path that names no page", "/wiki", "https://host"},
+		{"an unrecognised page", "https://host/some/other/view", ""},
+	} {
+		t.Run(testcase.name, func(t *testing.T) {
+			for _, compileOnly := range []bool{false, true} {
+				_, err := GetCredentials(context.Background(), "user", "token", "",
+					testcase.target, testcase.base, compileOnly)
+				require.ErrorIs(t, err, ErrNoPageID)
+				assert.ErrorContains(t, err, testcase.target)
+			}
+		})
+	}
+}
+
+// TestPageURLOfTheInstance: a --url that names the instance and nothing
+// in it gives the base URL, and each document names its own page.
+func TestPageURLOfTheInstance(t *testing.T) {
+	for _, testcase := range []struct {
+		name, target, wantBase string
+	}{
+		{"host", "https://host", "https://host"},
+		{"host and slash", "https://host/", "https://host"},
+		{"context path", "https://x.atlassian.net/wiki", "https://x.atlassian.net/wiki"},
+		{"the home page", "https://x.atlassian.net/wiki/home", "https://x.atlassian.net/wiki"},
+		{"the dashboard", "https://host/confluence/dashboard.action", "https://host/confluence"},
+		{"the index", "https://host/index.action", "https://host"},
+	} {
+		t.Run(testcase.name, func(t *testing.T) {
+			for _, compileOnly := range []bool{false, true} {
+				creds, err := GetCredentials(context.Background(), "user", "token", "",
+					testcase.target, "", compileOnly)
+				require.NoError(t, err)
+
+				assert.Equal(t, testcase.wantBase, creds.BaseURL)
+				assert.Empty(t, creds.PageID)
+			}
 		})
 	}
 }

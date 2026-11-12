@@ -35,7 +35,9 @@ A URL set aside still gives the base URL when none is set otherwise.
 configuration file that names a space for publishing serves `--title` too.
 `--url` is publish's setting too, `MARK_PAGE_URL` and `url` in the
 configuration file included, so a file that names a page for export sends
-publish to it as well. `--url` also gives the base URL. A base URL set by
+publish to it as well -- or, for a `/display/KEY/Title` or blog post address,
+which carries no page id publish can write to, has
+[publish refuse it](publishing.md#publishing-to-a-page-by-its-url). `--url` also gives the base URL. A base URL set by
 `--base-url`, `MARK_BASE_URL` or the configuration file is used instead when
 the URL is on that instance; a URL on another one is refused, since a page id
 names a page of one instance only.
