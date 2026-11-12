@@ -937,8 +937,8 @@ func TestFindPageAfterTheAPIRemovedThePage(t *testing.T) {
 		"archive": (*confluence.API).ArchivePage,
 	}
 	for name, remove := range removals {
-		for _, prefix := range []string{"", "/ex/confluence/cloud-id"} {
-			t.Run(name+prefix, func(t *testing.T) {
+		for through, prefix := range map[string]string{"v1": "", "gateway": "/ex/confluence/cloud-id"} {
+			t.Run(name+" through "+through, func(t *testing.T) {
 				ctx := context.Background()
 				server := confluencetest.New(t)
 				api := confluence.NewAPI(server.URL+prefix, confluence.Options{Username: "user", Password: "token"})
