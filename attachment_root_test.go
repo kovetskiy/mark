@@ -132,6 +132,26 @@ func TestAttachmentRootHoldsAMarkdownPageHeader(t *testing.T) {
 	}
 }
 
+// TestAttachmentRootRefusesAPageHeaderBeforePublishing: a Markdown page
+// header naming a file outside the root is refused when it is loaded, as
+// anything else wrong with it is, rather than by each document after its page
+// is created.
+func TestAttachmentRootRefusesAPageHeaderBeforePublishing(t *testing.T) {
+	server, _ := attachmentRootProject(t)
+	require.NoError(t, os.WriteFile(filepath.Join("guide", "index.md"),
+		[]byte("<!-- Space: DOCS -->\n<!-- Title: Guide -->\n\nguide\n"), 0o600))
+	writeFile(t, "other-doc", "logo.png", "png")
+	require.NoError(t, os.Mkdir("templates", 0o755))
+
+	config := publishConfig(server.URL, "guide/*.md")
+	config.Rendering.PageHeader = writeFile(t, "templates", "header.md", "![logo](../other-doc/logo.png)\n")
+	config.Rendering.AttachmentRoot = attachment.BoundaryDocument
+
+	err := Run(context.Background(), config)
+	require.ErrorIs(t, err, attachment.ErrOutsideProject)
+	assert.Zero(t, server.CountRequests("POST", "/content"), "no page is created")
+}
+
 // attachmentRootFS holds the guide and the other document of
 // attachmentRootProject in an fs.FS.
 func attachmentRootFS() fstest.MapFS {
