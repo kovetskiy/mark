@@ -398,8 +398,9 @@ release tagged most recently that is not a pre-release. Pin a tag rather than
 `latest`: the image carries the headless Chrome mark draws diagrams in, so a
 pinned tag keeps a job on one release of mark and the Chrome it was built
 with. A Go program that writes such a job for the mark it links can ask for
-that release with `mark.Version()`, which is `""` for a build of mark that is
-not a release, such as a pseudo-version or a local `replace`.
+that version with `mark.Version()`. It is the version Go recorded for mark,
+which is a release tag only when the program requires one: a pseudo-version or
+`(devel)` has no image.
 
 The following directive tells the CI to run this particular job only if the changes are pushed into the
 `main` branch. It means you can safely push your changes into feature branches without being afraid

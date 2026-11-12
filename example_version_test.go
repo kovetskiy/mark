@@ -6,11 +6,11 @@ import (
 	"github.com/kovetskiy/mark/v17"
 )
 
-// ExampleVersion names the release of mark a program was built with.
+// ExampleVersion names the version of mark a program was built with.
 func ExampleVersion() {
 	version := mark.Version()
 	if version == "" {
-		version = "a build of mark that is not a release"
+		version = "a local copy of mark"
 	}
 
 	fmt.Println("publishing with", version)
