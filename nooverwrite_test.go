@@ -4,6 +4,7 @@ import (
 	"context"
 	"io"
 	"net/http"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -89,6 +90,44 @@ func TestNoOverwriteKeepsAWriteTheRunWasStoppedAfter(t *testing.T) {
 
 	server.SetFail(nil)
 	writeFile(t, dir, "doc.md", unrestrictedDoc("Third."))
+	after := runReported(t, config)
+
+	assert.Equal(t, report.StatusPublished, after.Status, after.Reason)
+	assert.Contains(t, server.Page(id).Body, "Third.")
+}
+
+// TestNoOverwriteKeepsAWriteOfAStoppedRunWithoutTheFlag: a run without
+// --no-overwrite has not read the manifest by the time it writes a page found
+// by its title, and once stopped it cannot. The version it wrote is recorded
+// all the same, and the next run with the flag publishes to the page.
+func TestNoOverwriteKeepsAWriteOfAStoppedRunWithoutTheFlag(t *testing.T) {
+	server, _ := docsSpace(t)
+	doc := func(body string) string {
+		return "<!-- Space: DOCS -->\n<!-- Title: Plain -->\n\n" + body + "\n"
+	}
+	dir := t.TempDir()
+	config := trackingConfig(server, writeFile(t, dir, "doc.md", doc("First.")))
+	config.Tracking.NoOverwrite = true
+	require.NoError(t, Run(context.Background(), config))
+	id := mustFind(t, server, "Plain")
+
+	writeFile(t, dir, "doc.md", doc("Second."))
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	server.SetFail(func(r *http.Request) (int, string, bool) {
+		if r.Method == http.MethodPut && strings.HasSuffix(r.URL.Path, "/content/"+id) {
+			cancel()
+		}
+		return 0, "", false
+	})
+
+	config.Tracking.NoOverwrite = false
+	require.ErrorIs(t, Run(ctx, config), context.Canceled)
+	require.Contains(t, server.Page(id).Body, "Second.", "the update landed")
+
+	server.SetFail(nil)
+	config.Tracking.NoOverwrite = true
+	writeFile(t, dir, "doc.md", doc("Third."))
 	after := runReported(t, config)
 
 	assert.Equal(t, report.StatusPublished, after.Status, after.Reason)
@@ -211,6 +250,28 @@ func TestNoOverwriteLeavesAnEditedRetitledPageWhereItIs(t *testing.T) {
 	assert.Zero(t, countPagesTitled(t, server, "Elsewhere"), "no parent is created for a page that is left alone")
 
 	// The skip repeats until the difference is resolved.
+	assert.Equal(t, report.StatusSkipped, runReported(t, config).Status)
+}
+
+// TestNoOverwriteLeavesAnEditedPageOfAMovedFileWhereItIs: the same for a
+// document whose file moved, whose baseline is still under the path it had.
+func TestNoOverwriteLeavesAnEditedPageOfAMovedFileWhereItIs(t *testing.T) {
+	server, id, config := noOverwriteFixture(t)
+	dir := filepath.Dir(config.Files)
+	parent := server.Page(id).ParentID
+
+	server.EditPage(id, "<p>Written by a person.</p>")
+	require.NoError(t, os.Remove(filepath.Join(dir, "doc.md")))
+	writeMovingDoc(t, dir, "Elsewhere", "From mark again.")
+	require.NoError(t, os.Rename(filepath.Join(dir, "doc.md"), filepath.Join(dir, "moved.md")))
+	skipped := runReported(t, config)
+
+	assert.Equal(t, report.StatusSkipped, skipped.Status, skipped.Reason)
+	assert.Equal(t, parent, server.Page(id).ParentID, "the page stays under the parent it had")
+	assert.Zero(t, countPagesTitled(t, server, "Elsewhere"), "no parent is created for a page that is left alone")
+	assert.Equal(t, "<p>Written by a person.</p>", server.Page(id).Body)
+
+	// The baseline follows the file, so the skip repeats.
 	assert.Equal(t, report.StatusSkipped, runReported(t, config).Status)
 }
 
