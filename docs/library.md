@@ -11,6 +11,16 @@ does. The settings the command line takes are fields of `mark.Config`, and
 the run's report is written to `PublishConfig.Output` in
 `Report.OutputFormat`.
 
+### Rendering settings
+
+`Run`, `NewPublisher` and `PublishConfig.Validate` check
+`PublishConfig.Rendering` before anything is published, and refuse a value the
+renderers cannot act on.
+
+* `ImageAlign` is `left`, `center` or `right`, in any case, or empty for no
+  alignment. A document's `Image-Align` header takes its place for that
+  document.
+
 ## Publishing documents from memory
 
 A program that renders Markdown from templates, or from another format, can
