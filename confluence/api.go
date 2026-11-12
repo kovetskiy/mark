@@ -3045,6 +3045,10 @@ func (api *API) moveByAction(ctx context.Context, contentID, position, targetID 
 		}
 	}
 
+	if errors.Is(err, ErrWriteRedirected) {
+		return false, fmt.Errorf("movepage.action left %s where it was: %w", api.describeContent(contentID), err)
+	}
+
 	if notJSON {
 		return false, fmt.Errorf(
 			"movepage.action answered with something other than JSON (status: %d) "+

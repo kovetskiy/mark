@@ -271,8 +271,7 @@ func (c *client) do(
 	// A redirect that turned a write into a read ended on an answer to the
 	// read. Only a login page is still what it says: the write was sent to
 	// log in. A run that was stopped is worded as that below.
-	if !sentAs(resp, method) && (err == nil || ctx.Err() == nil) &&
-		(!successful(resp.StatusCode) || !errors.Is(err, ErrLoginPage)) {
+	if !sentAs(resp, method) && (err == nil || ctx.Err() == nil) && !errors.Is(err, ErrLoginPage) {
 		return answer, &redirectedWriteError{method: method, requested: req.URL.Redacted(), answer: answer}
 	}
 

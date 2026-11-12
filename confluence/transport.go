@@ -121,11 +121,11 @@ func checkRedirect(next func(req *http.Request, via []*http.Request) error) func
 
 				req.Header.Del("Authorization")
 				log.Warn().
-					Str("requested", via[0].URL.Redacted()).
-					Str("redirected_to", hop.URL.Redacted()).
+					Str("requested", serverOf(via[0].URL)).
+					Str("redirected_to", serverOf(hop.URL)).
 					Msg("a redirect led to another server than the one requested, " +
 						"so the request goes on without its Authorization header; " +
-						"if Confluence is served there, use that address as the base URL")
+						"if Confluence is served there, use that address in the base URL")
 
 				break
 			}
@@ -145,8 +145,16 @@ func checkRedirect(next func(req *http.Request, via []*http.Request) error) func
 // keepsAuthorization says whether a request first made to requested carries
 // its Authorization header on to target: the same scheme, host and port, or
 // https on the same host when both are on their default ports.
+//
+// A user name in the base URL is in requested, and a relative Location
+// carries it on to target; it is whoever configured the base URL's, so it
+// makes neither another server. One a Location puts there itself does.
 func keepsAuthorization(requested, target *url.URL) bool {
-	from, errA := originOf(requested)
+	if target.User.String() == requested.User.String() {
+		target = withoutUser(target)
+	}
+
+	from, errA := originOf(withoutUser(requested))
 	to, errB := originOf(target)
 	if errA != nil || errB != nil {
 		return false
@@ -157,6 +165,24 @@ func keepsAuthorization(requested, target *url.URL) bool {
 	}
 
 	return from == to
+}
+
+// withoutUser is u without the user name and password in it.
+func withoutUser(u *url.URL) *url.URL {
+	if u.User == nil {
+		return u
+	}
+
+	bare := *u
+	bare.User = nil
+
+	return &bare
+}
+
+// serverOf names the server u reaches, for a message: its scheme, host and
+// port, without the path and query of the one request.
+func serverOf(u *url.URL) string {
+	return u.Scheme + "://" + u.Host
 }
 
 // newCookieJar returns a jar for Confluence Server's session cookie, or nil

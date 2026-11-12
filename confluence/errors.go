@@ -316,7 +316,7 @@ func unreadableAnswer(err error) bool {
 // it on as a GET without its body, so that what answered was not asked to
 // write anything: a proxy that moves http to https with a 301, or one host
 // name to another. errors.Is finds it in the error do returns for such an
-// answer, which names where the request went.
+// answer, which names where the request went and the server that is.
 var ErrWriteRedirected = errors.New("a write was redirected and sent on as a read")
 
 // redirectedWriteError is the error for a write whose answer is to the read
@@ -328,15 +328,13 @@ type redirectedWriteError struct {
 }
 
 func (e *redirectedWriteError) Error() string {
-	sent := http.MethodGet
-	if e.answer.Request != nil {
-		sent = e.answer.Request.Method
-	}
+	// do makes this error of an answer that names its request.
+	sent := e.answer.Request
 
 	return fmt.Sprintf(
 		"%s %s was redirected to %s and sent there as a %s without its body, which answered %s: "+
-			"that is no answer to the %s; if Confluence is served there, use that address as the base URL",
-		e.method, e.requested, requestTarget(e.answer), sent, e.answer.Status, e.method,
+			"that is no answer to the %s; if Confluence is served at %s, use that address in the base URL",
+		e.method, e.requested, sent.URL.Redacted(), sent.Method, e.answer.Status, e.method, serverOf(sent.URL),
 	)
 }
 
