@@ -484,7 +484,9 @@ guard pages it is not guarding.
 
 A skipped page still counts as published: it is not reported as an orphan and
 not pruned. Nothing else about it is touched either -- no labels, no ordering,
-and its attachments are not re-uploaded.
+and its attachments are not re-uploaded. It stays where it is as well: when its
+document names a new parent, the page is not moved and the parent is not
+created for it until the difference is resolved.
 
 The warning repeats on every run until the difference is resolved, which is
 deliberate: a page drifting from its source is a standing problem, not a one-off

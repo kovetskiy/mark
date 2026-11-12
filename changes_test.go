@@ -1012,23 +1012,26 @@ func TestNoOverwriteAfterAChangesOnlyMove(t *testing.T) {
 
 // TestNoOverwriteStillSeesAnEditMadeBeforeAMove is the other half: the version
 // a move writes is discounted only when the page was at the version mark
-// recorded before it. An edit made in Confluence and then carried along by the
-// move is still an edit, and is still reported on every run.
+// recorded before it. A page edited in Confluence whose document then names
+// another parent is still edited: it is left alone and not moved, a move here
+// being an update of its own, and is reported on every run.
 func TestNoOverwriteStillSeesAnEditMadeBeforeAMove(t *testing.T) {
-	server, id, other, config := dataCenterMoveFixture(t, func(c *Config) {
+	server, id, _, config := dataCenterMoveFixture(t, func(c *Config) {
 		c.Tracking.NoOverwrite = true
 	})
 	dir := filepath.Dir(config.Files)
+	parent := server.Page(id).ParentID
 
 	server.EditPage(id, "<p>Written by a person.</p>")
+	edited := server.Page(id).Version
 
 	writeMovingDoc(t, dir, "Other", "Moved.")
 	moved := runReported(t, config)
 
 	assert.Equal(t, report.StatusSkipped, moved.Status)
 	assert.Contains(t, moved.Reason, "edited in Confluence")
-	assert.Equal(t, other, server.Page(id).ParentID,
-		"moving the page overwrites nothing, so it is still moved")
+	assert.Equal(t, parent, server.Page(id).ParentID, "a page left alone is not moved")
+	assert.Equal(t, edited, server.Page(id).Version, "and no version is written to it")
 	assert.Equal(t, "<p>Written by a person.</p>", server.Page(id).Body)
 
 	writeMovingDoc(t, dir, "Other", "After the move.")

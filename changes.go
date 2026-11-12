@@ -4,6 +4,7 @@ package mark
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -192,6 +193,67 @@ func (r *publishRun) leaveDrifted(ctx context.Context, doc *document, dest *dest
 	}
 
 	return true, nil
+}
+
+// leaveDriftedInPlace is leaveDrifted for a document whose page has not been
+// resolved yet, and returns the page it leaves alone. It only reads: the page
+// is the one carrying the document's title or, when none does, the one
+// recorded for the document, which is where a retitled document's page is.
+func (r *publishRun) leaveDriftedInPlace(ctx context.Context, doc *document) (*confluence.PageInfo, error) {
+	meta := doc.meta
+	if !r.noOverwrite || r.tracker == nil || meta == nil {
+		return nil, nil
+	}
+
+	existing, err := r.api.FindPage(ctx, meta.Space, meta.Title, confluence.ContentType(meta.Type))
+	if err != nil {
+		return nil, fmt.Errorf("error while finding page %q: %w", meta.Title, err)
+	}
+
+	if existing == nil {
+		existing, err = r.recordedPageOf(ctx, doc)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	if existing == nil {
+		return nil, nil
+	}
+
+	skipped, err := r.leaveDrifted(ctx, doc, &destination{page: existing})
+	if err != nil || !skipped {
+		return nil, err
+	}
+
+	r.claimPage(doc.file)
+
+	return existing, nil
+}
+
+// recordedPageOf reads the page the manifest records for a document, or nil
+// when it records none, the page is gone or it is in another space. Those are
+// for resolving the document to report.
+func (r *publishRun) recordedPageOf(ctx context.Context, doc *document) (*confluence.PageInfo, error) {
+	entry, ok, err := r.tracker.Lookup(ctx, doc.meta.Space, doc.key)
+	if err != nil {
+		return nil, fmt.Errorf("unable to read page mapping for %q: %w", doc.key, err)
+	}
+	if !ok {
+		return nil, nil
+	}
+
+	pg, inSpace, err := recordedPage(ctx, r.api, doc.meta.Space, entry.PageID)
+	switch {
+	case errors.Is(err, confluence.ErrNotFound):
+		return nil, nil
+	case err != nil:
+		return nil, fmt.Errorf("unable to load page %s recorded for %q: %w", entry.PageID, doc.file, err)
+	case !inSpace:
+		return nil, nil
+	}
+
+	return pg, nil
 }
 
 // changeCheck returns the version message to publish html under and, under
