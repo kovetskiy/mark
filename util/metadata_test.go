@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/kovetskiy/mark/v17/confluence"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -52,7 +53,7 @@ func TestMetadataListings(t *testing.T) {
 				_, _ = fmt.Fprint(w, testCase.body)
 			}))
 			defer server.Close()
-			args := []string{"--config", config, "--base-url", server.URL + "/wiki", "--username", "user", "--password", "token", "metadata", testCase.resource, "list"}
+			args := []string{"--config", config, "--base-url", server.URL + "/wiki", "--username", "user", "--password", "token", "metadata", testCase.resource, "list", "--json"}
 			args = append(args, testCase.selectors...)
 			stdout, _, err := runMark(t, args...)
 			require.NoError(t, err)
@@ -123,7 +124,7 @@ func TestMetadataPaginationAndErrors(t *testing.T) {
 				}
 			}))
 			defer server.Close()
-			stdout, _, err := runMark(t, "--config", config, "--base-url", server.URL+"/wiki", "-u", "user", "-p", "token", "metadata", "labels", "list", "--page-id", "42")
+			stdout, _, err := runMark(t, "--config", config, "--base-url", server.URL+"/wiki", "-u", "user", "-p", "token", "metadata", "labels", "list", "--page-id", "42", "--json")
 			if testCase.status != http.StatusOK {
 				require.Error(t, err)
 				assert.Empty(t, stdout)
@@ -132,6 +133,92 @@ func TestMetadataPaginationAndErrors(t *testing.T) {
 			require.NoError(t, err)
 			assert.Equal(t, 2, calls)
 			assert.JSONEq(t, `[{"id":"2","name":"z","prefix":"global"},{"id":"1","name":"a","prefix":"global"}]`, stdout)
+		})
+	}
+}
+
+func TestMetadataTableOutput(t *testing.T) {
+	for _, testCase := range []struct {
+		name, resource, body, want string
+		selectors                  []string
+	}{
+		{"labels", "labels", `{"results":[{"id":"12","name":"alpha","prefix":"global"},{"id":"13","name":"beta","prefix":"team"}]}`, `^NAME +ID +PREFIX\nalpha +12 +global\nbeta +13 +team\n$`, nil},
+		{"statuses", "statuses", `[{"id":73,"name":"In progress","color":"#2684ff"}]`, `^NAME +ID +COLOR\nIn progress +73 +#2684ff\n$`, []string{"--space", "RD"}},
+		{"empty labels", "labels", `{"results":[]}`, `^No labels found\.\n$`, nil},
+		{"empty statuses", "statuses", `[]`, `^No statuses found\.\n$`, []string{"--personal"}},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			config := filepath.Join(t.TempDir(), "mark.toml")
+			require.NoError(t, os.WriteFile(config, nil, 0o600))
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				assert.Equal(t, http.MethodGet, r.Method)
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = fmt.Fprint(w, testCase.body)
+			}))
+			defer server.Close()
+			args := []string{"--config", config, "--base-url", server.URL, "-u", "user", "-p", "token", "metadata", testCase.resource, "list"}
+			args = append(args, testCase.selectors...)
+			stdout, _, err := runMark(t, args...)
+			require.NoError(t, err)
+			assert.Regexp(t, testCase.want, stdout)
+		})
+	}
+}
+
+// TestMetadataRequestFailures keeps failed status reads and space lookups distinct from empty listings.
+func TestMetadataRequestFailures(t *testing.T) {
+	for _, testCase := range []struct {
+		name     string
+		args     []string
+		path     string
+		status   int
+		want     error
+		fallback bool
+	}{
+		{"missing page status", []string{"statuses", "list", "--page-id", "42"}, "/rest/api/content/42/state", http.StatusNotFound, confluence.ErrNotFound, false},
+		{"forbidden space statuses", []string{"statuses", "list", "--space", "RD"}, "/rest/api/space/RD/state", http.StatusForbidden, confluence.ErrForbidden, false},
+		{"unauthorized personal statuses", []string{"statuses", "list", "--personal"}, "/rest/api/content-states", http.StatusUnauthorized, confluence.ErrUnauthorized, false},
+		{"missing space lookup", []string{"labels", "list", "--space", "MISSING"}, "/rest/api/space/MISSING", http.StatusNotFound, confluence.ErrNotFound, true},
+		{"forbidden space lookup", []string{"labels", "list", "--space", "RD"}, "/rest/api/space/RD", http.StatusForbidden, confluence.ErrForbidden, true},
+		{"unauthorized space lookup", []string{"labels", "list", "--space", "RD"}, "/rest/api/space/RD", http.StatusUnauthorized, confluence.ErrUnauthorized, true},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			config := filepath.Join(t.TempDir(), "mark.toml")
+			require.NoError(t, os.WriteFile(config, nil, 0o600))
+			var paths []string
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				assert.Equal(t, http.MethodGet, r.Method)
+				paths = append(paths, r.URL.Path)
+				w.Header().Set("Content-Type", "application/json")
+				switch r.URL.Path {
+				case testCase.path:
+					w.WriteHeader(testCase.status)
+					_, _ = fmt.Fprint(w, `{"message":"cannot access metadata target"}`)
+				case "/api/v2/spaces":
+					if testCase.status == http.StatusNotFound {
+						assert.Equal(t, "MISSING", r.URL.Query().Get("keys"))
+						_, _ = fmt.Fprint(w, `{"results":[]}`)
+					} else {
+						assert.Equal(t, "RD", r.URL.Query().Get("keys"))
+						w.WriteHeader(http.StatusNotFound)
+						_, _ = fmt.Fprint(w, `{"message":"v2 endpoint unavailable"}`)
+					}
+				default:
+					t.Errorf("unexpected request after failed lookup: %s", r.URL.Path)
+					w.WriteHeader(http.StatusInternalServerError)
+				}
+			}))
+			defer server.Close()
+			args := []string{"--config", config, "--base-url", server.URL, "-u", "user", "-p", "token", "metadata"}
+			args = append(args, testCase.args...)
+			stdout, _, err := runMark(t, args...)
+			require.ErrorIs(t, err, testCase.want)
+			assert.Empty(t, stdout)
+			wantPaths := []string{testCase.path}
+			if testCase.fallback {
+				wantPaths = append(wantPaths, "/api/v2/spaces")
+			}
+			assert.Equal(t, wantPaths, paths)
 		})
 	}
 }
