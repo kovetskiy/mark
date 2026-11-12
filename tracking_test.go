@@ -244,23 +244,24 @@ func TestTrackedPageLoadFailureDoesNotDuplicate(t *testing.T) {
 		"the original page is untouched")
 }
 
-// TestTwoFilesClaimingOnePageIsReported: nothing stops two documents resolving
-// to the same page by title, and then a rename of either moves a page the other
-// also believes is its own. mark cannot tell which was meant, so it says so.
+// TestTwoFilesClaimingOnePageIsReported: two runs can each publish a document
+// of one title, and then a rename of either moves a page the other also
+// believes is its own. mark cannot tell which was meant, so it says so.
 func TestTwoFilesClaimingOnePageIsReported(t *testing.T) {
 	server, _ := docsSpace(t)
 	dir := t.TempDir()
 
-	// Same title, two files.
-	writeFile(t, dir, "one.md", markdownWithTitle("Shared"))
-	writeFile(t, dir, "two.md", markdownWithTitle("Shared"))
+	// Same title, two files, each published by a run of its own.
+	one := writeFile(t, dir, "one.md", markdownWithTitle("Shared"))
+	two := writeFile(t, dir, "two.md", markdownWithTitle("Shared"))
 
 	var logged bytes.Buffer
 	restore := log.Logger
 	log.Logger = zerolog.New(&logged)
 	defer func() { log.Logger = restore }()
 
-	require.NoError(t, Run(context.Background(), trackingConfig(server, filepath.Join(dir, "*.md"))))
+	require.NoError(t, Run(context.Background(), trackingConfig(server, one)))
+	require.NoError(t, Run(context.Background(), trackingConfig(server, two)))
 
 	assert.Contains(t, logged.String(), "both publish to page",
 		"two files resolving to one page should be reported")

@@ -75,8 +75,9 @@ own parents. Deriving parents from the path makes that likely rather than
 unlucky -- every directory tends to hold a README, and several will want an
 "Overview".
 
-Mark refuses before publishing the second one, comparing titles the way
-Confluence does, without regard to case:
+Mark refuses before publishing the second one, with or without
+`--parents-from-path`, comparing titles the way Confluence does, without regard
+to case:
 
 ```text
 docs/api/overview.md already publishes "Overview" in space "DOCS", and a space
@@ -91,6 +92,11 @@ different directories. The pages standing for directories are hashed the same
 way, whether a README stands for them or not, so `docs/api/guides` and
 `docs/sdk/guides` are two pages, and a directory's README is the very page the
 documents beside it sit under.
+
+A page and a blog post of one title are two pieces of content, and a document
+with `Synchronized: false` publishes nothing, so neither is refused. Without
+`--parents-from-path` the hash is taken over the parents the documents declare,
+and two documents declaring the same ones need different titles.
 
 ### Directories are remembered too
 
