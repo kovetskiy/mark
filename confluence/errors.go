@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strings"
 )
 
@@ -311,6 +312,40 @@ func unreadableAnswer(err error) bool {
 
 	return errors.As(err, &body)
 }
+
+// ErrWriteRedirected reports that a write was redirected in a way that sends
+// it on as a GET without its body, so that what answered was not asked to
+// write anything: a proxy that moves http to https with a 301, or one host
+// name to another. errors.Is finds it in the error do returns for such an
+// answer, which names where the request went and the server that is.
+var ErrWriteRedirected = errors.New("a write was redirected and sent on as a read")
+
+// redirectedWriteError is the error for a write whose answer is to the read
+// a redirect made of it.
+type redirectedWriteError struct {
+	method    string
+	requested *url.URL
+	answer    *reply
+}
+
+func (e *redirectedWriteError) Error() string {
+	// do makes this error of an answer that names its request.
+	sent := e.answer.Request
+
+	// A redirect within the server names no other address to configure.
+	advice := "the base URL has to be the address Confluence answers at, not one that redirects to it"
+	if !sameServer(withoutUser(sent.URL), e.requested) {
+		advice = fmt.Sprintf("if Confluence is served at %s, use that address in the base URL", serverOf(sent.URL))
+	}
+
+	return fmt.Sprintf(
+		"%s %s was redirected to %s and sent there as a %s without its body, which answered %s: "+
+			"that is no answer to the %s; %s",
+		e.method, e.requested.Redacted(), sent.URL.Redacted(), sent.Method, e.answer.Status, e.method, advice,
+	)
+}
+
+func (e *redirectedWriteError) Is(target error) bool { return target == ErrWriteRedirected }
 
 // bodyError is a 2xx whose body is not the one JSON value do expected: one
 // that does not parse, goes on after its value, names another Content-Type,

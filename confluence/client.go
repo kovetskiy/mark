@@ -134,6 +134,13 @@ type reply struct {
 //     error -- though not one whose connection fails once the value has come
 //     whole. Either way the error comes with the response, as does one
 //     reading a body that cannot be read in full.
+//   - Redirects: followed as net/http follows them, without the
+//     Authorization header once one leads to another server; see
+//     checkRedirect. A 301, 302 or 303 turns a write into a GET without its
+//     body, and the answer to that is not the write's: the error is one
+//     errors.Is matches against ErrWriteRedirected, with the response,
+//     unless what answered is a login page, which is that. A 307 or 308
+//     sends the write on as it was.
 //   - Cancellation: any error a request ends with while ctx is done -- no
 //     response, a body cut short, or one that does not decode -- is marked
 //     so that IsCancellation recognises it, and errors.Is finds ctx.Err() in
@@ -259,6 +266,13 @@ func (c *client) do(
 
 	if c.trace != nil {
 		c.traceResponse(resp, received)
+	}
+
+	// A redirect that turned a write into a read ended on an answer to the
+	// read. Only a login page is still what it says: the write was sent to
+	// log in. A run that was stopped is worded as that below.
+	if !sentAs(resp, method) && (err == nil || ctx.Err() == nil) && !errors.Is(err, ErrLoginPage) {
+		return answer, &redirectedWriteError{method: method, requested: req.URL, answer: answer}
 	}
 
 	if !successful(resp.StatusCode) {
@@ -819,6 +833,13 @@ func isHTMLMediaType(mediaType string) bool {
 // a structured +json type.
 func isJSONMediaType(mediaType string) bool {
 	return mediaType == "application/json" || strings.HasSuffix(mediaType, "+json")
+}
+
+// sentAs says whether the request resp answers went out with method, as the
+// one do sent did. Go's client follows a 301, 302 or 303 answer to a write
+// with a GET that carries no body; a 307 or 308 keeps both.
+func sentAs(resp *http.Response, method string) bool {
+	return resp.Request == nil || resp.Request.Method == method
 }
 
 // successful reports whether a status is a 2xx, the only answers do does not
