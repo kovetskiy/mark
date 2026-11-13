@@ -216,7 +216,7 @@ in `page/check_test.go` races it). A document's `report.Warnings` and the
 `report.Report` take their own locks (`TestWarningsConcurrentAccess`,
 `TestReportSetWarningsConcurrentAccess`). What still assumes one file at a time is the
 rest of `publishRun` in `mark.go`: `runUsers` swaps its `ctx` for each file, and
-`runTitles` (its `warned` set included), `pageFile`, `createdParents` and the `warnings` map of each
+`runTitles` (its `warned` set included), `pageFile`, `createdParents`, `titleClaims`, `claimedTitles`, `yielded` and the `warnings` map of each
 document's collector carry no lock. The manifest store calls the function
 `SetWarningsFor` gives it with its own lock held, so that function must not call back
 into the store. Anything that introduces concurrency across files has to make those

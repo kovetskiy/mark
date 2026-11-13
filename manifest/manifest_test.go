@@ -93,6 +93,31 @@ func TestRecordAndLookupRoundTrip(t *testing.T) {
 	assert.Equal(t, "1234", entry.PageID)
 }
 
+// TestRecordedForNamesThePathOfAPage: the path is the one whose entry names
+// the page now, not one that has since recorded another.
+func TestRecordedForNamesThePathOfAPage(t *testing.T) {
+	ctx := t.Context()
+	store, server := newStore(t)
+	server.AddSpace("DOCS")
+
+	require.NoError(t, store.Record(ctx, "DOCS", "docs/intro.md", "1234", "T", ""))
+
+	path, ok, err := store.RecordedFor(ctx, "DOCS", "1234")
+	require.NoError(t, err)
+	require.True(t, ok)
+	assert.Equal(t, "docs/intro.md", path)
+
+	_, ok, err = store.RecordedFor(ctx, "DOCS", "5678")
+	require.NoError(t, err)
+	assert.False(t, ok, "no path recorded the page")
+
+	require.NoError(t, store.Record(ctx, "DOCS", "docs/intro.md", "5678", "T", ""))
+
+	_, ok, err = store.RecordedFor(ctx, "DOCS", "1234")
+	require.NoError(t, err)
+	assert.False(t, ok, "the path publishes to another page now")
+}
+
 // TestLookupSurvivesTitleChange is the point of the whole package: the title
 // recorded last run is not what the entry is found by, so changing it -- via the
 // Title header, the leading H1 or a file rename -- still resolves to the same

@@ -75,8 +75,9 @@ own parents. Deriving parents from the path makes that likely rather than
 unlucky -- every directory tends to hold a README, and several will want an
 "Overview".
 
-Mark refuses before publishing the second one, comparing titles the way
-Confluence does, without regard to case:
+Mark refuses before publishing the second one, with or without
+`--parents-from-path`, comparing titles the way Confluence does, without regard
+to case:
 
 ```text
 docs/api/overview.md already publishes "Overview" in space "DOCS", and a space
@@ -91,6 +92,19 @@ different directories. The pages standing for directories are hashed the same
 way, whether a README stands for them or not, so `docs/api/guides` and
 `docs/sdk/guides` are two pages, and a directory's README is the very page the
 documents beside it sit under.
+
+Which of the two is the second depends on what mark knows of the page. With
+`--track-pages`, a page of that title recorded for one of the run's documents
+stays with that document as long as it declares the title: it publishes to its
+page, and a document that newly declares the title is the one refused, whichever
+of them the run comes to first. Without `--track-pages`, or when the page is
+recorded for no document of the run, the first document to declare the title
+publishes and the next is refused.
+
+A page and a blog post of one title are two pieces of content, and a document
+with `Synchronized: false` publishes nothing, so neither is refused. Without
+`--parents-from-path` the hash is taken over the parents the documents declare,
+and two documents declaring the same ones need different titles.
 
 ### Directories are remembered too
 
@@ -154,6 +168,8 @@ file, no commit. The record lives in Confluence.
 | file renamed | content fingerprint, matched against paths that stopped appearing |
 | parent page renamed | the page the declared parent chain resolved to last run, whatever it is called now |
 | parent and child retitled in one run | the run's own document publishing the parent's new title, and the page it published last time, before that document's turn to retitle it |
+| title given up by one document and taken by another in one run | the title still finds the first document's page, so that document is published first and retitles it, and the other gets a page of its own |
+| title of a recorded page declared by a second document | the page is recorded for a document of the run that still declares the title, so that document is published first and the second is refused |
 | folder renamed in Confluence | the recorded folder ID, reused rather than duplicated |
 | source file deleted | a recorded path absent from a run whose pattern covered it |
 | two files claiming one page | the reverse index, when the second one is recorded |
@@ -161,7 +177,21 @@ file, no commit. The record lives in Confluence.
 
 A retitle is written even under `--changes-only`. The content fingerprint would
 otherwise match, the update would be skipped, and the page would keep its old
-title indefinitely.
+title indefinitely. That holds for a title changed only in case, which the
+title lookup still finds the page by, with or without `--track-pages`.
+
+A document taking a title another document of the run gives up waits for that
+one: it is published ahead of its turn, and the report lists it there. If it
+fails, or `--no-overwrite` leaves its page alone, the page keeps the title and
+the document taking it is refused rather than published over that page. Two
+documents that swap titles each publish to the page their new title finds.
+
+A document that keeps its title is published ahead of its turn in the same way,
+when another document of the run declares that title before it: the page stays
+with the document it is recorded for, and the other one is refused as a second
+document of the title. A file renamed since counts as the recorded document when
+its content is unchanged. A recorded file that is gone from the run, or that
+gives the title up, holds nothing, and the title goes to the document taking it.
 
 Renaming a file is the awkward case: the path is the key, so a rename is a miss,
 and when the title comes from the filename the title lookup misses too. What
