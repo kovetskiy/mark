@@ -345,7 +345,22 @@ func trackedPageOfDeclaredTitle(
 		// Indexed, so read ahead already.
 		_, entry, found, err = tracker.ResolveRenamedFor(ctx, space, in.key, titles.readAhead(in).sourceHash)
 		if err != nil || !found {
-			return "", "", err
+			if err != nil {
+				return "", "", err
+			}
+
+			// A parent can be renamed and edited before this run, so its
+			// content hash no longer identifies the old path. Follow it only
+			// when this document's scope has exactly one unclaimed old page;
+			// with more than one candidate there is no safe answer.
+			_, unique, found, err := tracker.ResolveUniqueRenamedFor(ctx, space, in.key)
+			if err != nil {
+				return "", "", err
+			}
+			if !found {
+				return "", "", nil
+			}
+			entry = unique
 		}
 	}
 	if entry.PageID == "" {
@@ -380,6 +395,14 @@ func resolveRenamedFile(
 	previous, entry, ok, err := tracker.ResolveRenamedFor(ctx, meta.Space, doc.key, doc.sourceHash)
 	if err != nil {
 		return nil, fmt.Errorf("unable to check whether %q was renamed: %w", file, err)
+	}
+	if !ok {
+		// If a path and its content both changed, only follow its old page
+		// when it is the sole unclaimed page this run's scope could have lost.
+		previous, entry, ok, err = tracker.ResolveUniqueRenamedFor(ctx, meta.Space, doc.key)
+		if err != nil {
+			return nil, fmt.Errorf("unable to check whether %q was renamed: %w", file, err)
+		}
 	}
 	if !ok {
 		return nil, nil
