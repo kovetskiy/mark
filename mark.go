@@ -469,15 +469,20 @@ type RenderingConfig struct {
 	StripLinebreaks bool
 	MermaidEngine   mermaid.EngineKind
 	MermaidScale    float64
-	// MermaidOutput, D2Output and MathOutput are the image each kind of
-	// picture is published as; the zero value is PNG.
-	MermaidOutput  imageformat.Format
-	MermaidBundle  bool
-	D2Output       imageformat.Format
-	D2Scale        float64
-	D2BundleRemote bool
-	MathOutput     imageformat.Format
-	MathScale      float64
+	// MermaidOutput is how a mermaid diagram is published: PNG (the default) or
+	// SVG drawn by mark, or Macro, where the source is published as the
+	// instance's own macro. MermaidScale applies to the image outputs only, and
+	// MermaidBundle only to an SVG. MermaidMacroName is the ac:name a diagram
+	// is published under with Macro. D2Output and MathOutput are the image
+	// those pictures are published as; the zero value is PNG.
+	MermaidOutput    mermaid.Output
+	MermaidBundle    bool
+	MermaidMacroName string
+	D2Output         imageformat.Format
+	D2Scale          float64
+	D2BundleRemote   bool
+	MathOutput       imageformat.Format
+	MathScale        float64
 	// Features is the optional features to compile with, each a name from
 	// markdown.KnownFeatures. Nil or empty is none of them, as is "none" on
 	// its own; it is not the command line's default, which is
@@ -622,20 +627,32 @@ func (c PublishConfig) Validate() error {
 // validate refuses rendering settings the renderers cannot act on.
 func (r RenderingConfig) validate() error {
 	// Checked whether or not mermaid is enabled: the engine is made for every
-	// run, and refuses a name it does not know.
-	if err := mermaid.CheckEngine(r.MermaidEngine); err != nil {
-		return err
+	// run, and refuses a name it does not know. With the macro output nothing
+	// is drawn, so the engine's value is unused.
+	if r.MermaidOutput.Draws() {
+		if err := mermaid.CheckEngine(r.MermaidEngine); err != nil {
+			return err
+		}
+	}
+
+	if !r.MermaidOutput.Draws() && !r.enabled("mermaid") {
+		log.Warn().Msg("MermaidOutput \"macro\" needs the mermaid feature: the fence stays a plain code block without it")
 	}
 
 	// Checked here as well as by the renderers, so that a value they do not
 	// know fails the run before anything is published rather than at its
-	// first picture. Compared as written: imageformat.Parse is for what a
-	// person typed. Empty is a field nobody set, and means PNG.
+	// first picture. Compared as written: the parsers are for what a person
+	// typed. Empty is a field nobody set, and means PNG.
+	if r.MermaidOutput != "" && !r.MermaidOutput.Valid() {
+		return fmt.Errorf(
+			"invalid MermaidOutput %q: expected \"png\", \"svg\", \"macro\", or \"\" for the default",
+			r.MermaidOutput,
+		)
+	}
 	for _, output := range []struct {
 		field string
 		value imageformat.Format
 	}{
-		{"MermaidOutput", r.MermaidOutput},
 		{"D2Output", r.D2Output},
 		{"MathOutput", r.MathOutput},
 	} {
@@ -647,7 +664,14 @@ func (r RenderingConfig) validate() error {
 		}
 	}
 
-	if r.MermaidBundle && r.MermaidOutput != imageformat.SVG {
+	if r.MermaidBundle && r.MermaidOutput != mermaid.OutputSVG {
+		if r.MermaidOutput == mermaid.OutputMacro {
+			return errors.New(
+				"MermaidBundle needs MermaidOutput \"svg\": " +
+					"the macro publishes the diagram's source itself",
+			)
+		}
+
 		return errors.New(
 			"MermaidBundle needs MermaidOutput \"svg\": " +
 				"there is nowhere in a PNG to keep the diagram's source",
@@ -659,6 +683,14 @@ func (r RenderingConfig) validate() error {
 	// scales, which are checked by what the list switches on.
 	if err := rendercheck.Features(r.Features, markdown.KnownFeatures()); err != nil {
 		return fmt.Errorf("invalid Features: %w", err)
+	}
+
+	// Nothing is drawn with Macro, so the engine and scale are ignored; only
+	// the macro name is used.
+	if !r.MermaidOutput.Draws() && r.MermaidMacroName != "" && strings.TrimSpace(r.MermaidMacroName) == "" {
+		return errors.New(
+			"MermaidMacroName must not be blank: it names the macro to publish as",
+		)
 	}
 
 	// Zero is the field a caller never set, which for a scale is not a default
@@ -679,7 +711,7 @@ func (r RenderingConfig) validate() error {
 	// that is not wrong. What neither has ever been able to draw is a negative,
 	// NaN or infinite scale, and those are refused here rather than part way
 	// through a run, when the first diagram reaches the browser.
-	if r.enabled("mermaid") && !isScaleOrDefault(r.MermaidScale) {
+	if r.MermaidOutput.Draws() && r.enabled("mermaid") && !isScaleOrDefault(r.MermaidScale) {
 		return fmt.Errorf(
 			"invalid MermaidScale %v: expected a finite number greater than 0, or 0 for the default, with the mermaid feature enabled",
 			r.MermaidScale,
@@ -1519,7 +1551,13 @@ func NewPublisher(ctx context.Context, api *confluence.API, config PublishConfig
 func newPublisher(
 	ctx context.Context, api *confluence.API, config PublishConfig, checks page.LinkChecks,
 ) (*Publisher, error) {
-	res, err := newResources(config.Rendering.MermaidEngine)
+	kind := config.Rendering.MermaidEngine
+	if !config.Rendering.MermaidOutput.Draws() {
+		// Nothing is drawn, so the engine is unused; an unrecognised name
+		// cannot be one the run would have acted on.
+		kind = ""
+	}
+	res, err := newResources(kind)
 	if err != nil {
 		return nil, err
 	}
@@ -3224,6 +3262,7 @@ func (c RenderingConfig) markdownOptions(res *resources) markdown.Options {
 		ImageAlign:       imageAlign,
 		MermaidScale:     c.MermaidScale,
 		MermaidOutput:    c.MermaidOutput,
+		MermaidMacroName: mermaid.MacroNameOrDefault(c.MermaidMacroName),
 		MermaidBundle:    c.MermaidBundle,
 		D2Output:         c.D2Output,
 		D2Scale:          c.D2Scale,

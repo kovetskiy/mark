@@ -354,6 +354,11 @@ func RunPublish(ctx context.Context, cmd *cli.Command) (err error) {
 		return err
 	}
 
+	output, err := mermaidOutput(cmd)
+	if err != nil {
+		return err
+	}
+
 	config := mark.Config{
 		PublishConfig: mark.PublishConfig{
 			Page: mark.PageConfig{
@@ -391,7 +396,8 @@ func RunPublish(ctx context.Context, cmd *cli.Command) (err error) {
 				StripLinebreaks:  cmd.Bool("strip-linebreaks"),
 				MermaidEngine:    mermaid.EngineKind(cmd.String("mermaid-engine")),
 				MermaidScale:     cmd.Float("mermaid-scale"),
-				MermaidOutput:    outputs["mermaid-output"],
+				MermaidOutput:    output,
+				MermaidMacroName: cmd.String("mermaid-macro-name"),
 				MermaidBundle:    cmd.Bool("mermaid-bundle"),
 				D2Output:         outputs["d2-output"],
 				D2BundleRemote:   cmd.Bool("d2-bundle-remote"),
@@ -435,6 +441,18 @@ func RunPublish(ctx context.Context, cmd *cli.Command) (err error) {
 	}
 	if reportFile != nil {
 		config.Report.Output = reportFile
+	}
+
+	// Warned about, not refused: the value may come from the config file or the environment.
+	if !config.Rendering.MermaidOutput.Draws() {
+		if cmd.IsSet("mermaid-engine") {
+			log.Warn().Msg("--mermaid-engine has no effect with --mermaid-output=macro: the macro does not draw the diagram")
+		}
+		if cmd.IsSet("mermaid-scale") {
+			log.Warn().Msg("--mermaid-scale has no effect with --mermaid-output=macro: the macro does not draw the diagram")
+		}
+	} else if cmd.IsSet("mermaid-macro-name") {
+		log.Warn().Msg("--mermaid-macro-name has no effect without --mermaid-output=macro")
 	}
 
 	// Run shuts the browsers it started down on the way out, however the run
