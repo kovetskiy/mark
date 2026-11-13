@@ -81,7 +81,7 @@ func (c *converter) writeRaw(b *strings.Builder, n *node, mode rawMode) {
 			return
 		}
 
-		if mode == rawInline && n.parent != nil && syntax.IsLiteralElement(n.parent.name) {
+		if mode == rawInline && n.insideLiteral() {
 			b.WriteString(literalText(n.text))
 			return
 		}
@@ -155,6 +155,19 @@ func cdata(text string) string {
 	}
 
 	return b.String()
+}
+
+// insideLiteral reports whether n lies in an element mark publishes as
+// written, at any depth: what a parameter holds is not read as Markdown up to
+// its closing tag, the text of an element inside it included.
+func (n *node) insideLiteral() bool {
+	for p := n.parent; p != nil; p = p.parent {
+		if syntax.IsLiteralElement(p.name) {
+			return true
+		}
+	}
+
+	return false
 }
 
 // literalText escapes the text of an element mark publishes as written, such
