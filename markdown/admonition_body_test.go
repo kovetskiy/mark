@@ -86,3 +86,40 @@ func TestAdmonitionWithoutABodyOrATitle(t *testing.T) {
 	assert.Equal(t, `<blockquote class="admonition adm-example"></blockquote>`+"\n"+
 		`<p>text</p>`+"\n", compileDoc(t, "!!! example \"Usage\"\n\ntext\n", "mkdocsadmonitions"))
 }
+
+// TestAdmonitionClosingRunAfterHTML: a closing run straight after an HTML
+// block that ends at a blank line closes the admonition, and is not published
+// as that block's text.
+func TestAdmonitionClosingRunAfterHTML(t *testing.T) {
+	out := compileDoc(t, "!!! note \"Remember\"\nIn the box.\n<div>also</div>\n!!!\n\nAfter the box.\n", "mkdocsadmonitions")
+
+	assert.Equal(t, `<ac:structured-macro ac:name="info"><ac:parameter ac:name="icon">true</ac:parameter><ac:rich-text-body>`+"\n"+
+		`<p><strong>Remember</strong></p>`+"\n"+
+		`<p>In the box.</p>`+"\n"+
+		`<div>also</div>`+"\n"+
+		`</ac:rich-text-body></ac:structured-macro>`+"\n"+
+		`<p>After the box.</p>`+"\n", out)
+}
+
+// TestAdmonitionsEachClosedByARun: of two admonitions, one in the other, each
+// ends at its own closing run, whether or not the inner body is indented.
+func TestAdmonitionsEachClosedByARun(t *testing.T) {
+	const want = `<ac:structured-macro ac:name="info"><ac:parameter ac:name="icon">true</ac:parameter><ac:rich-text-body>` + "\n" +
+		`<p><strong>Outer</strong></p>` + "\n" +
+		`<p>a</p>` + "\n" +
+		`<ac:structured-macro ac:name="tip"><ac:parameter ac:name="icon">true</ac:parameter><ac:rich-text-body>` + "\n" +
+		`<p><strong>Inner</strong></p>` + "\n" +
+		`<p>b</p>` + "\n" +
+		`</ac:rich-text-body></ac:structured-macro>` + "\n" +
+		`<p>c</p>` + "\n" +
+		`</ac:rich-text-body></ac:structured-macro>` + "\n" +
+		`<p>after</p>` + "\n"
+
+	for name, body := range map[string]string{"indented": "    b", "level": "b"} {
+		t.Run(name, func(t *testing.T) {
+			source := "!!! note \"Outer\"\na\n!!! tip \"Inner\"\n" + body + "\n!!!\nc\n!!!\nafter\n"
+
+			assert.Equal(t, want, compileDoc(t, source, "mkdocsadmonitions"))
+		})
+	}
+}

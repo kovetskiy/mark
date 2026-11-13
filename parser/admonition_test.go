@@ -304,13 +304,67 @@ func TestAdmonitionBodyIsIndentedOrClosed(t *testing.T) {
 		},
 		{
 			name:   "a run in a fenced code block of a closed body is code",
-			source: "!!! note \"T\"\n```\n!!!\n```\n<div>\n!!!\n</div>\n\n<!-- c -->\n!!!\nafter\n",
+			source: "!!! note \"T\"\n```\n!!!\n```\n<pre>\n!!!\n</pre>\n\n<!-- c -->\n!!!\nafter\n",
 			want:   []string{"!note", "  CodeBlock", "  HTMLBlock", "  HTMLBlock", "Paragraph:after"},
 		},
 		{
-			name:   "a run after a nested indented body closes the outer one",
+			name:   "a run straight after a nested indented body closes that one",
 			source: "!!! note \"outer\"\nintro\n!!! tip \"inner\"\n    b\n!!!\n\nafter\n",
-			want:   []string{"!note", "  Paragraph:intro", "  !tip", "    Paragraph:b", "Paragraph:after"},
+			want:   []string{"!note", "Paragraph:intro", "!tip", "  Paragraph:b", "Paragraph:after"},
+		},
+		{
+			name:   "each closed by its own run, the inner one indented",
+			source: "!!! note \"outer\"\na\n!!! tip \"inner\"\n    b\n!!!\nc\n!!!\nafter\n",
+			want:   []string{"!note", "  Paragraph:a", "  !tip", "    Paragraph:b", "  Paragraph:c", "Paragraph:after"},
+		},
+		{
+			name:   "title only, then one with an indented body and a run",
+			source: "!!! note \"one\"\n\ntext\n\n!!! tip \"two\"\n    body\n!!!\n\nafter\n",
+			want:   []string{"!note", "Paragraph:text", "!tip", "  Paragraph:body", "Paragraph:after"},
+		},
+		{
+			// The paragraph of the inner body runs on over the line that
+			// ended that body, and the run after it is the outer one's.
+			name:   "a run after a nested indented body and a line level with it",
+			source: "!!! note \"outer\"\n!!! tip \"inner\"\n    b\nlazy\n!!!\nafter\n",
+			want:   []string{"!note", "  !tip", "    Paragraph:b\nlazy", "Paragraph:after"},
+		},
+		{
+			name:   "a run too short for the one opened above it",
+			source: "!!! note \"outer\"\na\n!!!! tip \"inner\"\nb\n!!!\nafter\n",
+			want:   []string{"!note", "  Paragraph:a", "  !tip", "  Paragraph:b", "Paragraph:after"},
+		},
+		{
+			name:   "a run too short for the one opened on the line above",
+			source: "!!! note \"outer\"\n!!!! tip \"inner\"\n!!!\nafter\n",
+			want:   []string{"!note", "  !tip", "Paragraph:after"},
+		},
+		{
+			name:   "a run straight after an HTML block that ends at a blank line",
+			source: "!!! note \"T\"\n<details>\n<summary>s</summary>\n</details>\n!!!\n\nafter\n",
+			want:   []string{"!note", "  HTMLBlock", "Paragraph:after"},
+		},
+		{
+			name:   "a run after a list item that opens with a code block",
+			source: "!!! note \"T\"\n- ```\n  code\n  ```\n!!!\nafter\n",
+			want:   []string{"!note", "  List", "    ListItem", "      CodeBlock", "Paragraph:after"},
+		},
+		{
+			name:   "a code block cut short by a line indented less than the opening line",
+			source: "  !!! note \"T\"\n  a\n  ```\ncode\n  ```\n  !!!\nafter\n",
+			want:   []string{"!note", "Paragraph:a", "CodeBlock", "Paragraph:!!!\nafter"},
+		},
+		{
+			name:   "closed by a run behind a partly taken tab",
+			source: "- item\n\n\t!!! note \"x\"\n\tb\n\t!!!\n\tafter\n",
+			want: []string{
+				"List", "  ListItem", "    Paragraph:item", "    !note", "      Paragraph:b", "    Paragraph:after",
+			},
+		},
+		{
+			name:   "closed by a run after a quote marker without its blank",
+			source: "> !!! note \"T\"\n> a\n>!!!\n> c\n",
+			want:   []string{"Blockquote", "  !note", "    Paragraph:a", "  Paragraph:c"},
 		},
 		{
 			name:   "a run after a title-only one nested in an indented body",
@@ -355,15 +409,28 @@ func TestAdmonitionBodyIsIndentedOrClosed(t *testing.T) {
 
 // TestAdmonitionsWithoutABodyAreNotNested: an admonition that ends at its
 // opening line is closed there, so a page of them is read in one pass rather
-// than each inside the one before.
+// than each inside the one before, and not to its last closing run once for
+// each either.
 func TestAdmonitionsWithoutABodyAreNotNested(t *testing.T) {
-	const count = 2000
+	const count = 20000
 
-	source := strings.Repeat("!!! note \"T\"\n\ntext\n\n", count)
+	for name, tail := range map[string]string{
+		"no run":                 "",
+		"a run at the end":       "!!!\n",
+		"a run in code":          "```\n!!!\n```\n",
+		"a run in a list at end": "- !!!\n",
+	} {
+		t.Run(name, func(t *testing.T) {
+			source := strings.Repeat("!!! note \"T\"\n\ntext\n\n", count) + tail
 
-	start := time.Now()
-	blocks := outline(t, source)
+			start := time.Now()
+			blocks := outline(t, source)
 
-	assert.Len(t, blocks, 2*count)
-	assert.Less(t, time.Since(start), 2*time.Second)
+			assert.Equal(t, []string{"!note", "Paragraph:text", "!note", "Paragraph:text"}, blocks[:4])
+			assert.Equal(t, "!note", blocks[2*count-2])
+
+			// Read once for each, a page this long takes minutes.
+			assert.Less(t, time.Since(start), 20*time.Second)
+		})
+	}
 }

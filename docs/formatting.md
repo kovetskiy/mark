@@ -530,11 +530,15 @@ This paragraph is in the box.
 !!!
 ```
 
-A line of `!!!` closes the nearest admonition above it that is still open and
-whose body is not indented, so one written this way inside another needs a
-closing line of its own, and the outer one a second. An admonition with an
-indented body inside one that is closed by `!!!` needs none. A `!!!` line inside
-a fenced code block, a `<pre>` block or an HTML comment is that block's text.
+The closing line starts where the opening line does and has at least as many
+`!` as it. It closes the nearest admonition above it that is still open, so one
+written this way inside another needs a closing line of its own, and the outer
+one a second. An admonition with an indented body needs none, but a `!!!` line
+straight after its body closes it, and not the admonition around it.
+
+A `!!!` line inside a fenced code block, a `<pre>` block or an HTML comment is
+that block's text. After any other HTML, such as `</details>` or a `<div>`, it
+closes the admonition.
 
 ## HTML Details/Summary Macro
 

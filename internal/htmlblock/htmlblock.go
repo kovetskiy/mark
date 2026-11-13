@@ -28,16 +28,16 @@ func Lines(n *ast.HTMLBlock, source []byte) []text.Segment {
 		return lines
 	}
 
-	if closes(n.HTMLBlockKind, lines[len(lines)-1].Bytes(source)) {
+	if Closes(n.HTMLBlockKind, lines[len(lines)-1].Bytes(source)) {
 		return lines[:len(lines)-1]
 	}
 
 	return lines
 }
 
-// closes reports whether line holds the marker that ends an HTML block of the
+// Closes reports whether line holds the marker that ends an HTML block of the
 // given kind, as goldmark's parser tests for it.
-func closes(kind ast.HTMLBlockKind, line []byte) bool {
+func Closes(kind ast.HTMLBlockKind, line []byte) bool {
 	switch kind {
 	case ast.HTMLBlockKind1:
 		lower := bytes.ToLower(line)
