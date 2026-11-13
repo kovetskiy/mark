@@ -315,8 +315,9 @@ change the same shard. The second to save it reads it again and saves its own
 changes over what the first wrote, so the pages of both stay tracked. For a
 document both runs published, what is kept is the record of the run that wrote
 the page last, so `--no-overwrite` compares against the version the page is at. A shard
-that is still refused after that is not saved: the run names it among its
-errors and exits non-zero.
+that is still refused after that is not saved, nor is one the other run saved
+in a format this mark does not read: the run names it among its errors and
+exits non-zero.
 
 Folders and parents live in properties of their own rather than among the
 shards. They are keyed by the chain of titles a document declares rather than by
