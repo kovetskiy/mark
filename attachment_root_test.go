@@ -43,8 +43,8 @@ func attachmentRootProject(t *testing.T) (server *confluencetest.Server, guide s
 // TestAttachmentRootDocumentRefusesAnotherDocumentsFile: with
 // Rendering.AttachmentRoot set to attachment.BoundaryDocument, an Attachment:
 // header naming a file beside another document fails the document with
-// attachment.ErrOutsideProject, for Run and a Publisher alike, and nothing is
-// published.
+// attachment.ErrOutsideProject, for Run and a Publisher alike, and its page is
+// given no body.
 func TestAttachmentRootDocumentRefusesAnotherDocumentsFile(t *testing.T) {
 	server, guide := attachmentRootProject(t)
 

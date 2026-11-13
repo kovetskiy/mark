@@ -613,8 +613,8 @@ func (c PublishConfig) prepare() (page.LinkChecks, error) {
 
 // Validate checks the settings each document is published with, as Run and
 // NewPublisher do before anything else, without a connection or any
-// documents. It does look on disk for Links.StagedRoot and Links.SourceRoot,
-// so call it once they exist. A link setting it refuses is a
+// documents. It does look on disk for Links.StagedRoot, Links.SourceRoot and
+// a directory Rendering.AttachmentRoot names, so call it once they exist. A link setting it refuses is a
 // *LinkConfigError. Run checks the settings
 // about the run as a whole as well, which this does not.
 func (c PublishConfig) Validate() error {
