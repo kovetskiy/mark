@@ -488,7 +488,18 @@ type RenderingConfig struct {
 	// or empty for none.
 	ImageAlign       string
 	AttachReferenced bool
-	IncludePath      string
+	// AttachmentRoot is how far the files a document names may reach, with
+	// symlinks followed: its Attachment: headers, images, files links point
+	// at with AttachReferenced, files macros name, and a d2 diagram's imports
+	// and images. A file outside it fails the document with
+	// attachment.ErrOutsideProject. Empty is the default boundary, the
+	// document's directory or the working directory, or a Document's FS;
+	// attachment.BoundaryDocument is the document's directory alone; anything
+	// else is a directory on disk, which must exist, and which a Document with
+	// an FS is refused under. Includes keep their own boundary, which
+	// IncludePath widens.
+	AttachmentRoot attachment.Boundary
+	IncludePath    string
 	// PageHeader is a template placed at the top of every page: Markdown
 	// when it has a Markdown extension, storage format otherwise.
 	PageHeader string
@@ -609,8 +620,8 @@ func (c PublishConfig) prepare() (page.LinkChecks, error) {
 
 // Validate checks the settings each document is published with, as Run and
 // NewPublisher do before anything else, without a connection or any
-// documents. It does look on disk for Links.StagedRoot and Links.SourceRoot,
-// so call it once they exist. A link setting it refuses is a
+// documents. It does look on disk for Links.StagedRoot, Links.SourceRoot and
+// a directory Rendering.AttachmentRoot names, so call it once they exist. A link setting it refuses is a
 // *LinkConfigError. Run checks the settings
 // about the run as a whole as well, which this does not.
 func (c PublishConfig) Validate() error {
@@ -645,6 +656,10 @@ func (r RenderingConfig) validate() error {
 				output.field, output.value,
 			)
 		}
+	}
+
+	if err := r.AttachmentRoot.Validate(); err != nil {
+		return fmt.Errorf("invalid Rendering.AttachmentRoot (--attachment-root): %w", err)
 	}
 
 	if r.MermaidBundle && r.MermaidOutput != imageformat.SVG {
@@ -2125,6 +2140,10 @@ func absPath(file string) string {
 func (r *publishRun) readDocument(in input) (*document, error) {
 	file := in.file
 
+	// Every file the document names is read through its root, so the root
+	// carries the boundary they are held to.
+	in.root = in.root.WithBoundary(r.config.Rendering.AttachmentRoot)
+
 	source, markdown, lineOf, err := in.read()
 	if err != nil {
 		return nil, err
@@ -3234,5 +3253,8 @@ func (c RenderingConfig) markdownOptions(res *resources) markdown.Options {
 		Features:         c.Features,
 		AttachReferenced: c.AttachReferenced,
 		IncludePath:      c.IncludePath,
+		// The page header is checked against this before the first page is
+		// published; each document's compile replaces it with its own root.
+		Root: attachment.Root{}.WithBoundary(c.AttachmentRoot),
 	}
 }

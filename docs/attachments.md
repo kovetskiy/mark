@@ -134,6 +134,42 @@ document is something a contributor writes.
 If a legitimate attachment lives outside, publish from a directory that contains
 both it and the documents.
 
+`--attachment-root` (`attachment-root` in the configuration file,
+`MARK_ATTACHMENT_ROOT`) draws that boundary somewhere else:
+
+* `document` holds each document to its own directory and what is below it.
+  For a repository with one document per directory, it stops one document from
+  publishing another's files: `<!-- Attachment: ../other-doc/file.pdf -->` is
+  refused, though the file is inside the directory Mark is running in.
+* A path holds every document to that directory, whichever directory the
+  document is in. A relative path is taken from the directory Mark is running
+  in, and the directory has to exist. It takes the place of the default
+  boundary rather than being added to it: a document outside the directory
+  cannot publish the files beside it, and a directory above the one Mark is
+  running in lets a document reach files the default refuses. A directory
+  really called `document` is written `./document`.
+
+Symlinks are followed either way, and a file outside the root fails the
+document with `outside the project`, as above. The root covers every file a
+document names: `<!-- Attachment: -->` headers and patterns, images, files
+links point at with `--attach-referenced`, files macros name, and a d2
+diagram's imports and images. A Markdown `--page-header` is compiled from
+its own path, so its images are held to the root as well: with `document` to
+the header's own directory, and with a path to that directory, which then has
+to hold the header's images too. Includes and macro templates keep their own
+rule, which `--include-path` widens, and the document itself is held to the
+boundary described in [publishing](publishing.md), whatever the root.
+
+In the Go library this is `RenderingConfig.AttachmentRoot`, an
+`attachment.Boundary`, or `attachment.BoundaryDocument` for `document`. The
+`attachment.Root` a document's files are read through carries it
+(`Root.WithBoundary`), so for `CompileMarkdown` it is
+`markdown.Options.Root`. A `Document` read from an `fs.FS` may name anything
+inside the FS by default, and with `document` only what is in its own
+directory there; a path is a directory on disk, which holds nothing of an FS,
+so such a `Document` is refused under one: narrow the FS with `fs.Sub`
+instead. A refused file is `attachment.ErrOutsideProject` to `errors.Is`.
+
 ## Use HTML img tags for sizing
 
 Standard HTML `<img>` tags (inline, block, single-line, or multi-line) are converted into `<ac:image>` macros. This allows you to specify sizing while keeping the document readable in standard Markdown renderers like GitHub:

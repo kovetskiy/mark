@@ -81,7 +81,29 @@ type Document struct {
 	// A d2 diagram's imports and local images are read from FS too, under the
 	// same rules, and so is the .pages file of a directory only documents in
 	// an FS lie in, under ParentsFromPath.
+	//
+	// RenderingConfig.AttachmentRoot narrows the files the document names:
+	// attachment.BoundaryDocument to its directory inside FS. A directory
+	// root is on disk and holds nothing in FS, so a Document with FS is
+	// refused under one; fs.Sub narrows FS instead.
 	FS fs.FS
+}
+
+// checkDocumentRoot refuses a Document with an FS under a directory
+// AttachmentRoot, which is a directory on disk and so holds nothing in the
+// FS: every file the document names would be refused, so it is refused
+// before anything is published. The FS's own root is its boundary, which
+// fs.Sub narrows.
+func (c RenderingConfig) checkDocumentRoot(doc Document) error {
+	if doc.FS == nil || !c.AttachmentRoot.NamesDirectory() {
+		return nil
+	}
+
+	return fmt.Errorf(
+		"Document %s reads its files from an FS, which Rendering.AttachmentRoot (--attachment-root) %q, "+
+			"a directory on disk, cannot hold: narrow the FS with fs.Sub, or use attachment.BoundaryDocument",
+		doc.Path, string(c.AttachmentRoot),
+	)
 }
 
 // input is one document a run publishes: a file it reads, or a Document it
@@ -234,6 +256,12 @@ func (r *runInputs) named(file string) input {
 // settings that would do nothing while seeming to, before anything is
 // published.
 func (c Config) checkDocuments() error {
+	for _, doc := range c.Documents {
+		if err := c.Rendering.checkDocumentRoot(doc); err != nil {
+			return err
+		}
+	}
+
 	if c.DocumentScope != "" && !c.Tracking.TrackPages {
 		return errors.New("DocumentScope requires Tracking.TrackPages: " +
 			"it names the documents in the page manifest, and nothing else keeps one")
@@ -523,6 +551,10 @@ func (p *Publisher) PublishDocument(ctx context.Context, doc Document) (*conflue
 	}
 
 	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
+	if err := p.run.config.Rendering.checkDocumentRoot(doc); err != nil {
 		return nil, err
 	}
 

@@ -296,17 +296,25 @@ var ErrOutsideProject = errors.New("outside the project")
 // "/etc/id_rsa" becomes "<base>/etc/id_rsa", which is inside the project and
 // does not exist, so the check passes and the read still happens somewhere
 // else entirely.
+//
+// Root.CheckReadable is the same check held to the Root's Boundary.
 func CheckReadable(base, reference string) error {
+	return Boundary("").checkReadable(base, reference)
+}
+
+// checkReadable is CheckReadable held to b.
+func (b Boundary) checkReadable(base, reference string) error {
 	path := reference
 	if !filepath.IsAbs(path) {
 		path = filepath.Join(base, path)
 	}
 
-	return checkPath(base, path, reference)
+	return b.checkPath(base, path, reference)
 }
 
-// checkAttachmentPath refuses an attachment that resolves outside both the
-// document's own directory and the directory mark is running in.
+// checkAttachmentPath refuses an attachment that resolves outside b: by
+// default, both the document's own directory and the directory mark is
+// running in.
 //
 // A document says which files to upload, and a document is content: on a
 // repository that takes pull requests, a contributor could point an image at
@@ -316,25 +324,46 @@ func CheckReadable(base, reference string) error {
 // Upward paths themselves are ordinary -- "../images/logo.png" is how a docs
 // directory refers to shared assets, and README documents it -- so the boundary
 // is not the document's directory. It is that directory or the one mark was run
-// in, which for a run at the root of a repository is the repository.
+// in, which for a run at the root of a repository is the repository, unless a
+// Boundary draws it elsewhere.
 //
 // Both sides are resolved before the comparison, since a link committed to the
 // repository is as good as a path for reaching outside it -- and since the
 // roots have to be resolved too, or a repository reached through a symlinked
 // path would put every file in it outside itself.
-func checkAttachmentPath(base, name string) error {
-	return checkPath(base, filepath.Join(base, name), name)
+func (b Boundary) checkAttachmentPath(base, name string) error {
+	return b.checkPath(base, filepath.Join(base, name), name)
 }
 
-// checkPath holds a resolved path to the project boundary. named is what the
-// document actually wrote, which is what the reader has to go and look at.
-func checkPath(base, resolved, named string) error {
-	roots := []string{base}
-	if cwd, err := os.Getwd(); err == nil {
-		roots = append(roots, cwd)
+// checkPath holds a resolved path to b, drawn around a document in base.
+// named is what the document actually wrote, which is what the reader has to
+// go and look at.
+func (b Boundary) checkPath(base, resolved, named string) error {
+	var path string
+	var ok bool
+
+	switch b {
+	case "":
+		roots := []string{base}
+		if cwd, err := os.Getwd(); err == nil {
+			roots = append(roots, cwd)
+		}
+
+		path, ok = within(roots, resolved)
+	default:
+		// One directory alone has no working directory beside it to catch a
+		// relative base resolved apart from an absolute name.
+		dir := string(b)
+		if b == BoundaryDocument {
+			dir = base
+		}
+
+		var err error
+		if path, ok, err = withinDir(dir, resolved); err != nil {
+			return fmt.Errorf("unable to hold %q to the attachment root: %w", named, err)
+		}
 	}
 
-	path, ok := within(roots, resolved)
 	if ok {
 		return nil
 	}
@@ -342,11 +371,44 @@ func checkPath(base, resolved, named string) error {
 	// Reported as the resolved absolute path: "docs/../../id_rsa" cleans down
 	// to "../id_rsa", which says less about where the file actually is than the
 	// reader needs in order to judge it.
-	return fmt.Errorf(
-		"%w: %q resolves to %s, which is outside both %q and the directory mark is "+
-			"running in; publish from a directory that contains it",
-		ErrOutsideProject, named, path, base,
-	)
+	return b.outside(base, named, path)
+}
+
+// outside is the refusal of named, which resolves to path, as outside b drawn
+// around a document in base.
+func (b Boundary) outside(base, named, path string) error {
+	var where string
+
+	switch b {
+	case "":
+		where = fmt.Sprintf("both %q and the directory mark is running in; "+
+			"publish from a directory that contains it", base)
+	case BoundaryDocument:
+		where = fmt.Sprintf("the document's directory %q, the attachment root", base)
+	default:
+		where = fmt.Sprintf("the attachment root %q", string(b))
+	}
+
+	return fmt.Errorf("%w: %q resolves to %s, which is outside %s", ErrOutsideProject, named, path, where)
+}
+
+// withinDir is within for one directory, dir and path made absolute first, as
+// Within makes them: one resolved while relative keeps the working
+// directory's own link and reads as outside the other.
+func withinDir(dir, path string) (string, bool, error) {
+	absDir, err := filepath.Abs(dir)
+	if err != nil {
+		return "", false, err
+	}
+
+	absPath, err := filepath.Abs(path)
+	if err != nil {
+		return "", false, err
+	}
+
+	resolved, ok := within([]string{absDir}, absPath)
+
+	return resolved, ok, nil
 }
 
 // within reports whether resolved is inside any of roots, both resolved
