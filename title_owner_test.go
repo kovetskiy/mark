@@ -254,3 +254,45 @@ func TestWithoutTrackingATitleGoesToTheFirstDocumentDeclaringIt(t *testing.T) {
 	assert.Equal(t, report.StatusPublished, statusOf(t, pages, "a-new.md").Status)
 	assert.True(t, strings.Contains(statusOf(t, pages, "b-old.md").Reason, "a-new.md already publishes"))
 }
+
+// TestARecordedPageIsItsDocumentsHoweverTheSpaceKeyIsSpelled: a space key
+// names one space in either case, so a document spelling it the other way
+// than the one a page is recorded for is still asking for that document's
+// page.
+func TestARecordedPageIsItsDocumentsHoweverTheSpaceKeyIsSpelled(t *testing.T) {
+	lowerCase := func(doc string) string {
+		return strings.Replace(doc, "Space: DOCS", "Space: docs", 1)
+	}
+
+	t.Run("the title is kept", func(t *testing.T) {
+		server, dir, config, id := overviewPublished(t)
+		config.ContinueOnError = true
+
+		writeFile(t, dir, "a-new.md", lowerCase(titledDoc("Overview", "New body.")))
+
+		pages, err := reportOf(t, config)
+		require.Error(t, err)
+
+		assert.Contains(t, server.Page(id).Body, "Old body.")
+
+		require.Len(t, pages, 2)
+		assert.Equal(t, report.StatusPublished, statusOf(t, pages, "b-old.md").Status)
+		assert.Contains(t, statusOf(t, pages, "a-new.md").Reason, "b-old.md already publishes")
+	})
+
+	t.Run("the title is given up", func(t *testing.T) {
+		server, dir, config, legacyID := overviewPublished(t)
+
+		writeFile(t, dir, "b-old.md", titledDoc("Legacy overview", "Old body."))
+		writeFile(t, dir, "a-new.md", lowerCase(titledDoc("Overview", "New body.")))
+
+		require.NoError(t, Run(context.Background(), config))
+
+		assert.Equal(t, "Legacy overview", server.Page(legacyID).Title)
+		assert.Contains(t, server.Page(legacyID).Body, "Old body.")
+
+		overviewID := pageIDTitled(t, server, "Overview")
+		require.NotEmpty(t, overviewID, "the title has a page")
+		assert.NotEqual(t, legacyID, overviewID)
+	})
+}
