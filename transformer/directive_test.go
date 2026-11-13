@@ -12,6 +12,7 @@ import (
 	ctransformer "github.com/kovetskiy/mark/v17/transformer"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/yuin/goldmark/v2/extension"
 	"github.com/yuin/goldmark/v2/parser"
 	"github.com/yuin/goldmark/v2/renderer/html"
 	"github.com/yuin/goldmark/v2/util"
@@ -29,6 +30,7 @@ func convertDirectives(t *testing.T, dir, markdown string) (string, error) {
 	)
 
 	gm := goldmarktest.New(
+		goldmarktest.WithExtensions(extension.NewDefinitionListParser(), extension.NewDefinitionListHTMLRenderer()),
 		goldmarktest.WithParserOptions(
 			parser.WithASTTransformers(util.Prioritized[parser.ASTTransformer](pipeline, 100)),
 		),
@@ -229,6 +231,16 @@ func TestMacroAppliesToEachPieceOfText(t *testing.T) {
 			"\"\"",
 			"**a** MARKER *b*\n",
 			"<p><strong>a</strong>  <em>b</em></p>\n",
+		},
+		"nothing, on lines of its own": {
+			"\"\"",
+			"MARKER\nMARKER\n\nMARKER  \ntext\n\na\nMARKER\nb\n",
+			"<p>text</p>\n<p>a\n\nb</p>\n",
+		},
+		"in a definition's term": {
+			"replaced",
+			"a MARKER\n: b\n",
+			"<dl>\n<dt>a replaced</dt>\n<dd>b</dd>\n</dl>\n",
 		},
 		"not in an image's description": {
 			"\"<b>replaced</b>\"",

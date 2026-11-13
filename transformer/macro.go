@@ -89,9 +89,7 @@ const outerSpace = " \t"
 // text can be the start of a block of another kind. In a heading or a table
 // cell it follows the block's own marker, and inside markup the markup's.
 func startsBlock(node ast.Node) bool {
-	parent := node.Parent()
-
-	return node.PreviousSibling() == nil && (parent.Kind() == ast.KindParagraph || parent.Kind() == KindTextBlock)
+	return node.PreviousSibling() == nil && isParagraph(node.Parent())
 }
 
 // parseExpansion parses what a macro made of the piece of text at node into
@@ -124,8 +122,7 @@ func parseExpansion(node ast.Node, expanded []byte) (ast.Node, error) {
 		}
 	}
 
-	if last := subDoc.LastChild(); len(trail) > 0 && last != nil &&
-		(last.Kind() == ast.KindParagraph || last.Kind() == KindTextBlock) {
+	if last := subDoc.LastChild(); len(trail) > 0 && last != nil && isParagraph(last) {
 		last.AppendChild(NewString(bytes.Clone(trail)))
 	}
 
