@@ -182,12 +182,19 @@ func (s *confluenceTagParser) parseLiteralContent(
 	savedLine, savedSegment := block.Position()
 
 	// The block is gathered a line at a time, and read only once a line
-	// could close the element: most close on the line they open on.
+	// could close the element: most close on the line they open on. What
+	// is gathered is read again from its start, so after the first few
+	// times not before it has doubled, which keeps the reading in
+	// proportion to the block.
+	const freeReads = 4
+
 	var (
 		rest     []byte
 		pieces   [][]byte
 		consumed int
 		closable bool
+		reads    int
+		read     int
 	)
 	closer := []byte("</" + name)
 	for pieces == nil {
@@ -195,12 +202,21 @@ func (s *confluenceTagParser) parseLiteralContent(
 		if line == nil {
 			break
 		}
-		rest = append(rest, line...)
+		if rest == nil {
+			// The line itself, which the next one is not appended to.
+			rest = line[:len(line):len(line)]
+		} else {
+			rest = append(rest, line...)
+		}
 		block.AdvanceLine()
 
 		if bytes.Contains(line, closer) {
 			closable = true
-			pieces, consumed = literalContent(rest, name, inCell, false)
+			if reads < freeReads || len(rest) >= 2*read {
+				reads++
+				read = len(rest)
+				pieces, consumed = literalContent(rest, name, inCell, false)
+			}
 		}
 	}
 	if pieces == nil && closable {
@@ -264,6 +280,10 @@ func rawHTML(markup []byte) ast.Node {
 func literalContent(rest []byte, name string, inCell, whole bool) (pieces [][]byte, consumed int) {
 	textStart := 0
 
+	// A kind of section that rest does not close from here, it closes
+	// nowhere further on either.
+	var openCDATAForGood, openCommentForGood bool
+
 	for i := 0; i < len(rest); {
 		if rest[i] != '<' {
 			i++
@@ -278,9 +298,15 @@ func literalContent(rest []byte, name string, inCell, whole bool) (pieces [][]by
 
 		switch {
 		case bytes.HasPrefix(tail, openCDATA):
-			length = sectionLength(tail, closeCDATA)
+			if !openCDATAForGood {
+				length = sectionLength(tail, closeCDATA)
+				openCDATAForGood = length == 0
+			}
 		case bytes.HasPrefix(tail, openComment):
-			length = sectionLength(tail, closeComment)
+			if !openCommentForGood {
+				length = sectionLength(tail, closeComment)
+				openCommentForGood = length == 0
+			}
 		default:
 			if groups := closeTagRegexp.FindSubmatch(tail); groups != nil {
 				length = len(groups[0])
