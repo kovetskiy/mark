@@ -289,8 +289,9 @@ func (r *publishRun) renamedFrom(
 // is itself free, or freed the same way; visiting holds the documents asked
 // about, so that titles swapped between documents are found as they are.
 //
-// A page --no-overwrite would leave alone keeps its title, and the error is
-// the one a real run refuses the document with.
+// A page --no-overwrite would leave alone keeps its title, as does one whose
+// document is refused the title it now declares, and the error is the one a
+// real run refuses the document with.
 func (r *publishRun) titleFreed(
 	ctx context.Context, file, key string, meta *metadata.Meta, visiting map[string]bool,
 ) (bool, error) {
@@ -300,6 +301,17 @@ func (r *publishRun) titleFreed(
 	}
 
 	declared := r.titles.readAhead(held.holder).meta
+
+	// A holder refused the title it now declares never retitles the page.
+	claim := runTitleKey(declared.Space, declared.Type, declared.Title)
+	if previous, taken := r.titleClaims[claim]; taken && absPath(previous) != absPath(held.holder.file) {
+		return false, held
+	}
+	if owner, err := r.titleOwner(ctx, held.holder.file, held.holder.key, declared); err != nil {
+		return false, err
+	} else if owner != nil {
+		return false, held
+	}
 
 	if r.noOverwrite {
 		drift, err := hasDrifted(ctx, r.api, r.tracker, declared.Space, held.holder.key, held.page)
