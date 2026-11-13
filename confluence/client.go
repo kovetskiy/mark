@@ -272,7 +272,7 @@ func (c *client) do(
 	// read. Only a login page is still what it says: the write was sent to
 	// log in. A run that was stopped is worded as that below.
 	if !sentAs(resp, method) && (err == nil || ctx.Err() == nil) && !errors.Is(err, ErrLoginPage) {
-		return answer, &redirectedWriteError{method: method, requested: req.URL.Redacted(), answer: answer}
+		return answer, &redirectedWriteError{method: method, requested: req.URL, answer: answer}
 	}
 
 	if !successful(resp.StatusCode) {

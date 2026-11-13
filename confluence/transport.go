@@ -110,8 +110,13 @@ const maxRedirects = 10
 // kept from http to https on the same host and the default ports, which is
 // how a proxy moves a whole site to TLS. Once off it stays off, as it does
 // in net/http, for a chain that comes back.
+//
+// The warning is for the redirect that leaves the server, when it is
+// followed: net/http puts the header back on every later hop, and those are
+// not news.
 func checkRedirect(next func(req *http.Request, via []*http.Request) error) func(*http.Request, []*http.Request) error {
 	return func(req *http.Request, via []*http.Request) error {
+		leaves := false
 		if len(via) > 0 && req.Header.Get("Authorization") != "" {
 			hops := append(via[1:len(via):len(via)], req)
 			for _, hop := range hops {
@@ -120,25 +125,30 @@ func checkRedirect(next func(req *http.Request, via []*http.Request) error) func
 				}
 
 				req.Header.Del("Authorization")
-				log.Warn().
-					Str("requested", serverOf(via[0].URL)).
-					Str("redirected_to", serverOf(hop.URL)).
-					Msg("a redirect led to another server than the one requested, " +
-						"so the request goes on without its Authorization header; " +
-						"if Confluence is served there, use that address in the base URL")
+				leaves = hop == req
 
 				break
 			}
 		}
 
-		if next != nil {
-			return next(req, via)
-		}
-		if len(via) >= maxRedirects {
-			return fmt.Errorf("stopped after %d redirects", maxRedirects)
+		var err error
+		switch {
+		case next != nil:
+			err = next(req, via)
+		case len(via) >= maxRedirects:
+			err = fmt.Errorf("stopped after %d redirects", maxRedirects)
 		}
 
-		return nil
+		if leaves && err == nil {
+			log.Warn().
+				Str("requested", serverOf(via[0].URL)).
+				Str("redirected_to", serverOf(req.URL)).
+				Msg("a redirect led to another server than the one requested, " +
+					"so the request goes on without its Authorization header; " +
+					"if Confluence is served there, use that address in the base URL")
+		}
+
+		return err
 	}
 }
 
