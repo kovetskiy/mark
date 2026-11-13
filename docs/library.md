@@ -338,6 +338,14 @@ manifest and writes no report, so a document's `Key` is not used: its page is
 found by its title in its space, as a file's is, and placed under its parents.
 Its relative links are looked for in its `FS`, or on disk around `Path`.
 
+## Errors
+
+A run that fails on a document returns a `*mark.FileError` naming its `Path`
+as `File`, and its `Source` as `Source` when that is not `Path`. Under
+`ContinueOnError` the run returns a
+`*mark.FilesFailedError` holding one for each, and `errors.Is` and `errors.As`
+reach each one's cause.
+
 ## The version of mark a program links
 
 `mark.Version()` returns the version Go recorded for mark when it built the
@@ -357,11 +365,3 @@ So `""`, `(devel)` and a pseudo-version all mean there is no release to name.
 release from the rest; the container image, for one, is published under
 release tags alone (see
 [Continuous Integration](publishing.md#continuous-integration)).
-
-## Errors
-
-A run that fails on a document returns a `*mark.FileError` naming its `Path`
-as `File`, and its `Source` as `Source` when that is not `Path`. Under
-`ContinueOnError` the run returns a
-`*mark.FilesFailedError` holding one for each, and `errors.Is` and `errors.As`
-reach each one's cause.
