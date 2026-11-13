@@ -296,3 +296,41 @@ func TestARecordedPageIsItsDocumentsHoweverTheSpaceKeyIsSpelled(t *testing.T) {
 		assert.NotEqual(t, legacyID, overviewID)
 	})
 }
+
+// TestADryRunRefusesATitleItsDocumentCannotGiveUp: b.md gives its title up
+// for one c.md keeps, so b.md is refused and its page keeps the title a.md
+// takes. The dry run refuses a.md as the run does, where it would otherwise
+// preview a.md over the page of b.md.
+func TestADryRunRefusesATitleItsDocumentCannotGiveUp(t *testing.T) {
+	server, _ := docsSpace(t)
+	dir := t.TempDir()
+	writeFile(t, dir, "b.md", titledDoc("First", "Body of b."))
+	writeFile(t, dir, "c.md", titledDoc("Second", "Body of c."))
+
+	config := trackingConfig(server, filepath.Join(dir, "*.md"))
+	require.NoError(t, Run(context.Background(), config))
+
+	pageOfB := pageIDTitled(t, server, "First")
+
+	writeFile(t, dir, "a.md", titledDoc("First", "Body of a."))
+	writeFile(t, dir, "b.md", titledDoc("Second", "Body of b."))
+	config.ContinueOnError = true
+
+	for _, dryRun := range []bool{true, false} {
+		config.Mode.DryRun = dryRun
+
+		pages, err := reportOf(t, config)
+		require.Error(t, err, "dry run %t", dryRun)
+
+		require.Len(t, pages, 3, "dry run %t", dryRun)
+		assert.NotEqual(t, report.StatusFailed, statusOf(t, pages, "c.md").Status, "dry run %t", dryRun)
+		assert.Contains(t, statusOf(t, pages, "b.md").Reason, "c.md already publishes", "dry run %t", dryRun)
+
+		refused := statusOf(t, pages, "a.md")
+		assert.Equal(t, report.StatusFailed, refused.Status, "dry run %t", dryRun)
+		assert.Contains(t, refused.Reason, "belongs to page "+pageOfB, "dry run %t", dryRun)
+
+		assert.Equal(t, "First", server.Page(pageOfB).Title, "dry run %t", dryRun)
+		assert.Contains(t, server.Page(pageOfB).Body, "Body of b.", "dry run %t", dryRun)
+	}
+}
