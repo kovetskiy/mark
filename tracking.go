@@ -248,7 +248,7 @@ func (r *publishRun) recordedDocument(
 	// title.
 	declared := r.titles.readAhead(holder).meta
 	if declared == nil || !declared.Publish() || declared.Title == "" ||
-		declared.Space != meta.Space || declared.Type != meta.Type {
+		!strings.EqualFold(declared.Space, meta.Space) || declared.Type != meta.Type {
 		return nil, input{}, nil, nil
 	}
 
