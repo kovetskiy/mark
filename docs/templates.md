@@ -143,6 +143,37 @@ else is left alone and has to be: the blank lines inside `<ac:rich-text-body>`
 are what let a macro's body be read as Markdown, and a body ending in a list
 would otherwise swallow the closing tags.
 
+## Text inside `ac:parameter`
+
+A macro parameter is a string Confluence reads as it stands: a pattern, a query,
+a URL, a title. Mark therefore publishes the text of a parameter as written,
+and does not read it as Markdown:
+
+```text
+<ac:parameter ac:name="include">.*Guide.*</ac:parameter>
+<ac:parameter ac:name="cql">title ~ "*notes*" and text ~ "__init__"</ac:parameter>
+```
+
+reach Confluence with their asterisks and underscores, where Markdown would
+have made emphasis of them. The same holds for backticks, backslashes, links,
+bare URLs, mentions and emoji shortcodes, for a parameter a template writes and
+for one written in the document, and for the other elements that hold a
+string: `ac:default-parameter`, `ac:task-id` and `ac:task-status`.
+
+The text is still escaped for the storage format, so `&` and `<` are safe to
+write, and a character reference such as `&amp;` or `&#42;` is the character it
+names. An `<ac:...>` or `<ri:...>` element, a CDATA section and a comment inside
+a parameter are kept as they are; any other tag there is text. In a table cell
+a pipe is written `\|`, as it is anywhere in a cell, and published as `|`.
+
+The opening and the closing tag have to stand in one paragraph: a value with a
+blank line in it is read as Markdown, as is one whose closing tag is missing.
+A line of the value that opens a block of its own, such as a list item or a
+heading, ends the paragraph as a blank line does.
+
+`<ac:rich-text-body>` is not such an element: a macro's body is read as
+Markdown, as before.
+
 ## Built-in templates and macros
 
 By default, mark provides several built-in templates and macros:
