@@ -56,6 +56,10 @@ func TestAdmonitionRunInsideLiteralText(t *testing.T) {
 			source: "!!! note \"Remember\"\n\ntext\n\n<pre>\n!!!\n</pre>\n\nend\n",
 			want:   title + end + "<p>text</p>\n<pre>\n!!!\n</pre>\n<p>end</p>\n",
 		},
+		"HTML block indented a little, after a title": {
+			source: "!!! note \"Remember\"\ntext\n <pre>\n!!!\n </pre>\n\nend\n",
+			want:   title + end + "<p>text</p>\n <pre>\n!!!\n </pre>\n<p>end</p>\n",
+		},
 		"HTML block in a closed body": {
 			source: "!!! note \"Remember\"\n<pre>\n!!!\n</pre>\n!!!\nend\n",
 			want:   title + "<pre>\n!!!\n</pre>\n" + end + "<p>end</p>\n",

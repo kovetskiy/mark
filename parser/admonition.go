@@ -107,10 +107,10 @@ type admonitionState struct {
 	contentIndent     int
 	contentHasStarted bool
 
-	// dedented is set once a line indented less than the body came. The
-	// admonition is still open after it only as long as that line and the
-	// ones after it continue a paragraph of its body.
-	dedented bool
+	// runEnd is where the closing run of a body level with the opening line
+	// ends, as the look-ahead found it at the first body line, and -1 for
+	// any other body.
+	runEnd int
 }
 
 // indented reports whether the body is indented under the opening line, and
@@ -163,6 +163,7 @@ func (b *admonitionParser) Open(parent ast.Node, reader text.Reader, pc parser.C
 		node:   node,
 		indent: indent,
 		length: length,
+		runEnd: -1,
 	}
 	pc.Set(admonitionStackKey, append(admonitionStack(pc), state))
 
@@ -300,8 +301,12 @@ func (b *admonitionParser) Continue(node ast.Node, reader text.Reader, pc parser
 		state.contentIndent = w
 	}
 
+	// An indented body ends at any closing run. One level with the opening
+	// line ends at the run the look-ahead found and at no other: the two read
+	// the body by different means, and an admonition kept open for a run it
+	// then left to a block of its body would run to the end of the document.
 	closing, newline := hasAdmonitionClosingRun(line, w, pos, state)
-	if closing && !runIsBodyText(state, stack[level+1:], runLength(line[pos:]), reader, pc) {
+	if closing && (first || state.indented() || segment.Stop == state.runEnd) {
 		// Len counts the padding already, which Advance steps over first.
 		reader.Advance(segment.Len() - newline)
 
@@ -311,15 +316,15 @@ func (b *admonitionParser) Continue(node ast.Node, reader text.Reader, pc parser
 	// A body that is not indented is one only up to a closing run. With none
 	// ahead the admonition ends here, at its opening line, and this line is
 	// read after it.
-	if first && w == state.indent && !closingRunAhead(reader, pc, state.indent, state.length) {
-		return parser.Close
+	if first && w == state.indent {
+		if state.runEnd = closingRunAhead(reader, pc, state.indent, state.length); state.runEnd < 0 {
+			return parser.Close
+		}
 	}
 
 	// Without a closing run, a line ends the admonition when it is indented
 	// less than the opening line, or level with it once the body was indented.
 	if !util.IsBlank(line) && (w < state.indent || (w == state.indent && w < state.contentIndent)) {
-		state.dedented = true
-
 		return parser.Close
 	}
 
@@ -391,60 +396,6 @@ func hasAdmonitionClosingRun(line []byte, w int, pos int, state *admonitionState
 	return true, 0
 }
 
-// runIsBodyText reports whether the line the reader is at, which reads as
-// state's closing run and is run '!' long, is not its to take. Only a body
-// level with the opening line can hold such a line: an indented body ends at
-// it whatever is open inside.
-//
-// The run closes the admonition opened in that body and still open, when
-// that one is level with this one. And it is text inside a fenced code block
-// or an HTML block of that body that runs on over blank lines. An HTML block
-// that ends at a blank line, such as "</details>", does not keep the run
-// that follows it.
-func runIsBodyText(state *admonitionState, above []*admonitionState, run int, reader text.Reader, pc parser.Context) bool {
-	if state.indented() {
-		return false
-	}
-
-	if len(above) > 0 && above[0].node.Parent() == state.node && above[0].indent == 0 {
-		switch inner := above[0]; {
-		case inner.indented():
-			// It takes the run that comes straight after its body.
-			return !inner.dedented && run >= inner.length
-		case inner.contentHasStarted:
-			return true
-		default:
-			// Its body starts on this line: the run closes it, or is text of
-			// a body that a later run closes. With neither, it ends at its
-			// opening line and the run is not its.
-			return run >= inner.length || closingRunAhead(reader, pc, state.indent, inner.length)
-		}
-	}
-
-	last := pc.LastOpenedBlock().Node
-	if last == nil || last.Parent() != state.node {
-		return false
-	}
-
-	switch block := last.(type) {
-	case *ast.CodeBlock:
-		return block.CodeBlockKind == ast.CodeBlockKindFenced
-	case *ast.HTMLBlock:
-		return block.HTMLBlockKind <= ast.HTMLBlockKind5 && !htmlBlockHasEnded(block, reader.Source())
-	}
-
-	return false
-}
-
-// htmlBlockHasEnded reports whether an open HTML block ends before the next
-// line. goldmark closes one that ends on its first line only when it reads
-// the line after.
-func htmlBlockHasEnded(block *ast.HTMLBlock, source []byte) bool {
-	segments := block.Value.Segments()
-
-	return len(segments) == 1 && htmlblock.Closes(block.HTMLBlockKind, segments[0].Bytes(source))
-}
-
 // htmlBlockKind returns the kind of HTML block that line, without its
 // indentation, starts when it is one of CommonMark's first five, the ones
 // that run on over blank lines, and 0 for any other line.
@@ -506,7 +457,7 @@ func documentClosingRuns(pc parser.Context, source []byte) *closingRuns {
 		end := lineEnd(source, start)
 		line := bytes.TrimLeft(source[start:end], " \t>")
 
-		if n := runLength(line); n >= 3 && util.IsBlank(line[n:]) {
+		if n := runLength(line); n >= 3 && line[0] == '!' && util.IsBlank(line[n:]) {
 			runs.last = start
 		}
 
@@ -562,10 +513,10 @@ func withoutContainerPrefix(line []byte, prefix []byte) (rest []byte, ok bool) {
 	return line, true
 }
 
-// closingRunAhead reports whether an admonition has a closing run further
-// down: one opened by a run of length '!' at indent, whose body starts level
-// with its opening line on the line the reader is at.
-func closingRunAhead(reader text.Reader, pc parser.Context, indent int, length int) bool {
+// closingRunAhead returns where the closing run of an admonition ends, or -1
+// when it has none: one opened by a run of length '!' at indent, whose body
+// starts level with its opening line on the line the reader is at.
+func closingRunAhead(reader text.Reader, pc parser.Context, indent int, length int) int {
 	source := reader.Source()
 	_, segment := reader.PeekLine()
 	start := bytes.LastIndexByte(source[:segment.Start], '\n') + 1
@@ -579,7 +530,7 @@ func closingRunAhead(reader text.Reader, pc parser.Context, indent int, length i
 		runs:    documentClosingRuns(pc, source),
 	}
 
-	return body.closingRun(start, length) >= 0
+	return body.closingRun(start, length)
 }
 
 // bodyLines reads the lines of a body that is level with its opening line,
@@ -628,6 +579,10 @@ func (b *bodyLines) findClosingRun(start int, length int) int {
 		opened   int
 		indented int
 
+		// item is how far the content of the list item the last line was in
+		// is indented, and 0 outside one.
+		item int
+
 		fence       byte
 		fenceLength int
 		html        ast.HTMLBlockKind
@@ -672,14 +627,20 @@ func (b *bodyLines) findClosingRun(start int, length int) int {
 			continue
 		}
 
-		// A deeper line is in a list item, a code block or an indented body,
-		// and neither opens nor closes anything here.
-		if w > b.indent {
-			if opened > 0 {
-				indented, opened = opened, 0
-			}
+		deeper := w > b.indent
+		if deeper && opened > 0 {
+			indented, opened = opened, 0
+		}
 
+		// A line in an indented body, a list item or an indented code block
+		// neither opens nor closes anything here. Any other line up to three
+		// columns in can still open a code block or an HTML block.
+		if deeper && (indented > 0 || (item > 0 && w-b.indent >= item) || w > b.indent+3) {
 			continue
+		}
+
+		if item = listItemContent(line); item > 0 {
+			item += w - b.indent
 		}
 
 		above := indented
@@ -711,7 +672,7 @@ func (b *bodyLines) findClosingRun(start int, length int) int {
 			if !htmlblock.Closes(kind, line) {
 				html = kind
 			}
-		case line[0] != '!' || run < 3:
+		case deeper || line[0] != '!' || run < 3:
 		case !bare:
 			opened = run
 		case above > 0 && run >= above:
@@ -722,6 +683,50 @@ func (b *bodyLines) findClosingRun(start int, length int) int {
 	}
 
 	return -1
+}
+
+// listItemContent returns how many columns into line the content of the list
+// item it starts is, and 0 for a line that starts none.
+func listItemContent(line []byte) int {
+	marker := 0
+
+	switch line[0] {
+	case '-', '+', '*':
+		// "* * *" is a thematic break.
+		rule := bytes.Join(bytes.Fields(line), nil)
+		if len(rule) >= 3 && runLength(rule) == len(rule) {
+			return 0
+		}
+
+		marker = 1
+	default:
+		for marker < len(line) && marker < 9 && util.IsNumeric(line[marker]) {
+			marker++
+		}
+
+		if marker == 0 || marker == len(line) || (line[marker] != '.' && line[marker] != ')') {
+			return 0
+		}
+
+		marker++
+	}
+
+	rest := line[marker:]
+	if util.IsBlank(rest) {
+		return marker + 1
+	}
+
+	blanks, _ := util.IndentWidth(rest, marker)
+	if blanks == 0 {
+		return 0
+	}
+
+	// More than four columns of blanks start the item with indented code.
+	if blanks > 4 {
+		blanks = 1
+	}
+
+	return marker + blanks
 }
 
 // attributesEndLine reports whether an attribute block in goldmark v1's

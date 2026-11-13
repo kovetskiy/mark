@@ -308,6 +308,41 @@ func TestAdmonitionBodyIsIndentedOrClosed(t *testing.T) {
 			want:   []string{"!note", "  CodeBlock", "  HTMLBlock", "  HTMLBlock", "Paragraph:after"},
 		},
 		{
+			name:   "a run in a fenced code block indented a little is code",
+			source: "!!! note \"T\"\nbody\n ```\n!!!\n ```\nafter\n\n## Heading\n",
+			want:   []string{"!note", "Paragraph:body", "CodeBlock", "Paragraph:after", "Heading:Heading"},
+		},
+		{
+			name:   "a run in an HTML block indented a little is the block's",
+			source: "!!! note \"T\"\nbody\n  <pre>\n!!!\n  </pre>\nafter\n\n## Heading\n",
+			want:   []string{"!note", "Paragraph:body", "HTMLBlock", "Paragraph:after", "Heading:Heading"},
+		},
+		{
+			name:   "a run after a fenced code block indented a little, which holds one",
+			source: "!!! note \"T\"\nbody\n ```\n!!!\n ```\nmore\n!!!\nafter\n",
+			want:   []string{"!note", "  Paragraph:body", "  CodeBlock", "  Paragraph:more", "Paragraph:after"},
+		},
+		{
+			name:   "a run in a fenced code block after a list item, indented less than the item",
+			source: "!!! note \"T\"\n- item\n\n ~~~\n!!!\n ~~~\nmore\n!!!\nafter\n",
+			want: []string{
+				"!note", "  List", "    ListItem", "      Paragraph:item", "  CodeBlock", "  Paragraph:more", "Paragraph:after",
+			},
+		},
+		{
+			name:   "a run in a fenced code block after a thematic break",
+			source: "!!! note \"T\"\n* * *\n  ```\n!!!\n  ```\nafter\n\n## Heading\n",
+			want:   []string{"!note", "ThematicBreak", "CodeBlock", "Paragraph:after", "Heading:Heading"},
+		},
+		{
+			// The comment is text of the block that "<div>" opens, which the
+			// look-ahead takes for a block of its own: the admonition still
+			// ends at the one run it was kept open for.
+			name:   "the run it was kept open for, after one the look-ahead passed over",
+			source: "!!! note \"T\"\n<div>\n<!-- c\n!!!\n-->\n</div>\n\nx\n!!!\nafter\n",
+			want:   []string{"!note", "  HTMLBlock", "  Paragraph:x", "Paragraph:after"},
+		},
+		{
 			name:   "a run straight after a nested indented body closes that one",
 			source: "!!! note \"outer\"\nintro\n!!! tip \"inner\"\n    b\n!!!\n\nafter\n",
 			want:   []string{"!note", "Paragraph:intro", "!tip", "  Paragraph:b", "Paragraph:after"},
