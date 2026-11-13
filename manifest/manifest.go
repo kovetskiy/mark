@@ -2306,13 +2306,27 @@ func (s *Store) saveShard(ctx context.Context, spaceKey string, state *spaceStat
 	}
 
 	key := PropertyKeyFor(state.prefix, index)
-	changed, mergeErr := s.mergeShard(ctx, state, index)
-	if mergeErr != nil {
+	current, readErr := s.readShard(ctx, state, index)
+	if readErr != nil {
+		// Without the refusal: whether the next property is worth trying is
+		// for what kept this one from being read to say.
 		return fmt.Errorf(
-			"manifest shard %s of space %q was not saved: %w",
-			key, spaceKey, errors.Join(err, mergeErr),
+			"manifest shard %s of space %q was not saved: it was refused and could not be read again: %w",
+			key, spaceKey, readErr,
 		)
 	}
+
+	theirs, readable := decodeShard(current)
+	if !readable {
+		// Saved over, it would lose whatever it holds, and the entries this
+		// run read from the shard and left alone with it.
+		return fmt.Errorf(
+			"manifest shard %s of space %q was not saved: what it now holds cannot be read by this mark: %w",
+			key, spaceKey, err,
+		)
+	}
+
+	changed := state.mergeShard(index, current, theirs)
 
 	if errors.Is(err, confluence.ErrPropertyUnseen) {
 		// Not known to be another run's doing: the shard may have been there
@@ -2338,6 +2352,23 @@ func (s *Store) saveShard(ctx context.Context, spaceKey string, state *spaceStat
 	}
 
 	return nil
+}
+
+// readShard reads the property one shard is kept in as it is now, nil when
+// there is none.
+func (s *Store) readShard(ctx context.Context, state *spaceState, index int) (*confluence.Property, error) {
+	properties, err := state.list(ctx, s.api)
+	if err != nil {
+		return nil, err
+	}
+
+	for i := range properties {
+		if properties[i].Key == PropertyKeyFor(state.prefix, index) {
+			return &properties[i], nil
+		}
+	}
+
+	return nil, nil
 }
 
 // writeShard encodes one shard and writes it over the property it was read
@@ -2372,32 +2403,19 @@ func (s *Store) writeShard(ctx context.Context, spaceKey string, state *spaceSta
 	return nil
 }
 
-// mergeShard reads one shard again and puts this run's changes over what it
-// now holds: the entries this run recorded or changed, and the removal of
-// those it dropped. An entry this run dropped that the other run has since
-// recorded differently is kept, as that run's. So is one both runs recorded
-// for a page the other run wrote last: see wroteLater.
+// mergeShard puts this run's changes over what one shard holds now, current
+// and its entries theirs: the entries this run recorded or changed, and the
+// removal of those it dropped. An entry this run dropped that the other run
+// has since recorded differently is kept, as that run's. So is one both runs
+// recorded for a page the other run wrote last: see wroteLater.
 //
 // What this run changed is what differs from the property it read, so nothing
 // has to be kept about each change as it is made. It reports whether the
 // result differs from what the shard now holds, and so is worth writing.
-func (s *Store) mergeShard(ctx context.Context, state *spaceState, index int) (bool, error) {
-	properties, err := state.list(ctx, s.api)
-	if err != nil {
-		return false, err
-	}
-
-	var current *confluence.Property
-	for i := range properties {
-		if properties[i].Key == PropertyKeyFor(state.prefix, index) {
-			current = &properties[i]
-			break
-		}
-	}
-
+func (state *spaceState) mergeShard(index int, current *confluence.Property, theirs map[string]Entry) bool {
 	sh := &state.shards[index]
 	read := shardPages(sh.property)
-	merged := shardPages(current)
+	merged := maps.Clone(theirs)
 
 	for path, entry := range read {
 		if _, kept := sh.pages[path]; !kept && merged[path] == entry {
@@ -2427,7 +2445,7 @@ func (s *Store) mergeShard(ctx context.Context, state *spaceState, index int) (b
 
 	sh.property = current
 	sh.pages = merged
-	return !maps.Equal(merged, shardPages(current)), nil
+	return !maps.Equal(merged, theirs)
 }
 
 // wroteLater reports whether theirs records a later write of the page ours
@@ -2442,14 +2460,24 @@ func wroteLater(theirs, ours Entry) bool {
 // shardPages returns the entries a shard's property holds, as load reads
 // them: none when the property is absent, unreadable or of a newer format.
 func shardPages(property *confluence.Property) map[string]Entry {
-	pages := map[string]Entry{}
+	pages, _ := decodeShard(property)
+	return pages
+}
+
+// decodeShard returns the entries a shard's property holds, and whether they
+// could be read: a property that is not a shard, or one of a newer format,
+// holds entries this mark cannot tell.
+func decodeShard(property *confluence.Property) (map[string]Entry, bool) {
 	if property == nil {
-		return pages
+		return map[string]Entry{}, true
 	}
 
 	var doc document
-	if err := json.Unmarshal(property.Value, &doc); err != nil || doc.Version > formatVersion || doc.Pages == nil {
-		return pages
+	if err := json.Unmarshal(property.Value, &doc); err != nil || doc.Version > formatVersion {
+		return map[string]Entry{}, false
 	}
-	return doc.Pages
+	if doc.Pages == nil {
+		return map[string]Entry{}, true
+	}
+	return doc.Pages, true
 }
