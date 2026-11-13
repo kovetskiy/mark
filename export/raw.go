@@ -84,6 +84,11 @@ func (c *converter) writeRaw(b *strings.Builder, n *node, mode rawMode) {
 		return
 	}
 
+	if image, ok := c.relativeImg(n, mode); ok {
+		b.WriteString(image)
+		return
+	}
+
 	b.WriteString(c.openTag(n))
 
 	if len(n.children) == 0 {
@@ -98,6 +103,53 @@ func (c *converter) writeRaw(b *strings.Builder, n *node, mode rawMode) {
 	}
 
 	b.WriteString("</" + n.name + ">")
+}
+
+// relativeImg writes an <img> whose address names no host as the ac:image
+// publishing makes of one it finds no file for. Left an <img>, publishing
+// would look beside the document for the file; on the page the address is
+// relative to the page. An align or a style it has is not carried over.
+//
+// Publishing looks for no file where it leaves the <img> as written: in a
+// metadata header, and in a <picture> that is part of an HTML block.
+func (c *converter) relativeImg(n *node, mode rawMode) (string, bool) {
+	src := n.attr("src")
+	if !n.is("img") || src == "" || c.opts.Reading || mode == rawLine || !imageNamesFile(src) {
+		return "", false
+	}
+
+	if mode == rawBlock {
+		for parent := n.parent; parent != nil; parent = parent.parent {
+			if parent.is("picture") {
+				return "", false
+			}
+		}
+	}
+
+	var b strings.Builder
+	b.WriteString("<ac:image")
+	for _, a := range []struct{ name, value string }{
+		{"ac:width", pixels(n.attr("width"))},
+		{"ac:height", pixels(n.attr("height"))},
+		{"ac:title", n.attr("title")},
+		{"ac:alt", n.attr("alt")},
+	} {
+		if a.value == "" {
+			continue
+		}
+		if a.name == "ac:width" {
+			b.WriteString(` ac:custom-width="true"`)
+		}
+		b.WriteString(" " + a.name + `="` + escapeAttr(a.value) + `"`)
+	}
+	b.WriteString(`><ri:url ri:value="` + escapeAttr(src) + `"/></ac:image>`)
+
+	return b.String(), true
+}
+
+// pixels is a width or height the way publishing reads one from an <img>.
+func pixels(value string) string {
+	return strings.TrimSuffix(strings.TrimSpace(value), "px")
 }
 
 // openTag is the start tag of an element, self-closed when the element is
