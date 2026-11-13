@@ -45,6 +45,11 @@ func (w *inlineWriter) write(s string) {
 	if s == "" {
 		return
 	}
+	// Space after a hard break shows nowhere, and would hide the break from
+	// what takes the trailing ones off.
+	if w.trailingBreaks > 0 && strings.Trim(s, " \t\n") == "" {
+		return
+	}
 	w.b.WriteString(s)
 	w.trailingBreaks = 0
 }

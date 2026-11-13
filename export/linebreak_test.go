@@ -70,6 +70,22 @@ func TestConvertLineBreakEndingARun(t *testing.T) {
 			published: `<p>plain</p>`,
 		},
 		{
+			// Space after the break, from an empty run, does not keep it.
+			storage:   `<p>plain<br/><strong> </strong></p>`,
+			markdown:  "plain\n",
+			published: `<p>plain</p>`,
+		},
+		{
+			storage:   `<p><code>code</code><br/><em> </em><br/></p>`,
+			markdown:  "`code`\n",
+			published: `<p><code>code</code></p>`,
+		},
+		{
+			storage:   `<p>plain<br/><strong> </strong>next</p>`,
+			markdown:  "plain\\\nnext\n",
+			published: `<p>plain<br/>` + "\n" + `next</p>`,
+		},
+		{
 			// A backslash the text ends in is text, not a break.
 			storage:   `<p><strong>a\</strong> b</p>`,
 			markdown:  "**a\\\\** b\n",
