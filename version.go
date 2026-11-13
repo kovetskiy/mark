@@ -8,7 +8,8 @@ const modulePath = "github.com/kovetskiy/mark/v17"
 // Version returns the version of mark linked into the running program, as Go
 // recorded it in the build info: a release such as "v17.1.0", or for a build
 // that is not one a pseudo-version, a version with build metadata, or
-// "(devel)". A replacement by mark at another version gives that version.
+// "(devel)", which is also what a go.work workspace holding mark gives. A
+// replacement by mark at another version gives that version.
 //
 // It returns "" when the program carries no build info or no mark, or
 // replaces mark with a local directory or another module.

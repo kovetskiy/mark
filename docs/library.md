@@ -338,6 +338,26 @@ manifest and writes no report, so a document's `Key` is not used: its page is
 found by its title in its space, as a file's is, and placed under its parents.
 Its relative links are looked for in its `FS`, or on disk around `Path`.
 
+## The version of mark a program links
+
+`mark.Version()` returns the version Go recorded for mark when it built the
+program, which is not what `mark --version` prints: that is set by mark's own
+release build, which a program linking mark never runs.
+
+| the program's `go.mod` | `Version()` |
+| --- | --- |
+| requires a release | that release, `v17.1.0` |
+| requires a commit | its pseudo-version |
+| replaces mark with another version of mark | the version it is replaced with |
+| replaces mark with a directory or another module | `""` |
+| is in a `go.work` workspace with mark | `(devel)` |
+
+So `""`, `(devel)` and a pseudo-version all mean there is no release to name.
+`semver.IsValid` and `module.IsPseudoVersion` of `golang.org/x/mod` tell a
+release from the rest; the container image, for one, is published under
+release tags alone (see
+[Continuous Integration](publishing.md#continuous-integration)).
+
 ## Errors
 
 A run that fails on a document returns a `*mark.FileError` naming its `Path`
