@@ -242,6 +242,19 @@ func refreshStaleParents(
 
 			continue
 		}
+		if publisher != "" {
+			// Parent repair runs before the document itself, so carry its
+			// resolved page mapping to its new path now. Its own lookup then
+			// reuses that page without broadening rename heuristics for other
+			// documents or bypassing similarity settings.
+			in, ok := titles.declaredBy(meta.Space, "page", title)
+			if ok {
+				ahead := titles.readAhead(in)
+				if err := tracker.Record(ctx, meta.Space, in.key, pageID, ahead.meta.Title, ahead.sourceHash); err != nil {
+					return fmt.Errorf("unable to record renamed parent %q: %w", title, err)
+				}
+			}
+		}
 		if renamed.Title == title {
 			continue
 		}
@@ -395,14 +408,6 @@ func resolveRenamedFile(
 	previous, entry, ok, err := tracker.ResolveRenamedFor(ctx, meta.Space, doc.key, doc.sourceHash)
 	if err != nil {
 		return nil, fmt.Errorf("unable to check whether %q was renamed: %w", file, err)
-	}
-	if !ok {
-		// If a path and its content both changed, only follow its old page
-		// when it is the sole unclaimed page this run's scope could have lost.
-		previous, entry, ok, err = tracker.ResolveUniqueRenamedFor(ctx, meta.Space, doc.key)
-		if err != nil {
-			return nil, fmt.Errorf("unable to check whether %q was renamed: %w", file, err)
-		}
 	}
 	if !ok {
 		return nil, nil
