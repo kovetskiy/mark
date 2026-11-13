@@ -325,7 +325,7 @@ func (b Boundary) checkReadable(base, reference string) error {
 // directory refers to shared assets, and README documents it -- so the boundary
 // is not the document's directory. It is that directory or the one mark was run
 // in, which for a run at the root of a repository is the repository, unless a
-// Boundary narrows it.
+// Boundary draws it elsewhere.
 //
 // Both sides are resolved before the comparison, since a link committed to the
 // repository is as good as a path for reaching outside it -- and since the

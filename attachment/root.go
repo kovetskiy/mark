@@ -40,11 +40,11 @@ import (
 //
 // WithIncludePath gives a Root that also reads --include-path, which is on
 // disk whatever the document's Root is. WithBoundary gives one holding the
-// files a document names to a narrower Boundary.
+// files a document names to a Boundary of the caller's.
 type Root struct {
 	fsys fs.FS
 
-	// boundary narrows what checkAttachment and CheckReadable allow.
+	// boundary is what checkAttachment and CheckReadable hold a file to.
 	boundary Boundary
 
 	// includePath is --include-path as given; includeDir is it made absolute
@@ -116,10 +116,11 @@ func (r Root) OnDisk(name string) bool {
 	return r.fsys == nil || (r.includeDir != "" && filepath.IsAbs(name))
 }
 
-// WithBoundary is r with the files a document names held to b as well as to
-// r's own limits: every attachment ResolveLocalAttachment and
-// ResolveLocalAttachments read through r, and every reference CheckReadable
-// passes. Open, Stat and ReadFile are unchanged, so a caller reading a file
+// WithBoundary is r with the files a document names held to b: every
+// attachment ResolveLocalAttachment and ResolveLocalAttachments read through
+// r, and every reference CheckReadable passes. A Root reading from an fs.FS
+// holds them inside it as well; on the local disk b is the whole boundary, so
+// a directory above the working directory allows more than the zero Boundary. Open, Stat and ReadFile are unchanged, so a caller reading a file
 // that is not the document's to publish, such as another document a link
 // names, reads it as before.
 //
@@ -359,7 +360,8 @@ func (r Root) ReadFile(name string) ([]byte, error) {
 // same check, and in an fs.FS that reference, joined to base unless it is
 // absolute, stays inside it. An absolute reference is refused, unless
 // WithIncludePath put it on disk, where it has to stay inside the include
-// path. Either way, a Boundary from WithBoundary narrows it further.
+// path. Either way a Boundary from WithBoundary is applied as WithBoundary
+// describes.
 func (r Root) CheckReadable(base, reference string) error {
 	if r.fsys == nil {
 		return r.boundary.checkReadable(base, reference)

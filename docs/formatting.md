@@ -466,7 +466,7 @@ Because the file carries what it points at, what it may point at is limited:
 * A **file** must be inside the diagram's own directory or the one mark is
   running in, the same boundary an attachment is held to, which
   [`--attachment-root`](attachments.md#where-an-attachment-may-come-from)
-  narrows. One elsewhere is refused, so a diagram naming `/etc/id_rsa` cannot
+  moves. One elsewhere is refused, so a diagram naming `/etc/id_rsa` cannot
   publish it.
 * A **URL** is not fetched unless `--d2-bundle-remote` says so. The request is
   made by the document rather than by you, to any address it names -- a loopback
