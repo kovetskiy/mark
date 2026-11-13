@@ -746,6 +746,40 @@ func TestRenameStillWorksWithinOneGlob(t *testing.T) {
 		"a rename within one pattern must still be followed")
 }
 
+// TestEditedRenamedParentIsFoundByItsUniqueTrackedPage covers a parent whose
+// path and content change together. The child sorts first, so parent repair
+// must find the parent's sole unclaimed tracked page before ancestry creates
+// an empty page under its new title.
+func TestEditedRenamedParentIsFoundByItsUniqueTrackedPage(t *testing.T) {
+	server, api := docsSpace(t)
+	dir := t.TempDir()
+	glob := filepath.Join(dir, "*.md")
+	child := "<!-- Space: DOCS -->\n<!-- Parent: Old Parent -->\n<!-- Title: Child -->\n\nChild body.\n"
+	parent := "<!-- Space: DOCS -->\n<!-- Title: Old Parent -->\n\nOriginal body.\n"
+	writeFile(t, dir, "a-child.md", child)
+	writeFile(t, dir, "z-old-parent.md", parent)
+	require.NoError(t, Run(context.Background(), trackingConfig(server, glob)))
+
+	oldParent, err := api.FindPage(context.Background(), "DOCS", "Old Parent", "page")
+	require.NoError(t, err)
+	require.NotNil(t, oldParent)
+
+	require.NoError(t, os.Rename(filepath.Join(dir, "z-old-parent.md"), filepath.Join(dir, "z-new-parent.md")))
+	writeFile(t, dir, "z-new-parent.md", "<!-- Space: DOCS -->\n<!-- Title: New Parent -->\n\nEdited body.\n")
+	writeFile(t, dir, "a-child.md", "<!-- Space: DOCS -->\n<!-- Parent: New Parent -->\n<!-- Title: Child -->\n\nChild body.\n")
+	require.NoError(t, Run(context.Background(), trackingConfig(server, glob)))
+
+	newParent, err := api.FindPage(context.Background(), "DOCS", "New Parent", "page")
+	require.NoError(t, err)
+	require.NotNil(t, newParent)
+	assert.Equal(t, oldParent.ID, newParent.ID, "the renamed parent should retain its tracked page")
+	assert.Equal(t, 1, countPagesTitled(t, server, "New Parent"), "no duplicate empty parent should be created")
+	childPage, err := api.FindPage(context.Background(), "DOCS", "Child", "page")
+	require.NoError(t, err)
+	require.NotNil(t, childPage)
+	assert.Equal(t, newParent.ID, server.Page(childPage.ID).ParentID, "the child should remain under the renamed parent")
+}
+
 // TestTrackPagesThroughTheGatewayWithAManifestPage is issue #1020 end to end: a
 // scoped API token cannot create a space property, so the mapping is kept on a
 // page instead, through v2 -- and a rename on the second run still finds the
