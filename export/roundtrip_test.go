@@ -112,6 +112,33 @@ func TestRoundTripMacroParameterText(t *testing.T) {
 	}
 }
 
+// TestRoundTripMacroParameterElementText: the text of an element inside a
+// macro parameter is published as written with the rest of the parameter, so
+// it is exported as written too.
+func TestRoundTripMacroParameterElementText(t *testing.T) {
+	const parameter = `<ac:parameter ac:name="title">a*b* <ac:link><ri:page ri:content-title="Notes"/>` +
+		`<ac:link-body>c*d* \ e|f_g_ &amp; h</ac:link-body></ac:link></ac:parameter>`
+
+	const (
+		macro = `<ac:structured-macro ac:name="x">` + parameter +
+			`<ac:rich-text-body><p>body</p></ac:rich-text-body></ac:structured-macro>`
+		inline = `<ac:structured-macro ac:name="status">` + parameter + `</ac:structured-macro>`
+	)
+
+	for _, storage := range []string{
+		macro,
+		"<p>before " + inline + " after</p>",
+		"<table><thead><tr><th>h</th></tr></thead><tbody><tr><td>" + inline + "</td></tr></tbody></table>",
+	} {
+		doc, err := Convert(storage, Options{})
+		require.NoError(t, err)
+
+		published := compileWith(t, doc.Markdown, filepath.Join(t.TempDir(), "page.md"), "mention")
+		assert.Equal(t, canonical(t, storage), canonical(t, published),
+			"exported Markdown:\n%s", doc.Markdown)
+	}
+}
+
 // TestRoundTripTextLikeDirectives: page text that reads like one of the HTML
 // comments mark acts on before goldmark -- an include, a macro, a header, an
 // ignored region -- publishes back as that text, wherever on the page it
