@@ -182,7 +182,7 @@ func holdsInlines(node ast.Node) bool {
 	}
 
 	switch node.Kind() {
-	case ast.KindParagraph, KindTextBlock, ast.KindHeading, extast.KindTableCell:
+	case ast.KindParagraph, KindTextBlock, ast.KindHeading, extast.KindTableCell, extast.KindDefinitionTerm:
 		return true
 	}
 
@@ -194,9 +194,10 @@ func holdsInlines(node ast.Node) bool {
 // A paragraph that holds nothing else is replaced with them. Next to other
 // inline content a paragraph gives up its children instead, a line apart from
 // the paragraph before it, since a paragraph cannot hold another. A Text keeps
-// the line break that follows it.
+// the line break that follows it, unless nothing is left before the break: a
+// line left empty is not kept, and neither is a paragraph of such lines.
 func replaceWith(node ast.Node, subDoc ast.Node) {
-	if parent := node.Parent(); parent.Kind() == ast.KindParagraph && parent.ChildCount() == 1 && parent.Parent() != nil {
+	if parent := node.Parent(); parent.Kind() == ast.KindParagraph && parent.FirstChild() == node && parent.LastChild() == node && parent.Parent() != nil {
 		node = parent
 	}
 
@@ -207,7 +208,7 @@ func replaceWith(node ast.Node, subDoc ast.Node) {
 		child := subDoc.FirstChild()
 		subDoc.RemoveChild(child)
 
-		if !inline || (child.Kind() != ast.KindParagraph && child.Kind() != KindTextBlock) {
+		if !inline || !isParagraph(child) {
 			parent.InsertBefore(node, child)
 			continue
 		}
@@ -223,12 +224,21 @@ func replaceWith(node ast.Node, subDoc ast.Node) {
 		}
 	}
 
-	if t, ok := node.(*ast.Text); ok && (t.SoftLineBreak() || t.HardLineBreak()) {
+	if t, ok := node.(*ast.Text); ok && (t.SoftLineBreak() || t.HardLineBreak()) && node.PreviousSibling() != nil {
 		t.Value = text.SingleLineValue{}
 		return
 	}
 
 	parent.RemoveChild(node)
+
+	if isParagraph(parent) && !parent.HasChildren() && parent.Parent() != nil {
+		parent.Parent().RemoveChild(parent)
+	}
+}
+
+// isParagraph reports whether node is a paragraph, loose or tight.
+func isParagraph(node ast.Node) bool {
+	return node.Kind() == ast.KindParagraph || node.Kind() == KindTextBlock
 }
 
 func ExtractNodeRawContent(node ast.Node, source []byte) []byte {
