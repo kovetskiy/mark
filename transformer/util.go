@@ -9,6 +9,7 @@ import (
 	"sync"
 
 	"github.com/yuin/goldmark/v2/ast"
+	extast "github.com/yuin/goldmark/v2/extension/ast"
 	"github.com/yuin/goldmark/v2/text"
 )
 
@@ -96,22 +97,9 @@ func withinSource(start, stop int, source []byte) bool {
 	return start >= 0 && start <= stop && stop <= len(source)
 }
 
-// ExtractDirectiveContent is ExtractNodeRawContent with inline code left out.
-//
-// A directive is only a directive where it would run. The pass that expands
-// includes and macros before goldmark ever sees the document skips code
-// regions, and mdsource.CodeRegions covers spans as well as fenced blocks -- but
-// the AST transformers that pick up what that pass left behind had no
-// equivalent, and they match a paragraph at a time. So
-//
-//	To include, write `<!-- Include: nav.md -->` in your doc.
-//
-// pulled nav.md into the page and dropped the code span with it, and naming a
-// file that does not exist failed the whole compile. Writing about mark's own
-// syntax broke the document doing it.
-//
-// Fenced blocks were never affected: they hold no child nodes, so there is
-// nothing here to concatenate.
+// ExtractDirectiveContent is ExtractNodeRawContent with inline code left out:
+// the text of a node and of everything under it, joined, without what stood
+// between the pieces. No directive is read from it; see directiveSource.
 func ExtractDirectiveContent(node ast.Node, source []byte) []byte {
 	if node.Kind() == ast.KindCodeSpan {
 		return nil
@@ -139,6 +127,118 @@ func ExtractDirectiveContent(node ast.Node, source []byte) []byte {
 	copy(out, buf.Bytes())
 
 	return out
+}
+
+// directiveSource is the markup a directive is read from: one node goldmark
+// took whole as raw HTML, or markup an expansion put in. A comment is always
+// one such node, as it is one run of bytes to the pass that expands directives
+// before goldmark. Text is never one, and neither is a container: joined, its
+// pieces lose what stood between them -- a line break, a link's brackets -- and
+// a "<" and a "!--" that were apart would read as a comment nobody wrote.
+func directiveSource(node ast.Node, source []byte) []byte {
+	switch n := node.(type) {
+	case *ast.HTMLBlock, *ast.RawHTML:
+		return HTMLBytes(n, source)
+	case *String:
+		if n.Code {
+			return slices.Clip(n.Value)
+		}
+	}
+
+	return nil
+}
+
+// directiveNode is a node a directive is read from.
+type directiveNode struct {
+	node ast.Node
+	raw  []byte
+	line int
+}
+
+// directiveNodes are the nodes under doc whose markup isDirective takes for
+// a directive, in document order.
+func directiveNodes(doc ast.Node, source []byte, isDirective func(raw []byte) bool) []directiveNode {
+	var found []directiveNode
+
+	_ = ast.Walk(doc, func(node ast.Node, entering bool) (ast.WalkStatus, error) {
+		if !entering {
+			return ast.WalkContinue, nil
+		}
+
+		if raw := directiveSource(node, source); raw != nil && isDirective(raw) {
+			found = append(found, directiveNode{node: node, raw: raw, line: getNodeLineNumber(node, source)})
+		}
+
+		return ast.WalkContinue, nil
+	})
+
+	return found
+}
+
+// holdsInlines reports whether node's children are inline content.
+func holdsInlines(node ast.Node) bool {
+	if _, ok := node.(ast.InlineNode); ok {
+		return true
+	}
+
+	switch node.Kind() {
+	case ast.KindParagraph, KindTextBlock, ast.KindHeading, extast.KindTableCell, extast.KindDefinitionTerm:
+		return true
+	}
+
+	return false
+}
+
+// replaceWith puts the blocks of a parsed sub-document where node stands.
+//
+// A paragraph that holds nothing else is replaced with them. Next to other
+// inline content a paragraph gives up its children instead, a line apart from
+// the paragraph before it, since a paragraph cannot hold another. A Text keeps
+// the line break that follows it, unless nothing is left before the break: a
+// line left empty is not kept, and neither is a paragraph of such lines.
+func replaceWith(node ast.Node, subDoc ast.Node) {
+	if parent := node.Parent(); parent.Kind() == ast.KindParagraph && parent.FirstChild() == node && parent.LastChild() == node && parent.Parent() != nil {
+		node = parent
+	}
+
+	parent := node.Parent()
+	inline := holdsInlines(parent)
+
+	for first := true; subDoc.FirstChild() != nil; first = false {
+		child := subDoc.FirstChild()
+		subDoc.RemoveChild(child)
+
+		if !inline || !isParagraph(child) {
+			parent.InsertBefore(node, child)
+			continue
+		}
+
+		if !first {
+			parent.InsertBefore(node, NewString([]byte("\n")))
+		}
+
+		for child.FirstChild() != nil {
+			grandchild := child.FirstChild()
+			child.RemoveChild(grandchild)
+			parent.InsertBefore(node, grandchild)
+		}
+	}
+
+	if t, ok := node.(*ast.Text); ok && (t.SoftLineBreak() || t.HardLineBreak()) && node.PreviousSibling() != nil {
+		t.Value = text.SingleLineValue{}
+		return
+	}
+
+	parent.RemoveChild(node)
+
+	if isParagraph(parent) && !parent.HasChildren() && parent.Parent() != nil {
+		parent.Parent().RemoveChild(parent)
+	}
+}
+
+// isParagraph reports whether node is a paragraph, loose or tight.
+func isParagraph(node ast.Node) bool {
+	return node.Kind() == ast.KindParagraph || node.Kind() == KindTextBlock
 }
 
 func ExtractNodeRawContent(node ast.Node, source []byte) []byte {

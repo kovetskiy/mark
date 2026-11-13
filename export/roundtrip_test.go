@@ -173,6 +173,37 @@ func TestRoundTripDirectiveAcrossElements(t *testing.T) {
 	}
 }
 
+// TestRoundTripDirectiveInPieces: a "<" and the rest of what would read as a
+// directive, standing in separate pieces of the page with a line break, a
+// link or a paragraph between them, publish back as the text they were.
+func TestRoundTripDirectiveInPieces(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "outside.txt"), []byte("from the file"), 0o600))
+
+	for name, directive := range map[string]string{
+		"include": "!-- Include: outside.txt --&gt;",
+		"macro":   "!-- Macro: MARKER Template: outside.txt --&gt;",
+	} {
+		for where, storage := range map[string]string{
+			"line break":        "<p>Notes &lt;\n" + directive + "</p>",
+			"empty link":        `<p>&lt;<a href="https://example.com"></a>` + directive + "</p>",
+			"link with no href": "<p>&lt;<a>" + directive + "</a></p>",
+			"list paragraph":    "<ul><li>&lt;<p>" + directive + "</p></li></ul>",
+		} {
+			storage += "<p>MARKER</p>"
+
+			doc, err := Convert(storage, Options{})
+			require.NoError(t, err, "%s, %s", name, where)
+			assert.NotContains(t, doc.Markdown, "<!--", "%s, %s", name, where)
+
+			_, published := publishBack(t, doc.Markdown, filepath.Join(dir, "page.md"))
+			assert.NotContains(t, published, "from the file", "%s, %s: exported Markdown:\n%s", name, where, doc.Markdown)
+			assert.Contains(t, published, directive, "%s, %s: exported Markdown:\n%s", name, where, doc.Markdown)
+			assert.Contains(t, published, "<p>MARKER</p>", "%s, %s: exported Markdown:\n%s", name, where, doc.Markdown)
+		}
+	}
+}
+
 // TestRoundTripHeadingAnchorIDs: a heading's anchor whose name mark would
 // not read back from {#id} stays in the heading as the anchor it is.
 func TestRoundTripHeadingAnchorIDs(t *testing.T) {
