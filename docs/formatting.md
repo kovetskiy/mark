@@ -506,6 +506,40 @@ title, if it has one, in bold at the top. Any other type stays a quotation.
     A yellow box titled "Mind the gap".
 ```
 
+The box holds the lines indented under its opening line. MkDocs asks for four
+spaces; mark takes any indentation deeper than the opening line's. An
+admonition with no indented lines ends at its opening line, and what follows it
+is published after it:
+
+```markdown
+!!! note "Remember"
+
+This paragraph follows the box.
+```
+
+What is published for it is what the opening line gives: a box holding its
+title, an empty box when there is no title, and an empty quotation for a type
+that stays a quotation, whose title is not published with a body either.
+
+Lines that are not indented are part of the box only up to a line of `!!!` that
+closes it:
+
+```markdown
+!!! note "Remember"
+This paragraph is in the box.
+!!!
+```
+
+The closing line starts where the opening line does and has at least as many
+`!` as it. It closes the nearest admonition above it that is still open, so one
+written this way inside another needs a closing line of its own, and the outer
+one a second. An admonition with an indented body needs none, but a `!!!` line
+straight after its body closes it, and not the admonition around it.
+
+A `!!!` line inside a fenced code block, a `<pre>` block or an HTML comment is
+that block's text. After any other HTML, such as `</details>` or a `<div>`, it
+closes the admonition.
+
 ## HTML Details/Summary Macro
 
 Standard HTML `<details>` and `<summary>` tags are converted to native

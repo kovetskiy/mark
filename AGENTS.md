@@ -54,7 +54,7 @@ tests, which take minutes. There is currently no `-short` skip.
 | `internal/fspath` | `ResolveDeepest`, a path with symlinks resolved as deep as it exists; `Within`, a path relative to a root it is under; and `Under`, `Within` tried again on resolved paths: so attachment and staged-root containment compare paths the way the files they name compare |
 | `internal/globpattern` | the glob syntax test and escaping shared by `Run`'s checks, the orphan handling and the page manifest's patterns |
 | `internal/goldmarktest` | a goldmark parser and renderer built together, for tests |
-| `internal/htmlblock` | an HTML block's lines without its closing line, as goldmark v1 gave them |
+| `internal/htmlblock` | an HTML block's lines without its closing line, as goldmark v1 gave them, and the marker that closes a block of each kind |
 | `internal/lazy` | the start-on-first-use, discard and close of a run's browser and mermaid engine; Close cancels a start in flight |
 | `internal/mdsource` | the raw Markdown before goldmark: where the code is, `<!-- ac:ignore -->` regions, CRLF and BOM normalisation |
 | `internal/rendercheck` | the rendering settings' rules (scales, image alignment, feature names) that `mark.Config` validation and the publish flag checks share |
