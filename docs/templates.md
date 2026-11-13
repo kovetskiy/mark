@@ -168,6 +168,8 @@ a pipe is written `\|`, as it is anywhere in a cell, and published as `|`.
 
 The opening and the closing tag have to stand in one paragraph: a value with a
 blank line in it is read as Markdown, as is one whose closing tag is missing.
+A line of the value that opens a block of its own, such as a list item or a
+heading, ends the paragraph as a blank line does.
 
 `<ac:rich-text-body>` is not such an element: a macro's body is read as
 Markdown, as before.
