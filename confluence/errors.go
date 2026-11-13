@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strings"
 )
 
@@ -323,7 +324,7 @@ var ErrWriteRedirected = errors.New("a write was redirected and sent on as a rea
 // a redirect made of it.
 type redirectedWriteError struct {
 	method    string
-	requested string
+	requested *url.URL
 	answer    *reply
 }
 
@@ -331,10 +332,16 @@ func (e *redirectedWriteError) Error() string {
 	// do makes this error of an answer that names its request.
 	sent := e.answer.Request
 
+	// A redirect within the server names no other address to configure.
+	advice := "the base URL has to be the address Confluence answers at, not one that redirects to it"
+	if !sameServer(withoutUser(sent.URL), e.requested) {
+		advice = fmt.Sprintf("if Confluence is served at %s, use that address in the base URL", serverOf(sent.URL))
+	}
+
 	return fmt.Sprintf(
 		"%s %s was redirected to %s and sent there as a %s without its body, which answered %s: "+
-			"that is no answer to the %s; if Confluence is served at %s, use that address in the base URL",
-		e.method, e.requested, sent.URL.Redacted(), sent.Method, e.answer.Status, e.method, serverOf(sent.URL),
+			"that is no answer to the %s; %s",
+		e.method, e.requested.Redacted(), sent.URL.Redacted(), sent.Method, e.answer.Status, e.method, advice,
 	)
 }
 

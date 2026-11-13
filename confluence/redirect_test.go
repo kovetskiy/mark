@@ -1,6 +1,7 @@
 package confluence
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"io"
@@ -13,6 +14,8 @@ import (
 	"testing"
 
 	"github.com/kovetskiy/mark/v17/confluence/confluencetest"
+	"github.com/rs/zerolog"
+	"github.com/rs/zerolog/log"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -284,6 +287,43 @@ func TestMoveActionRedirectedAsAReadSaysSo(t *testing.T) {
 	err := api.MoveContentBefore(context.Background(), second.ID, first.ID)
 	require.ErrorIs(t, err, ErrWriteRedirected)
 	assert.Equal(t, []string{first.ID, second.ID}, server.ChildOrder(parent.ID))
+
+	// The redirect stayed on the server, which is no other address to use.
+	assert.NotContains(t, err.Error(), "is served at")
+	assert.Contains(t, err.Error(), "not one that redirects to it")
+}
+
+// TestRedirectToAnotherServerIsWarnedOfOnceWhenFollowed: the warning that a
+// request goes on without its header is for the redirect that leaves the
+// server, not for each one after it, and not for one that is not followed.
+func TestRedirectToAnotherServerIsWarnedOfOnceWhenFollowed(t *testing.T) {
+	var buffer bytes.Buffer
+	previous := log.Logger
+	log.Logger = zerolog.New(&buffer)
+	t.Cleanup(func() { log.Logger = previous })
+
+	seen := &authorizations{}
+	other := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/moved" {
+			http.Redirect(w, r, "/moved", http.StatusFound)
+			return
+		}
+		seen.ServeHTTP(w, r)
+	}))
+	t.Cleanup(other.Close)
+	front := redirectingFront(t, other.URL, http.StatusFound)
+	const warning = "goes on without its Authorization header"
+
+	_, err := NewAPI(front.URL, Options{Password: "token"}).GetPageByID(context.Background(), "1")
+	require.NoError(t, err)
+	assert.Equal(t, []string{""}, seen.all())
+	assert.Equal(t, 1, strings.Count(buffer.String(), warning), buffer.String())
+
+	buffer.Reset()
+	unfollowed := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	_, err = NewAPI(front.URL, Options{Password: "token", HTTPClient: unfollowed}).GetPageByID(context.Background(), "1")
+	require.Error(t, err)
+	assert.Zero(t, strings.Count(buffer.String(), warning), buffer.String())
 }
 
 // TestCheckRedirectKeepsAuthorizationForTheServerAsked: the header stays for
