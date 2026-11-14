@@ -34,8 +34,9 @@ The path is read the way an image's is: `other%20page.md` and
 first, so a file whose name really contains a `%` still resolves to itself.
 
 A link is left exactly as written when it has a scheme (`https:`, `mailto:`),
-is a bare `#fragment`, points at a directory or a non-text file, or names a
-file that has no mark metadata and so is never published. Links are resolved on
+is a bare `#fragment`, points at a directory, a non-text file or a file whose
+extension is not a Markdown one (`.sh`, `.py`, `.txt`), or names a file that
+has no mark metadata and so is never published. Links are resolved on
 the parsed document, so a link that appears inside a code span or a fenced or
 indented code block is left alone -- a page documenting Markdown gets to show
 its examples unchanged. Files pulled in with `Include` are resolved along with

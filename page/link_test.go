@@ -1,12 +1,16 @@
 package page
 
 import (
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"sync/atomic"
 	"testing"
 
 	"github.com/kovetskiy/mark/v17/attachment"
 	"github.com/kovetskiy/mark/v17/confluence"
+	"github.com/kovetskiy/mark/v17/metadata"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -171,4 +175,67 @@ func TestHeadingAnchorReadsTheAttributeBlock(t *testing.T) {
 
 	assert.Equal(t, "custom", headingAnchor(document, "custom"))
 	assert.Equal(t, "GET-/users/id", headingAnchor(document, "get-users-id"))
+}
+
+func countingAPI(t *testing.T) (*confluence.API, *int64) {
+	t.Helper()
+
+	var requests int64
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		atomic.AddInt64(&requests, 1)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"results":[],"size":0}`))
+	}))
+	t.Cleanup(server.Close)
+
+	return confluence.NewAPI(server.URL, confluence.Options{}), &requests
+}
+
+// A link to an existing script is valid, so it is left as written and never
+// looked up as a page, however the title would be derived from its content.
+func TestLinkResolverSkipsNonMarkdownTextFiles(t *testing.T) {
+	cases := []struct {
+		name    string
+		content string
+		extract metadata.ExtractOptions
+	}{
+		{"run.sh", "#!/bin/sh\necho hi\n", metadata.ExtractOptions{TitleFromFilename: true}},
+		{"build.sh", "# build the thing\necho hi\n", metadata.ExtractOptions{TitleFromH1: true}},
+		{"notes.TXT", "plain words\n", metadata.ExtractOptions{TitleFromFilename: true}},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			base := t.TempDir()
+			require.NoError(t, os.WriteFile(filepath.Join(base, tc.name), []byte(tc.content), 0o600))
+
+			api, requests := countingAPI(t)
+			tc.extract.Space = "DOCS"
+			checker := NewLinkChecker(LinkChecks{Internal: true})
+			resolver := &LinkResolver{API: api, Base: base, Extract: tc.extract, Checker: checker}
+
+			resolved, err := resolver.Resolve(t.Context(), tc.name, "")
+			require.NoError(t, err)
+			assert.Empty(t, resolved)
+			assert.Empty(t, resolver.Broken(), "an existing file is not a broken link")
+			assert.Zero(t, atomic.LoadInt64(requests), "no page lookup for a non-Markdown file")
+		})
+	}
+}
+
+func TestLinkResolverStillResolvesMarkdownAndExtensionlessFiles(t *testing.T) {
+	for _, name := range []string{"page.md", "page.MARKDOWN", "page"} {
+		t.Run(name, func(t *testing.T) {
+			base := t.TempDir()
+			require.NoError(t, os.WriteFile(filepath.Join(base, name),
+				[]byte("<!-- Space: DOCS -->\n<!-- Title: Page -->\n\nBody.\n"), 0o600))
+
+			api, requests := countingAPI(t)
+			resolver := &LinkResolver{API: api, Base: base}
+
+			_, err := resolver.Resolve(t.Context(), name, "")
+			require.NoError(t, err)
+			assert.NotZero(t, atomic.LoadInt64(requests), "the page is looked up")
+		})
+	}
 }
