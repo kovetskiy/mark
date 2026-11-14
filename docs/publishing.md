@@ -350,6 +350,16 @@ later step that runs even when publishing failed:
 A library caller sets `ReportConfig.Output` to a writer of its own to the same
 effect; `PublishConfig.Output` then carries the URLs and compiled bodies.
 
+## When the page listing is disabled
+
+Some Data Center instances refuse the `/rest/api/content` listing with a 403
+(CONFSERVER-57639) while still serving pages by id. Mark looks pages up by
+title through that listing, so when it is answered 403 mark asks
+`/rest/api/content/search` with a CQL query for the same space, type and
+title, and goes on doing so for the rest of the run. Nothing needs to be
+configured. If the search is refused too, the error reported is the listing's
+403.
+
 ## When Confluence is busy or unavailable
 
 Mark tries a request up to four times, waiting longer before each retry and

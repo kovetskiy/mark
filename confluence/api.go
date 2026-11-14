@@ -103,6 +103,11 @@ type API struct {
 	// moveByAction.
 	moveActionMissing atomic.Pointer[error]
 
+	// contentListingRefused is set once a lookup through /content was
+	// answered 403, which some instances do to every listing (CONFSERVER-57639),
+	// so that later lookups go straight to /content/search; see findPageV1.
+	contentListingRefused atomic.Bool
+
 	// reparented maps a page id to the versions either side of a move this
 	// API made by update; see ReparentedFrom.
 	reparented      map[string]reparentedVersions
@@ -1026,7 +1031,7 @@ func (api *API) findPageV1(ctx context.Context, space, title string, pageType Co
 		query.Set("title", title)
 	}
 
-	result, err := get[listing[PageInfo]](ctx, api.v1, []string{"content", ""}, query)
+	result, err := api.listContent(ctx, query, space, title, pageType)
 	// allow 404 because it's fine if page is not found,
 	// the function will return nil, nil
 	if errors.Is(err, ErrNotFound) {
@@ -1049,6 +1054,49 @@ func (api *API) findPageV1(ctx context.Context, space, title string, pageType Co
 	}
 
 	return &page, nil
+}
+
+// listContent lists live content through /content, or through /content/search
+// where the instance refuses the listing.
+//
+// Some instances disable /content for listings while still serving a single
+// page by id; /content/scan is no way round it, since it ignores the title.
+// Only a 403 switches over, and the switch is remembered for the run. A search
+// that fails too reports the listing's own refusal, since that is what the
+// person can act on.
+func (api *API) listContent(
+	ctx context.Context, query url.Values, space, title string, pageType ContentType,
+) (listing[PageInfo], error) {
+	if !api.contentListingRefused.Load() {
+		result, err := get[listing[PageInfo]](ctx, api.v1, []string{"content", ""}, query)
+		if !errors.Is(err, ErrForbidden) {
+			return result, err
+		}
+
+		searched, searchErr := api.searchContentCQL(ctx, query, space, title, pageType)
+		if searchErr != nil {
+			return listing[PageInfo]{}, err
+		}
+
+		api.contentListingRefused.Store(true)
+		return searched, nil
+	}
+
+	return api.searchContentCQL(ctx, query, space, title, pageType)
+}
+
+func (api *API) searchContentCQL(
+	ctx context.Context, query url.Values, space, title string, pageType ContentType,
+) (listing[PageInfo], error) {
+	cql := "type=" + QuoteCQL(string(pageType)) + " AND space=" + QuoteCQL(space)
+	if title != "" {
+		cql += " AND title=" + QuoteCQL(title)
+	}
+
+	return get[listing[PageInfo]](ctx, api.v1, []string{"content", "search"}, url.Values{
+		"cql":    {cql},
+		"expand": query["expand"],
+	})
 }
 
 // statusesHoldingTitle are the states in which a page is invisible to an
