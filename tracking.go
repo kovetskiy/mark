@@ -364,8 +364,9 @@ func trackedPageOfDeclaredTitle(
 
 			// A parent can be renamed and edited before this run, so its
 			// content hash no longer identifies the old path. Follow it only
-			// when this document's scope has exactly one unclaimed old page;
-			// with more than one candidate there is no safe answer.
+			// when exactly one unclaimed old page in this document's scope was
+			// once a parent under its own title, which a brand-new parent
+			// never has; with more than one candidate there is no safe answer.
 			_, unique, found, err := tracker.ResolveUniqueRenamedFor(ctx, space, in.key)
 			if err != nil {
 				return "", "", err
