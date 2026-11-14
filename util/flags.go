@@ -105,13 +105,12 @@ func globalFlags(config *configFile) []cli.Flag {
 // publishFlags are the flags of "mark publish".
 func publishFlags(config *configFile) []cli.Flag {
 	return []cli.Flag{
-		&cli.StringFlag{
+		&cli.FlagBase[[]string, cli.NoConfig, patternListType]{
 			Name:      "files",
 			Aliases:   []string{"f"},
-			Value:     "",
-			Usage:     "use specified markdown file(s) for converting to html. Supports file globbing patterns (needs to be quoted).",
+			Usage:     "use specified markdown file(s) for converting to html. Supports file globbing patterns (needs to be quoted). Repeat it to publish the files of several patterns; the configuration file takes a list, and MARK_FILES one pattern per line.",
 			TakesFile: true,
-			Sources:   cli.NewValueSourceChain(cli.EnvVar("MARK_FILES"), config.value("files")),
+			Sources:   cli.NewValueSourceChain(cli.EnvVar("MARK_FILES"), config.lines("files")),
 		},
 		&cli.StringFlag{
 			Name:      "files-from",

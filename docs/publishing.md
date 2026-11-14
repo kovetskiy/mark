@@ -452,6 +452,23 @@ You can also use `**` to get all files recursively.
 mark publish -f "**/docs/*.md"
 ```
 
+Repeat `--files` to publish the files of several patterns in one run, say a
+README at the root of the repository and everything under `docs/`. A file that
+more than one pattern matches is published once:
+
+```bash
+mark publish -f README.md -f "docs/**/*.md"
+```
+
+The configuration file takes a list (`files = ["README.md", "docs/**/*.md"]`),
+and `MARK_FILES` one pattern a line. The patterns act as one pattern,
+`{README.md,docs/**/*.md}`, which is how `--track-pages` records the run: so
+changing the set changes the pattern the pages are recorded under, as changing
+a single pattern does. Two things follow from that. `--parents-from-path` takes
+no root from several patterns, so give it `--parents-from-path-root`; and
+`--partial` with `--on-orphan archive` or `delete` refuses several patterns as
+it refuses a wildcard: name the files with `--files-from`.
+
 A document is held to the boundary the files it names are held to by default
 ([attachments](attachments.md#where-an-attachment-may-come-from), includes),
 and `--attachment-root` narrows that boundary for those files only, not for

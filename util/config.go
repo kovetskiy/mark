@@ -130,6 +130,16 @@ func (c *configFile) value(key string) cli.ValueSource {
 	return &configValue{file: c, key: key}
 }
 
+// lines is value for a flag whose list items may hold a comma: a list is
+// joined with newlines instead.
+func (c *configFile) lines(key string) cli.ValueSource {
+	if c.keys == nil {
+		c.keys = map[string]bool{}
+	}
+	c.keys[key] = true
+	return &configValue{file: c, key: key, separator: patternSeparator}
+}
+
 // hold makes source answer nothing until settle. urfave/cli resolves the
 // root's flags as it parses the root, before "mark publish --config X" has
 // named X.
@@ -182,6 +192,8 @@ func sourcesOf(flag cli.Flag) *cli.ValueSourceChain {
 	case *cli.FloatFlag:
 		return &f.Sources
 	case *cli.StringSliceFlag:
+		return &f.Sources
+	case *cli.FlagBase[[]string, cli.NoConfig, patternListType]:
 		return &f.Sources
 	}
 	return nil
@@ -277,8 +289,9 @@ func commandLineFirst(cmd *cli.Command, names []string, given func(string) bool)
 
 // configValue is one setting of a configFile, as a flag's source.
 type configValue struct {
-	file *configFile
-	key  string
+	file      *configFile
+	key       string
+	separator string
 }
 
 // Lookup is the setting, in the form a flag parses: a list joined with
@@ -299,7 +312,11 @@ func (v *configValue) Lookup() (string, bool) {
 		for i := range items {
 			items[i] = fmt.Sprint(list.Index(i).Interface())
 		}
-		return strings.Join(items, ","), true
+		separator := ","
+		if v.separator != "" {
+			separator = v.separator
+		}
+		return strings.Join(items, separator), true
 	}
 
 	return fmt.Sprint(value), true
