@@ -14,6 +14,7 @@ import (
 	"text/template"
 
 	"github.com/kovetskiy/mark/v17/attachment"
+	"github.com/kovetskiy/mark/v17/internal/syntax"
 	"github.com/kovetskiy/mark/v17/markdown"
 	"github.com/kovetskiy/mark/v17/stdlib"
 )
@@ -81,7 +82,7 @@ func Load(ctx context.Context, path string, std *stdlib.Lib, cfg markdown.Option
 
 	header := &Header{
 		path:     path,
-		markdown: isMarkdown(path),
+		markdown: syntax.IsMarkdownFile(path),
 		tmpl:     tmpl,
 		// Includes and macros register templates on the set they compile
 		// with; a set of its own keeps them from reaching the documents.
@@ -224,18 +225,6 @@ func relativePath(file string) string {
 	}
 
 	return filepath.ToSlash(rel)
-}
-
-// isMarkdown reports whether path has one of the extensions Markdown is
-// commonly saved under. Anything else would be published as storage format,
-// its Markdown printed literally on every page, and still well-formed.
-func isMarkdown(path string) bool {
-	switch strings.ToLower(filepath.Ext(path)) {
-	case ".md", ".markdown", ".mdown", ".mkd", ".mkdn", ".mdwn":
-		return true
-	}
-
-	return false
 }
 
 // xmlSpecialPath is a sample name a template must escape to stay well-formed.

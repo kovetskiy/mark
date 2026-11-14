@@ -338,20 +338,28 @@ func resolveLink(
 	}
 
 	if len(link.filename) > 0 {
-		filepath, why := findLinkTarget(files, bases, link.filename)
+		found, why := findLinkTarget(files, bases, link.filename)
 		if why != nil {
 			return "", why, nil
 		}
 
-		linkContents, err := files.ReadFile(filepath)
+		// A script or data file is no document whatever its content sniffs as,
+		// and reading its headers would title it and look it up as a page.
+		if filepath.Ext(found) != "" && !syntax.IsMarkdownFile(found) {
+			log.Debug().Msgf("Ignoring link to file %q: not a Markdown file", found)
+
+			return "", nil, nil
+		}
+
+		linkContents, err := files.ReadFile(found)
 		if err != nil {
-			return "", nil, fmt.Errorf("read file %s: %w", filepath, err)
+			return "", nil, fmt.Errorf("read file %s: %w", found, err)
 		}
 
 		contentType := http.DetectContentType(linkContents)
 		// Check if the MIME type starts with "text/"
 		if !strings.HasPrefix(contentType, "text/") {
-			log.Debug().Msgf("Ignoring link to file %q: detected content type %v", filepath, contentType)
+			log.Debug().Msgf("Ignoring link to file %q: detected content type %v", found, contentType)
 			return "", &unresolved{reason: fmt.Sprintf("it is not a text file (%s)", contentType)}, nil
 		}
 
@@ -361,14 +369,14 @@ func resolveLink(
 
 		// This helps to determine if found link points to file that's
 		// not markdown or have mark required metadata
-		opts.Filename = filepath
+		opts.Filename = found
 		linkMeta, linkBody, err := readMeta(linkContents, opts)
 		if err != nil {
 			log.Error().
 				Err(err).
 				Msgf(
 					"unable to extract metadata from %q; ignoring the relative link",
-					filepath,
+					found,
 				)
 
 			return "", &unresolved{reason: "its metadata could not be read"}, nil
@@ -400,7 +408,7 @@ func resolveLink(
 
 		result, err = getConfluenceLink(ctx, api, linkMeta.Space, linkMeta.Title)
 		if err != nil {
-			return "", nil, fmt.Errorf("find confluence page (file=%s, space=%s, title=%s): %w", filepath, linkMeta.Space, linkMeta.Title, err)
+			return "", nil, fmt.Errorf("find confluence page (file=%s, space=%s, title=%s): %w", found, linkMeta.Space, linkMeta.Title, err)
 		}
 
 		if result == "" {
