@@ -291,12 +291,7 @@ func isLocalFileReference(destination string) bool {
 		return false
 	}
 
-	switch strings.ToLower(filepath.Ext(destination)) {
-	case ".md", ".markdown", "":
-		return false
-	}
-
-	return true
+	return filepath.Ext(destination) != "" && !syntax.IsMarkdownFile(destination)
 }
 
 // NamesBesideDocument reports whether a destination can name a file next to the

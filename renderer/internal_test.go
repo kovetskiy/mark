@@ -99,6 +99,10 @@ func TestIsLocalFileReference(t *testing.T) {
 		"javascript:alert(1).pdf":    false,
 		"other.md":                   false,
 		"NOTES.markdown":             false,
+		"other.mdown":                false,
+		"other.MKD":                  false,
+		"other.mkdn":                 false,
+		"other.mdwn":                 false,
 		"CHANGELOG":                  false,
 	}
 
