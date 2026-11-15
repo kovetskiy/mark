@@ -10,6 +10,7 @@ import (
 
 	"github.com/kovetskiy/mark/v17/attachment"
 	"github.com/kovetskiy/mark/v17/confluence"
+	"github.com/kovetskiy/mark/v17/confluence/confluencetest"
 	"github.com/kovetskiy/mark/v17/metadata"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -123,21 +124,35 @@ func TestFindLinkTargetPrefersAFileInALaterSearchDirectory(t *testing.T) {
 	assert.Equal(t, document, found)
 }
 
+// A file that reads as a document by its name and is not text is reported by
+// what it holds.
 func TestLinkResolverIgnoresNonTextFiles(t *testing.T) {
-	ctx := t.Context()
-	base := t.TempDir()
-	// A PNG header is enough for http.DetectContentType.
-	require.NoError(t, os.WriteFile(
-		filepath.Join(base, "image.png"),
-		[]byte("\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR"),
-		0o644,
-	))
+	for _, name := range []string{"image.md", "image"} {
+		t.Run(name, func(t *testing.T) {
+			base := t.TempDir()
+			// A PNG header is enough for http.DetectContentType.
+			require.NoError(t, os.WriteFile(
+				filepath.Join(base, name),
+				[]byte("\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR"),
+				0o644,
+			))
 
-	resolver := &LinkResolver{API: &confluence.API{}, Base: base}
+			api, requests := countingAPI(t)
+			resolver := &LinkResolver{
+				API:     api,
+				Base:    base,
+				Extract: metadata.ExtractOptions{Space: "DOCS", TitleFromFilename: true},
+				Checker: NewLinkChecker(LinkChecks{Internal: true}),
+			}
 
-	resolved, err := resolver.Resolve(ctx, "image.png", "")
-	assert.NoError(t, err)
-	assert.Empty(t, resolved)
+			resolved, err := resolver.Resolve(t.Context(), name, "")
+			assert.NoError(t, err)
+			assert.Empty(t, resolved)
+			assert.Zero(t, atomic.LoadInt64(requests), "no page lookup for a file that is not text")
+			require.Len(t, resolver.Broken(), 1)
+			assert.Contains(t, resolver.Broken()[0], "it is not a text file (image/png)")
+		})
+	}
 }
 
 func TestLinkResolverIgnoresFilesWithoutMetadata(t *testing.T) {
@@ -223,6 +238,22 @@ func TestLinkResolverSkipsNonMarkdownTextFiles(t *testing.T) {
 	}
 }
 
+// pageAPI is a Confluence holding the page "Page" in DOCS, and the link a
+// document that publishes as it is rewritten to.
+func pageAPI(t *testing.T) (*confluence.API, string) {
+	t.Helper()
+
+	server := confluencetest.New(t)
+	server.AddPage("DOCS", "Page", "page", "")
+	api := confluence.NewAPI(server.URL, confluence.Options{Username: "user", Password: "token"})
+
+	link, err := getConfluenceLink(t.Context(), api, "DOCS", "Page")
+	require.NoError(t, err)
+	require.NotEmpty(t, link)
+
+	return api, link
+}
+
 func TestLinkResolverStillResolvesMarkdownAndExtensionlessFiles(t *testing.T) {
 	for _, name := range []string{"page.md", "page.MARKDOWN", "page"} {
 		t.Run(name, func(t *testing.T) {
@@ -230,23 +261,28 @@ func TestLinkResolverStillResolvesMarkdownAndExtensionlessFiles(t *testing.T) {
 			require.NoError(t, os.WriteFile(filepath.Join(base, name),
 				[]byte("<!-- Space: DOCS -->\n<!-- Title: Page -->\n\nBody.\n"), 0o600))
 
-			api, requests := countingAPI(t)
+			api, link := pageAPI(t)
 			resolver := &LinkResolver{API: api, Base: base}
 
-			_, err := resolver.Resolve(t.Context(), name, "")
+			resolved, err := resolver.Resolve(t.Context(), name, "")
 			require.NoError(t, err)
-			assert.NotZero(t, atomic.LoadInt64(requests), "the page is looked up")
+			assert.Equal(t, link, resolved)
 		})
 	}
 }
 
 // A file published through --files with its own space and title is a page
-// whatever its extension, so a link to it is looked up like any other.
+// whatever its extension, so a link to it is rewritten like any other. A dot
+// in a name is not always an extension: v1.2 and README.en are documents too.
 func TestLinkResolverLooksUpNonMarkdownFilesThatDeclareAPage(t *testing.T) {
+	const headers = "<!-- Space: DOCS -->\n<!-- Title: Page -->\n\nBody.\n"
+
 	cases := []struct{ name, content string }{
-		{"page.rst", "<!-- Space: DOCS -->\n<!-- Title: Page -->\n\nBody.\n"},
-		{"notes.TXT", "<!-- Space: DOCS -->\n<!-- Title: Notes -->\n\nBody.\n"},
-		{"guide.mdx", "---\nspace: DOCS\ntitle: Guide\n---\n\nBody.\n"},
+		{"page.rst", headers},
+		{"notes.TXT", headers},
+		{"guide.mdx", "---\nspace: DOCS\ntitle: Page\n---\n\nBody.\n"},
+		{"v1.2", headers},
+		{"README.en", headers},
 	}
 
 	for _, tc := range cases {
@@ -254,18 +290,43 @@ func TestLinkResolverLooksUpNonMarkdownFilesThatDeclareAPage(t *testing.T) {
 			base := t.TempDir()
 			require.NoError(t, os.WriteFile(filepath.Join(base, tc.name), []byte(tc.content), 0o600))
 
-			api, requests := countingAPI(t)
+			api, link := pageAPI(t)
 			resolver := &LinkResolver{
 				API:     api,
 				Base:    base,
 				Extract: metadata.ExtractOptions{FrontMatter: true},
 			}
 
-			_, err := resolver.Resolve(t.Context(), tc.name, "")
+			resolved, err := resolver.Resolve(t.Context(), tc.name, "")
 			require.NoError(t, err)
-			assert.NotZero(t, atomic.LoadInt64(requests), "the page is looked up")
+			assert.Equal(t, link, resolved)
 		})
 	}
+}
+
+// A linked script the run cannot read is left as written, like one it can:
+// it is not a document either way.
+func TestLinkResolverLeavesUnreadableNonMarkdownFilesAlone(t *testing.T) {
+	base := t.TempDir()
+	name := filepath.Join(base, "run.sh")
+	require.NoError(t, os.WriteFile(name, []byte("echo hi\n"), 0o000))
+	if _, err := os.ReadFile(name); err == nil {
+		t.Skip("file modes do not keep this user from reading")
+	}
+
+	api, requests := countingAPI(t)
+	resolver := &LinkResolver{
+		API:     api,
+		Base:    base,
+		Extract: metadata.ExtractOptions{Space: "DOCS", TitleFromFilename: true},
+		Checker: NewLinkChecker(LinkChecks{Internal: true}),
+	}
+
+	resolved, err := resolver.Resolve(t.Context(), "run.sh", "")
+	require.NoError(t, err)
+	assert.Empty(t, resolved)
+	assert.Empty(t, resolver.Broken())
+	assert.Zero(t, atomic.LoadInt64(requests))
 }
 
 // A space or title borrowed from the run does not make a script a page.
