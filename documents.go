@@ -252,6 +252,13 @@ func (r *runInputs) named(file string) input {
 	return fileInput(file)
 }
 
+// has reports whether file is one of the run's files or Documents.
+func (r *runInputs) has(file string) bool {
+	_, ok := r.byPath[r.pathKey(file)]
+
+	return ok
+}
+
 // checkDocuments refuses what Documents and DocumentScope cannot be given:
 // settings that would do nothing while seeming to, before anything is
 // published.
