@@ -342,6 +342,8 @@ func (b Boundary) checkPath(base, resolved, named string) error {
 	var path string
 	var ok bool
 
+	dir := base
+
 	switch b {
 	case "":
 		roots := []string{base}
@@ -353,13 +355,12 @@ func (b Boundary) checkPath(base, resolved, named string) error {
 	default:
 		// One directory alone has no working directory beside it to catch a
 		// relative base resolved apart from an absolute name.
-		dir := string(b)
-		if b == BoundaryDocument {
-			dir = base
+		if b != BoundaryDocument {
+			dir = string(b)
 		}
 
 		var err error
-		if path, ok, err = withinDir(dir, resolved); err != nil {
+		if dir, path, ok, err = withinDir(dir, resolved); err != nil {
 			return fmt.Errorf("unable to hold %q to the attachment root: %w", named, err)
 		}
 	}
@@ -371,44 +372,52 @@ func (b Boundary) checkPath(base, resolved, named string) error {
 	// Reported as the resolved absolute path: "docs/../../id_rsa" cleans down
 	// to "../id_rsa", which says less about where the file actually is than the
 	// reader needs in order to judge it.
-	return b.outside(base, named, path)
+	return b.outside(dir, named, path)
 }
 
-// outside is the refusal of named, which resolves to path, as outside b drawn
-// around a document in base.
-func (b Boundary) outside(base, named, path string) error {
+// outside is the refusal of named, which resolves to path, as outside dir:
+// the document's directory, or the directory b names. The setting is named
+// as a run's caller knows it, since a relative dir such as "." says nothing
+// about which rule refused the file.
+func (b Boundary) outside(dir, named, path string) error {
 	var where string
 
 	switch b {
 	case "":
 		where = fmt.Sprintf("both %q and the directory mark is running in; "+
-			"publish from a directory that contains it", base)
+			"publish from a directory that contains it", dir)
 	case BoundaryDocument:
-		where = fmt.Sprintf("the document's directory %q, the attachment root", base)
+		where = fmt.Sprintf("the document's directory %q: %s is %q", dir, boundarySetting, string(b))
 	default:
-		where = fmt.Sprintf("the attachment root %q", string(b))
+		where = fmt.Sprintf("%q, the directory %s names", dir, boundarySetting)
 	}
 
 	return fmt.Errorf("%w: %q resolves to %s, which is outside %s", ErrOutsideProject, named, path, where)
 }
 
+// boundarySetting names the Boundary of a run to the library caller and on
+// the command line.
+const boundarySetting = "Rendering.AttachmentRoot (--attachment-root)"
+
 // withinDir is within for one directory, dir and path made absolute first, as
 // Within makes them: one resolved while relative keeps the working
-// directory's own link and reads as outside the other.
-func withinDir(dir, path string) (string, bool, error) {
+// directory's own link and reads as outside the other. It returns dir as it
+// compared it too.
+func withinDir(dir, path string) (resolvedDir, resolved string, ok bool, err error) {
 	absDir, err := filepath.Abs(dir)
 	if err != nil {
-		return "", false, err
+		return "", "", false, err
 	}
 
 	absPath, err := filepath.Abs(path)
 	if err != nil {
-		return "", false, err
+		return "", "", false, err
 	}
 
-	resolved, ok := within([]string{absDir}, absPath)
+	resolvedDir = fspath.ResolveDeepest(absDir)
+	resolved = fspath.ResolveDeepest(absPath)
 
-	return resolved, ok, nil
+	return resolvedDir, resolved, withinAny(resolved, []string{resolvedDir}), nil
 }
 
 // within reports whether resolved is inside any of roots, both resolved

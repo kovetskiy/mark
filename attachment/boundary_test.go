@@ -65,13 +65,39 @@ func TestBoundaryDocumentRefusesOutsideTheDocumentsDirectory(t *testing.T) {
 	for _, name := range []string{"../other-doc/file.pdf", "../other-doc/*.pdf", "linked.pdf"} {
 		_, err := ResolveLocalAttachments(root, docs, []string{name})
 		require.ErrorIs(t, err, ErrOutsideProject, name)
-		assert.Contains(t, err.Error(), "the attachment root", name)
+		assert.Contains(t, err.Error(), boundarySetting, name)
 
 		_, err = ResolveLocalAttachment(root, docs, name)
 		require.ErrorIs(t, err, ErrOutsideProject, name)
 
 		require.ErrorIs(t, root.CheckReadable(docs, name), ErrOutsideProject, name)
 	}
+}
+
+// TestBoundaryRefusalNamesTheSettingAndTheDirectory: run from the document's
+// own directory the base is ".", which tells the reader neither where the
+// boundary is nor which setting drew it, so the refusal gives the directory
+// resolved and names the setting, for "document" and for a directory alike.
+func TestBoundaryRefusalNamesTheSettingAndTheDirectory(t *testing.T) {
+	repo, docs, _ := boundaryProject(t)
+	t.Chdir(docs)
+
+	file := filepath.Join(repo, "other-doc", "file.pdf")
+
+	err := Root{}.WithBoundary(BoundaryDocument).CheckReadable(".", "../other-doc/file.pdf")
+	require.ErrorIs(t, err, ErrOutsideProject)
+	assert.Equal(t, ErrOutsideProject.Error()+`: "../other-doc/file.pdf" resolves to `+file+
+		`, which is outside the document's directory "`+docs+
+		`": Rendering.AttachmentRoot (--attachment-root) is "document"`, err.Error())
+
+	err = Root{}.WithBoundary(".").CheckReadable(".", "../other-doc/file.pdf")
+	require.ErrorIs(t, err, ErrOutsideProject)
+	assert.Equal(t, ErrOutsideProject.Error()+`: "../other-doc/file.pdf" resolves to `+file+
+		`, which is outside "`+docs+`", the directory Rendering.AttachmentRoot (--attachment-root) names`, err.Error())
+
+	_, err = ResolveLocalAttachment(Root{}.WithBoundary(BoundaryDocument), ".", "../other-doc/file.pdf")
+	require.ErrorIs(t, err, ErrOutsideProject)
+	assert.Contains(t, err.Error(), `the document's directory "`+docs+`"`)
 }
 
 // TestBoundaryDocumentAllowsBelowTheDocument: the document's directory and
@@ -105,7 +131,7 @@ func TestBoundaryPathHoldsEveryDocumentToIt(t *testing.T) {
 
 	_, err = ResolveLocalAttachment(root, docs, "../other-doc/file.pdf")
 	require.ErrorIs(t, err, ErrOutsideProject)
-	assert.Contains(t, err.Error(), "the attachment root")
+	assert.Contains(t, err.Error(), boundarySetting)
 
 	// The other document's own file is outside a root that does not hold it.
 	_, err = ResolveLocalAttachment(root, filepath.Join(repo, "other-doc"), "file.pdf")
@@ -158,7 +184,7 @@ func TestFSRootBoundaryDocument(t *testing.T) {
 
 		_, err = ResolveLocalAttachments(narrow, "guide", []string{name})
 		require.ErrorIs(t, err, ErrOutsideProject, name)
-		assert.Contains(t, err.Error(), "the attachment root", name)
+		assert.Contains(t, err.Error(), boundarySetting, name)
 		require.ErrorIs(t, narrow.CheckReadable("guide", name), ErrOutsideProject, name)
 	}
 
