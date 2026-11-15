@@ -35,8 +35,13 @@ first, so a file whose name really contains a `%` still resolves to itself.
 
 A link is left exactly as written when it has a scheme (`https:`, `mailto:`),
 is a bare `#fragment`, points at a directory, a non-text file or a file whose
-extension is not a Markdown one (`.sh`, `.py`, `.txt`), or names a file that
-has no mark metadata and so is never published. Links are resolved on
+extension is not a Markdown one (`.sh`, `.py`, `.txt`) and that does not set
+both `Space` and `Title` itself, or names a file that has no mark metadata and
+so is never published. A page published from a file with another extension --
+`--files "docs/**/*.rst"`, say -- can be linked to when the file sets its own
+`Space` and `Title`; a title or space taken from `--title-from-filename`,
+`--title-from-h1` or `--space` does not count. A file with no extension at all
+is read like a Markdown one. Links are resolved on
 the parsed document, so a link that appears inside a code span or a fenced or
 indented code block is left alone -- a page documenting Markdown gets to show
 its examples unchanged. Files pulled in with `Include` are resolved along with

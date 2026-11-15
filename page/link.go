@@ -344,11 +344,20 @@ func resolveLink(
 		}
 
 		// A script or data file is no document whatever its content sniffs as,
-		// and reading its headers would title it and look it up as a page.
+		// and reading its headers would title it and look it up as a page --
+		// unless it declares its own space and title, which is how a file
+		// published through --files is told from one that is not.
 		if filepath.Ext(found) != "" && !syntax.IsMarkdownFile(found) {
-			log.Debug().Msgf("Ignoring link to file %q: not a Markdown file", found)
+			published, err := declaresPage(files, found, opts)
+			if err != nil {
+				return "", nil, err
+			}
 
-			return "", nil, nil
+			if !published {
+				log.Debug().Msgf("Ignoring link to file %q: not a Markdown file", found)
+
+				return "", nil, nil
+			}
 		}
 
 		linkContents, err := files.ReadFile(found)
@@ -581,4 +590,26 @@ func (d *Deferrals) Files() []string {
 	sort.Strings(files)
 
 	return files
+}
+
+// declaresPage reports whether a file names its own space and title, with
+// nothing borrowed from the run: a title derived from the filename or heading
+// and a default space do not count, or every script would be a page.
+func declaresPage(files LinkFiles, found string, opts metadata.ExtractOptions) (bool, error) {
+	contents, err := files.ReadFile(found)
+	if err != nil {
+		return false, fmt.Errorf("read file %s: %w", found, err)
+	}
+
+	own := metadata.ExtractOptions{
+		Filename:    found,
+		FrontMatter: opts.FrontMatter,
+	}
+
+	meta, _, err := metadata.ExtractMeta(mdsource.Normalize(contents), own)
+	if err != nil || meta == nil {
+		return false, nil //nolint:nilerr // a file whose headers do not read declares no page
+	}
+
+	return meta.Space != "" && meta.Title != "", nil
 }

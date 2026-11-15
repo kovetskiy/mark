@@ -239,3 +239,52 @@ func TestLinkResolverStillResolvesMarkdownAndExtensionlessFiles(t *testing.T) {
 		})
 	}
 }
+
+// A file published through --files with its own space and title is a page
+// whatever its extension, so a link to it is looked up like any other.
+func TestLinkResolverLooksUpNonMarkdownFilesThatDeclareAPage(t *testing.T) {
+	cases := []struct{ name, content string }{
+		{"page.rst", "<!-- Space: DOCS -->\n<!-- Title: Page -->\n\nBody.\n"},
+		{"notes.TXT", "<!-- Space: DOCS -->\n<!-- Title: Notes -->\n\nBody.\n"},
+		{"guide.mdx", "---\nspace: DOCS\ntitle: Guide\n---\n\nBody.\n"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			base := t.TempDir()
+			require.NoError(t, os.WriteFile(filepath.Join(base, tc.name), []byte(tc.content), 0o600))
+
+			api, requests := countingAPI(t)
+			resolver := &LinkResolver{
+				API:     api,
+				Base:    base,
+				Extract: metadata.ExtractOptions{FrontMatter: true},
+			}
+
+			_, err := resolver.Resolve(t.Context(), tc.name, "")
+			require.NoError(t, err)
+			assert.NotZero(t, atomic.LoadInt64(requests), "the page is looked up")
+		})
+	}
+}
+
+// A space or title borrowed from the run does not make a script a page.
+func TestLinkResolverSkipsNonMarkdownFilesWithOnlyHalfAPage(t *testing.T) {
+	for name, content := range map[string]string{
+		"only-space.rst": "<!-- Space: DOCS -->\n\nBody.\n",
+		"only-title.rst": "<!-- Title: Page -->\n\nBody.\n",
+	} {
+		t.Run(name, func(t *testing.T) {
+			base := t.TempDir()
+			require.NoError(t, os.WriteFile(filepath.Join(base, name), []byte(content), 0o600))
+
+			api, requests := countingAPI(t)
+			resolver := &LinkResolver{API: api, Base: base}
+
+			resolved, err := resolver.Resolve(t.Context(), name, "")
+			require.NoError(t, err)
+			assert.Empty(t, resolved)
+			assert.Zero(t, atomic.LoadInt64(requests))
+		})
+	}
+}
