@@ -12,7 +12,6 @@
 package confluencetest
 
 import (
-	"regexp"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -21,6 +20,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"path"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"

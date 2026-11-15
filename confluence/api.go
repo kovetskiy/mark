@@ -104,8 +104,9 @@ type API struct {
 	moveActionMissing atomic.Pointer[error]
 
 	// contentListingRefused is set once a lookup through /content was
-	// answered 403, which some instances do to every listing (CONFSERVER-57639),
-	// so that later lookups go straight to /content/search; see findPageV1.
+	// answered 403 and /content/search then found the page, which some
+	// instances make necessary for every listing (CONFSERVER-57639), so that
+	// later lookups go straight to /content/search; see listContent.
 	contentListingRefused atomic.Bool
 
 	// reparented maps a page id to the versions either side of a move this
@@ -1061,28 +1062,38 @@ func (api *API) findPageV1(ctx context.Context, space, title string, pageType Co
 //
 // Some instances disable /content for listings while still serving a single
 // page by id; /content/scan is no way round it, since it ignores the title.
-// Only a 403 switches over, and the switch is remembered for the run. A search
-// that fails too reports the listing's own refusal, since that is what the
-// person can act on.
+// A 403 is also what a space the user may not see answers, so it is the
+// search's answer that decides: only a search that finds something switches
+// the run over. One that fails, or finds nothing, leaves the listing to be
+// asked again and reports the listing's 403, since an empty result cannot tell
+// a missing page from one that may not be seen, and the caller would create it.
 func (api *API) listContent(
 	ctx context.Context, query url.Values, space, title string, pageType ContentType,
 ) (listing[PageInfo], error) {
-	if !api.contentListingRefused.Load() {
-		result, err := get[listing[PageInfo]](ctx, api.v1, []string{"content", ""}, query)
-		if !errors.Is(err, ErrForbidden) {
-			return result, err
-		}
-
-		searched, searchErr := api.searchContentCQL(ctx, query, space, title, pageType)
-		if searchErr != nil {
-			return listing[PageInfo]{}, err
-		}
-
-		api.contentListingRefused.Store(true)
-		return searched, nil
+	if api.contentListingRefused.Load() {
+		return api.searchContentCQL(ctx, query, space, title, pageType)
 	}
 
-	return api.searchContentCQL(ctx, query, space, title, pageType)
+	result, err := get[listing[PageInfo]](ctx, api.v1, []string{"content", ""}, query)
+	if !errors.Is(err, ErrForbidden) {
+		return result, err
+	}
+
+	searched, searchErr := api.searchContentCQL(ctx, query, space, title, pageType)
+	if searchErr != nil {
+		return listing[PageInfo]{}, fmt.Errorf(
+			"%w (the search fallback through /content/search was tried and failed: %w)", err, searchErr,
+		)
+	}
+	if len(searched.Results) == 0 {
+		return listing[PageInfo]{}, fmt.Errorf(
+			"%w (the search fallback through /content/search found nothing, "+
+				"which cannot tell a missing page from a space that may not be seen)", err,
+		)
+	}
+
+	api.contentListingRefused.Store(true)
+	return searched, nil
 }
 
 func (api *API) searchContentCQL(

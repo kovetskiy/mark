@@ -356,9 +356,19 @@ Some Data Center instances refuse the `/rest/api/content` listing with a 403
 (CONFSERVER-57639) while still serving pages by id. Mark looks pages up by
 title through that listing, so when it is answered 403 mark asks
 `/rest/api/content/search` with a CQL query for the same space, type and
-title, and goes on doing so for the rest of the run. Nothing needs to be
-configured. If the search is refused too, the error reported is the listing's
-403.
+title. Nothing needs to be configured.
+
+A 403 is also what a space you may not see answers, so a search that finds
+nothing is not taken for a missing page: mark reports the listing's 403, with a
+note that the search was tried, rather than create the page. Only once a search
+has found a page does mark go straight to the search for the rest of the run; a
+search that failed or found nothing leaves the next lookup to try the listing
+again. On an instance that disables the listing, the first page to publish must
+therefore be one that already exists, or the run stops with that error.
+
+This applies to Data Center and Server. Cloud, and Cloud through the
+`api.atlassian.com` gateway, looks pages up with the v2 API and never uses the
+listing or the search.
 
 ## When Confluence is busy or unavailable
 
