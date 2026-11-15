@@ -258,3 +258,28 @@ func TestMarkdownHeaderKeepsTheDefaultBoundary(t *testing.T) {
 		require.ErrorIs(t, err, attachment.ErrOutsideProject, "boundary %q", boundary)
 	}
 }
+
+// TestMarkdownHeaderAttachesWhatItLinksWhateverTheDocumentPublishes: the
+// header's links are not resolved to pages, so a file it links is attached
+// even when the document would link to that file's page, and each document's
+// own answer does not tell the compiles apart.
+func TestMarkdownHeaderAttachesWhatItLinksWhateverTheDocumentPublishes(t *testing.T) {
+	path := writeHeader(t, "header.md", "See the [guide](guide.rst).\n")
+	require.NoError(t, os.WriteFile(filepath.Join(filepath.Dir(path), "guide.rst"),
+		[]byte("<!-- Space: SPACE -->\n<!-- Title: Guide -->\n"), 0o600))
+
+	header, err := Load(t.Context(), path, newStdlib(t), markdown.Options{AttachReferenced: true})
+	require.NoError(t, err)
+
+	for _, file := range []string{"a.md", "b.md"} {
+		html, attachments, err := header.Render(t.Context(), file, "T", "SPACE", markdown.Options{
+			AttachReferenced: true,
+			DeclaresPage:     func(string) bool { return file != "" },
+		})
+		require.NoError(t, err)
+		assert.Contains(t, html, `<ri:attachment ri:filename="guide.rst"/>`)
+		assert.Len(t, attachments, 1)
+	}
+
+	assert.Equal(t, 1, header.compiles)
+}
