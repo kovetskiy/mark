@@ -692,8 +692,8 @@ func NewAPI(baseURL string, opts Options) *API {
 	username, password := opts.Username, opts.Password
 
 	return &API{
-		v1:            newClient(baseURL+"/rest/api", httpClient, username, password, trace("rest:")),
-		v2:            newClient(baseURL+"/api/v2", httpClient, username, password, trace("rest-v2:")),
+		v1:            newAPIClient(baseURL, "/rest/api", httpClient, username, password, trace("rest:")),
+		v2:            newAPIClient(baseURL, "/api/v2", httpClient, username, password, trace("rest-v2:")),
 		site:          newClient(baseURL, httpClient, username, password, trace("site:")),
 		baseURL:       baseURL,
 		username:      username,
