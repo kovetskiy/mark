@@ -418,7 +418,7 @@ func (r Root) contain(joined, named string) error {
 // that may reach only the one directory, such as a document in an fs.FS
 // reaching --include-path on disk.
 func CheckWithin(dir, path string) error {
-	resolved, ok, err := withinDir(dir, path)
+	_, resolved, ok, err := withinDir(dir, path)
 	if err != nil || ok {
 		return err
 	}
