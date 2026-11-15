@@ -202,7 +202,8 @@ func (r *ConfluenceLinkRenderer) renderLink(writer util.BufWriter, source []byte
 // element is written, so it has to give the same answer each time. Existence is
 // part of the question -- a path to nothing is left as the document wrote it,
 // which is what happens without the flag at all -- but the file is not read
-// here, and whether it may be read is decided where it is.
+// here, beyond what DeclaresPage asks of it, and whether it may be read is
+// decided where it is.
 func (r *ConfluenceLinkRenderer) attachable(link *ast.Link, source []byte) bool {
 	_, ok := r.localFile(link, source)
 
@@ -234,9 +235,11 @@ func (r *ConfluenceLinkRenderer) localFile(link *ast.Link, source []byte) (strin
 	}
 
 	for _, name := range names {
-		info, err := r.Root.Stat(filepath.Join(filepath.Dir(r.Path), name))
+		file := filepath.Join(filepath.Dir(r.Path), name)
+
+		info, err := r.Root.Stat(file)
 		if err == nil && !info.IsDir() {
-			if r.DeclaresPage != nil && r.DeclaresPage(filepath.Join(filepath.Dir(r.Path), name)) {
+			if r.DeclaresPage != nil && r.DeclaresPage(file) {
 				return "", false
 			}
 
