@@ -492,6 +492,18 @@ where the mapping cannot apply -- is a warning.
   left finds nothing else recording the page and treats it as any orphan. A
   path recorded under a pattern no run publishes any more keeps its page the
   same way, so such a page is left for you to remove.
+* A page in **a space the run was not given** is left alone and reported, and
+  stays tracked. With `--space`, a run looks for orphans in that space alone: a
+  document's `Space` header says where that document is published, not that the
+  other pages tracked in its space are this run's to remove. The warning and
+  the `reason` name the remedy: publish that space in a run given its
+  `--space`. A run with no `--space` takes its spaces from its documents and
+  looks for orphans in each, and so needs a `Space` header in every document.
+  Where neither fits, such a page is left for you to remove.
+* A document whose **`Space` header changed** publishes nothing to the space
+  it left, so the page it had there is an orphan of that space, handled like
+  any other: by a run given that `--space` or none, and left alone and
+  reported, as above, by a run given the space it moved to.
 * A document that opted out with `Synchronized: false` still counts as present.
 * `--dry-run` reports what would go and touches nothing.
 
