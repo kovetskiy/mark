@@ -189,16 +189,31 @@ func holdsInlines(node ast.Node) bool {
 	return false
 }
 
+// standsAlone reports whether node is all its paragraph holds, so that
+// blocks can take the paragraph's place.
+func standsAlone(node ast.Node) bool {
+	parent := node.Parent()
+
+	return isParagraph(parent) && parent.FirstChild() == node && parent.LastChild() == node && parent.Parent() != nil
+}
+
+// parseInPlaceOf parses what node expanded to. Beside other inline content
+// it is read as lines of text: a heading or a list has no place inside a
+// paragraph, a heading, a table cell or a link.
+func parseInPlaceOf(node ast.Node, source []byte) ast.Node {
+	if holdsInlines(node.Parent()) && !standsAlone(node) {
+		return inlineParser().Parse(source)
+	}
+
+	return parseSubDocument(source)
+}
+
 // replaceWith puts the blocks of a parsed sub-document where node stands.
-//
-// A paragraph that holds nothing else is replaced with them. Next to other
-// inline content a paragraph gives up its children instead, a line apart from
-// the paragraph before it, since a paragraph cannot hold another. A Text keeps
-// the line break that follows it, unless nothing is left before the break: a
-// line left empty is not kept, and neither is a paragraph of such lines.
+// Among inline content a paragraph gives up its children, a line apart, and a
+// line left empty is not kept.
 func replaceWith(node ast.Node, subDoc ast.Node) {
-	if parent := node.Parent(); parent.Kind() == ast.KindParagraph && parent.FirstChild() == node && parent.LastChild() == node && parent.Parent() != nil {
-		node = parent
+	if standsAlone(node) && node.Parent().Kind() == ast.KindParagraph {
+		node = node.Parent()
 	}
 
 	parent := node.Parent()
@@ -375,6 +390,13 @@ func convertSegmentsToStrings(doc ast.Node, source []byte) error {
 				strNode.Code = true
 			}
 			parent.InsertBefore(item.node, strNode)
+
+			// A String carries no line break, so the Text stays for its own.
+			if t, ok := item.node.(*ast.Text); ok && (t.SoftLineBreak() || t.HardLineBreak()) {
+				t.Value = text.SingleLineValue{}
+				continue
+			}
+
 			parent.RemoveChild(item.node)
 		}
 	}

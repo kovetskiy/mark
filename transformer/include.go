@@ -81,7 +81,11 @@ func (t *IncludeTransformer) TransformWithModified(doc *ast.Document, reader tex
 		}
 		t.Templates = tmpl
 
-		subDoc := parseSubDocument(expanded)
+		if target.node.Parent() == nil {
+			continue
+		}
+
+		subDoc := parseInPlaceOf(target.node, expanded)
 		if err := convertSegmentsToStrings(subDoc, expanded); err != nil {
 			t.Err = fmt.Errorf("unable to process include at line %d: %w", target.line, err)
 			log.Error().
@@ -90,10 +94,6 @@ func (t *IncludeTransformer) TransformWithModified(doc *ast.Document, reader tex
 				Err(err).
 				Msg("unable to process include")
 			return false
-		}
-
-		if target.node.Parent() == nil {
-			continue
 		}
 
 		replaceWith(target.node, subDoc)

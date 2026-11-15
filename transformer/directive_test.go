@@ -2,9 +2,13 @@ package transformer_test
 
 import (
 	"bytes"
+	"encoding/xml"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"text/template"
 
@@ -30,7 +34,10 @@ func convertDirectives(t *testing.T, dir, markdown string) (string, error) {
 	)
 
 	gm := goldmarktest.New(
-		goldmarktest.WithExtensions(extension.NewDefinitionListParser(), extension.NewDefinitionListHTMLRenderer()),
+		goldmarktest.WithExtensions(
+			extension.NewDefinitionListParser(), extension.NewDefinitionListHTMLRenderer(),
+			extension.NewTableParser(), extension.NewTableHTMLRenderer(),
+		),
 		goldmarktest.WithParserOptions(
 			parser.WithASTTransformers(util.Prioritized[parser.ASTTransformer](pipeline, 100)),
 		),
@@ -86,6 +93,7 @@ func TestDirectiveInOneNode(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "outside.txt"), []byte("from the file"), 0o600))
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "two.txt"), []byte("first\n\nsecond"), 0o600))
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "heading.txt"), []byte("# Title\n"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "lines.txt"), []byte("a\nb  \nc\n"), 0o600))
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "nested.txt"), []byte("<!-- Include: outside.txt -->\n"), 0o600))
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "defines.txt"),
 		[]byte("<!-- Macro: MARKER\nTemplate: #x\nx: from the macro -->\n"), 0o600))
@@ -112,7 +120,23 @@ func TestDirectiveInOneNode(t *testing.T) {
 		},
 		"a heading inside a paragraph": {
 			"before <!-- Include: heading.txt --> after\n",
-			"<p>before <h1>Title</h1>\n after</p>\n",
+			"<p>before # Title after</p>\n",
+		},
+		"a heading inside a link": {
+			"[<!-- Include: heading.txt -->](https://example.com)\n",
+			"<p><a href=\"https://example.com\"># Title</a></p>\n",
+		},
+		"a heading inside a heading": {
+			"# H <!-- Include: heading.txt -->\n",
+			"<h1>H # Title</h1>\n",
+		},
+		"lines inside a paragraph": {
+			"before <!-- Include: lines.txt --> after\n",
+			"<p>before a\nb<br>\nc after</p>\n",
+		},
+		"lines": {
+			"<!-- Include: lines.txt -->\n",
+			"<p>a\nb<br>\nc</p>\n",
 		},
 		"in other markup": {
 			"<div>\n<!-- Include: outside.txt -->\n</div>\n",
@@ -237,6 +261,31 @@ func TestMacroAppliesToEachPieceOfText(t *testing.T) {
 			"MARKER\nMARKER\n\nMARKER  \ntext\n\na\nMARKER\nb\n",
 			"<p>text</p>\n<p>a\n\nb</p>\n",
 		},
+		"a list before the rest of a paragraph": {
+			"\"- a\\n- b\"",
+			"MARKER\nnext line\n",
+			"<p>- a\n- b\nnext line</p>\n",
+		},
+		"a list after markup": {
+			"\"x\\n- y\"",
+			"**a** MARKER b\n",
+			"<p><strong>a</strong> x\n- y b</p>\n",
+		},
+		"a list in a table cell": {
+			"\"- a\\n- b\"",
+			"| h |\n|---|\n| MARKER |\n",
+			"<table>\n<thead>\n<tr>\n<th>h</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td>- a\n- b</td>\n</tr>\n</tbody>\n</table>\n",
+		},
+		"a block, all a list item holds": {
+			"\"# replaced\"",
+			"- MARKER\n- b\n",
+			"<ul>\n<li>\n<h1>replaced</h1>\n</li>\n<li>b</li>\n</ul>\n",
+		},
+		"nothing, all a list item holds": {
+			"\"\"",
+			"1. a\n2. MARKER\n3. c\n",
+			"<ol>\n<li>a</li>\n<li></li>\n<li>c</li>\n</ol>\n",
+		},
 		"in a definition's term": {
 			"replaced",
 			"a MARKER\n: b\n",
@@ -313,5 +362,99 @@ func TestMacroPatternHoldsMarkupCharacters(t *testing.T) {
 			require.NoError(t, err)
 			assert.Equal(t, test.want, output)
 		})
+	}
+}
+
+// blockInInline names the first block element in output that stands inside
+// an element holding inline content, or the reason output is not well-formed.
+func blockInInline(output string) string {
+	blocks := map[string]bool{
+		"p": true, "h1": true, "h2": true, "ul": true, "ol": true, "li": true,
+		"blockquote": true, "hr": true, "pre": true, "table": true, "dl": true,
+	}
+	inlines := map[string]bool{
+		"p": true, "h1": true, "h2": true, "a": true, "em": true, "strong": true,
+		"dt": true, "td": true, "th": true,
+	}
+
+	var open []string
+
+	decoder := xml.NewDecoder(strings.NewReader("<root>" + strings.ReplaceAll(output, "<hr>", "<hr/>") + "</root>"))
+	for {
+		token, err := decoder.Token()
+		if errors.Is(err, io.EOF) {
+			return ""
+		}
+		if err != nil {
+			return err.Error()
+		}
+
+		switch element := token.(type) {
+		case xml.StartElement:
+			for _, parent := range open {
+				if blocks[element.Name.Local] && inlines[parent] {
+					return "<" + element.Name.Local + "> inside <" + parent + ">"
+				}
+			}
+			open = append(open, element.Name.Local)
+		case xml.EndElement:
+			open = open[:len(open)-1]
+		}
+	}
+}
+
+// An expansion beside other inline content is read as lines of text: a
+// heading, a list or a quote opens only where a block can stand.
+func TestExpansionBesideInlineContentOpensNoBlock(t *testing.T) {
+	parents := map[string]string{
+		"a paragraph":            "before %s after\n",
+		"the start of a line":    "%s\nnext line\n",
+		"after markup":           "**a** %s b\n",
+		"a tight list item":      "- k %s\n- z\n",
+		"a loose list item":      "- k %s\n\n- z\n",
+		"all a list item":        "- %s\n- z\n",
+		"a heading":              "# H %s\n",
+		"a table cell":           "| h |\n|---|\n| x %s |\n",
+		"all a table cell":       "| h |\n|---|\n| %s |\n",
+		"a link":                 "[%s](https://example.com)\n",
+		"emphasis":               "*x %s*\n",
+		"a definition's term":    "x %s\n: d\n",
+		"a quote":                "> q %s r\n",
+		"a paragraph of its own": "before\n\n%s\n\nafter\n",
+	}
+	expansions := map[string]string{
+		"heading": "# Title",
+		"list":    "- one\n- two",
+		"ordered": "1. one",
+		"quote":   "> quoted",
+		"rule":    "***",
+		"mixed":   "text\n\n- one\n\nmore",
+	}
+
+	dir := t.TempDir()
+	for name, expansion := range expansions {
+		require.NoError(t, os.WriteFile(filepath.Join(dir, name+".txt"), []byte(expansion+"\n"), 0o600))
+	}
+
+	for parent, markdown := range parents {
+		for name, expansion := range expansions {
+			directives := map[string]string{
+				"include": fmt.Sprintf(markdown, "<!-- Include: "+name+".txt -->"),
+				"macro":   fmt.Sprintf("<!-- Macro: MARKER\nTemplate: #x\nx: %q -->\n\n", expansion) + fmt.Sprintf(markdown, "MARKER"),
+			}
+
+			for directive, markdown := range directives {
+				t.Run(directive+" of a "+name+" in "+parent, func(t *testing.T) {
+					output, err := convertDirectives(t, dir, markdown)
+					require.NoError(t, err)
+
+					assert.Empty(t, blockInInline(output), output)
+
+					for _, word := range strings.Fields(strings.NewReplacer("#", "", "-", "", ">", "", "1.", "", "***", "").Replace(expansion)) {
+						assert.Contains(t, output, word)
+					}
+				})
+			}
+		}
 	}
 }
