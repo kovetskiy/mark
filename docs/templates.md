@@ -166,10 +166,27 @@ names. An `<ac:...>` or `<ri:...>` element, a CDATA section and a comment inside
 a parameter are kept as they are; any other tag there is text. In a table cell
 a pipe is written `\|`, as it is anywhere in a cell, and published as `|`.
 
+A value written over several lines keeps its line breaks, with
+`--strip-linebreaks` too: that option joins the lines of the paragraph around
+the parameter, not those of the string inside it.
+
 The opening and the closing tag have to stand in one paragraph: a value with a
 blank line in it is read as Markdown, as is one whose closing tag is missing.
 A line of the value that opens a block of its own, such as a list item or a
-heading, ends the paragraph as a blank line does.
+heading, ends the paragraph as a blank line does, and the closing tag then lands
+inside that block:
+
+```text
+<ac:parameter ac:name="v">line1
+- item
+rest</ac:parameter>
+```
+
+publishes the list as `<ul><li>item rest</ac:parameter></li></ul>`, with the
+closing tag inside it and the opening tag before it, which Confluence rejects.
+Keep a line of a multi-line value from starting with a list marker (`-`, `*`,
+`+`, `1.`), `#`, `>` or a code fence, and from being only `---` or `===`, or
+write the value on one line.
 
 `<ac:rich-text-body>` is not such an element: a macro's body is read as
 Markdown, as before.
