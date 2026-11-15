@@ -162,6 +162,12 @@ func literalElementName(tag []byte) string {
 // tag as they would be without it, since that is the shape the transformers
 // and the paragraph renderer read.
 //
+// A Confluence tag, a CDATA section and a comment are each a node as
+// written: a parameter may hold an <ri:url/> or an <ac:link>, and a section
+// what looks like the closing tag. Everything else is text, escaped. The
+// element ends at the first closing tag of its name: the storage format has
+// no literal element inside another of the same name.
+//
 // Without a closing tag in this block it returns nil and appends nothing, and
 // the tag is an opening tag like any other.
 func (s *confluenceTagParser) parseLiteralContent(
@@ -181,72 +187,79 @@ func (s *confluenceTagParser) parseLiteralContent(
 
 	savedLine, savedSegment := block.Position()
 
-	// The block is gathered a line at a time, and read only once a line
-	// could close the element: most close on the line they open on. What
-	// is gathered is read again from its start, so after the first few
-	// times not before it has doubled, which keeps the reading in
-	// proportion to the block.
-	const freeReads = 4
-
 	var (
-		rest     []byte
-		pieces   [][]byte
-		consumed int
-		closable bool
-		reads    int
-		read     int
+		nodes   []ast.Node
+		literal []byte
+
+		// A kind of section the block does not close from here, it closes
+		// nowhere further on either, and is not looked for again.
+		unclosedCDATA, unclosedComment bool
 	)
-	closer := []byte("</" + name)
-	for pieces == nil {
+	for {
 		line, _ := block.PeekLine()
 		if line == nil {
 			break
 		}
-		if rest == nil {
-			// The line itself, which the next one is not appended to.
-			rest = line[:len(line):len(line)]
-		} else {
-			rest = append(rest, line...)
-		}
-		block.AdvanceLine()
 
-		if bytes.Contains(line, closer) {
-			closable = true
-			if reads < freeReads || len(rest) >= 2*read {
-				reads++
-				read = len(rest)
-				pieces, consumed = literalContent(rest, name, inCell, false)
-			}
+		start := bytes.IndexByte(line, '<')
+		if start < 0 {
+			literal = append(literal, line...)
+			block.AdvanceLine()
+
+			continue
 		}
-	}
-	if pieces == nil && closable {
-		pieces, consumed = literalContent(rest, name, inCell, true)
+		literal = append(literal, line[:start]...)
+		block.Advance(start)
+		line = line[start:]
+
+		var node ast.Node
+		closes := false
+
+		switch {
+		case bytes.HasPrefix(line, openCDATA):
+			if !unclosedCDATA {
+				node = s.parseUntil(block, closeCDATA, pc)
+				unclosedCDATA = node == nil
+			}
+		case bytes.HasPrefix(line, openComment):
+			if !unclosedComment {
+				node = s.parseUntil(block, closeComment, pc)
+				unclosedComment = node == nil
+			}
+		case bytes.HasPrefix(line, []byte("</")):
+			node = s.parseMultiLineRegexp(closeTagRegexp, block, pc)
+			closes = node != nil && closesElement(node.(*ast.RawHTML).Value.Bytes(block.Source()), name)
+		default:
+			node = s.parseMultiLineRegexp(openTagRegexp, block, pc)
+		}
+
+		if node == nil {
+			// A "<" that opens nothing: text.
+			literal = append(literal, '<')
+			block.Advance(1)
+
+			continue
+		}
+
+		if len(literal) > 0 {
+			nodes = append(nodes, rawHTML(escapeLiteral(literal, inCell)))
+			literal = literal[:0]
+		}
+		if closes {
+			parent.AppendChild(open)
+			for _, child := range nodes {
+				parent.AppendChild(child)
+			}
+
+			return node
+		}
+		nodes = append(nodes, node)
 	}
 
 	block.SetPosition(savedLine, savedSegment)
+	unclosed.names = append(unclosed.names, name)
 
-	if pieces == nil {
-		unclosed.names = append(unclosed.names, name)
-
-		return nil
-	}
-
-	for consumed > 0 {
-		line, _ := block.PeekLine()
-		if consumed < len(line) {
-			block.Advance(consumed)
-			break
-		}
-		consumed -= len(line)
-		block.AdvanceLine()
-	}
-
-	parent.AppendChild(open)
-	for _, piece := range pieces[:len(pieces)-1] {
-		parent.AppendChild(rawHTML(piece))
-	}
-
-	return rawHTML(pieces[len(pieces)-1])
+	return nil
 }
 
 var unclosedLiteralsKey = parser.NewContextKey()
@@ -264,95 +277,16 @@ func rawHTML(markup []byte) ast.Node {
 	return ast.NewRawHTML(text.NewMultiLineValueFromString(string(markup), text.IdentityDecoder))
 }
 
-// literalContent splits what follows the opening tag of the literal element
-// called name into the markup of each node up to and including its closing
-// tag, and reports how many bytes of rest that took. It returns nil when rest
-// does not close the element.
-//
-// A Confluence tag, a CDATA section and a comment are each a piece as
-// written: a parameter may hold an <ri:url/> or an <ac:link>. Everything else
-// is text, escaped. The element ends at the first closing tag of its name:
-// the storage format has no literal element inside another of the same name.
-//
-// A section rest does not close is text when rest is the whole of the block.
-// When it is not, the section may close further on and hold what looks like
-// the closing tag, so rest does not close the element yet.
-func literalContent(rest []byte, name string, inCell, whole bool) (pieces [][]byte, consumed int) {
-	textStart := 0
+// closesElement reports whether tag is the closing tag of the element called
+// name, and not that of one whose name it begins.
+func closesElement(tag []byte, name string) bool {
+	rest, ok := bytes.CutPrefix(tag, []byte("</"+name))
 
-	// A kind of section that rest does not close from here, it closes
-	// nowhere further on either.
-	var openCDATAForGood, openCommentForGood bool
-
-	for i := 0; i < len(rest); {
-		if rest[i] != '<' {
-			i++
-			continue
-		}
-
-		tail := rest[i:]
-		section := bytes.HasPrefix(tail, openCDATA) || bytes.HasPrefix(tail, openComment)
-
-		var length int
-		closes := false
-
-		switch {
-		case bytes.HasPrefix(tail, openCDATA):
-			if !openCDATAForGood {
-				length = sectionLength(tail, closeCDATA)
-				openCDATAForGood = length == 0
-			}
-		case bytes.HasPrefix(tail, openComment):
-			if !openCommentForGood {
-				length = sectionLength(tail, closeComment)
-				openCommentForGood = length == 0
-			}
-		default:
-			if groups := closeTagRegexp.FindSubmatch(tail); groups != nil {
-				length = len(groups[0])
-				closes = string(groups[1])+":"+string(groups[2]) == name
-			} else {
-				length = len(openTagRegexp.Find(tail))
-			}
-		}
-
-		if length == 0 {
-			if section && !whole {
-				return nil, 0
-			}
-
-			// A "<" that opens nothing: text.
-			i++
-			continue
-		}
-
-		if i > textStart {
-			pieces = append(pieces, escapeLiteral(rest[textStart:i], inCell))
-		}
-		pieces = append(pieces, tail[:length])
-		i += length
-		textStart = i
-
-		if closes {
-			return pieces, i
-		}
-	}
-
-	return nil, 0
+	return ok && bytes.IndexAny(rest[:1], " \t\r\n>") == 0
 }
 
 var openComment = []byte("<!--")
 var closeComment = []byte("-->")
-
-// sectionLength is the length of the section at the start of b that closer
-// ends, or 0 when it is not closed.
-func sectionLength(b, closer []byte) int {
-	if end := bytes.Index(b, closer); end >= 0 {
-		return end + len(closer)
-	}
-
-	return 0
-}
 
 // entityDecoder resolves character references the way goldmark does for the
 // text of a paragraph.
