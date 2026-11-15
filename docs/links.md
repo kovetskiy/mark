@@ -93,10 +93,11 @@ mark publish --compile-only --check-links all --files "docs/**/*.md"
 
 A link to a file that exists but is not a page -- a script, a PDF, an image, a
 text file with no headers -- is not reported, whether or not it can be read:
-it is left as written and nothing about it can be wrong in Confluence. A link
-to one that does not exist is. A file named as a Markdown one, or with no
-extension, is read as a document, and is reported when it is not text or has
-no title.
+it is no document, so there is no page to look for. It is left as written,
+which on the page is a relative address that leads nowhere unless
+`--attach-referenced` attaches the file. A link to one that does not exist is
+reported. A file named as a Markdown one, or with no extension, is read as a
+document, and is reported when it is not text or has no title.
 
 Some of the answers come from Confluence. A relative link to a document is
 rewritten to that document's page, which is looked up, and a `confluence` link
