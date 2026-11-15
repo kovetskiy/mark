@@ -23,11 +23,12 @@ func TestMetadataListings(t *testing.T) {
 		{"space content labels", "labels", []string{"--space", "RD"}, "/api/v2/spaces/55/content/labels", `{"results":[]}`, `[]`},
 		{"space labels", "labels", []string{"--space-id", "55"}, "/api/v2/spaces/55/labels", `{"results":[]}`, `[]`},
 		{"page labels with help disabled", "labels", []string{"--page-id", "42", "--help=false"}, "/api/v2/pages/42/labels", `{"results":[{"id":12,"name":"alpha","prefix":"global"}]}`, `[{"id":"12","name":"alpha","prefix":"global"}]`},
-		{"blog labels", "labels", []string{"--blogpost-id", "42"}, "/api/v2/blogposts/42/labels", `{"results":[]}`, `[]`},
-		{"attachment labels", "labels", []string{"--attachment-id", "42"}, "/api/v2/attachments/42/labels", `{"results":[]}`, `[]`},
-		{"custom labels", "labels", []string{"--custom-content-id", "42"}, "/api/v2/custom-content/42/labels", `{"results":[]}`, `[]`},
+		{"blog labels", "labels", []string{"--blogpost-id", "42"}, "/api/v2/blogposts/42/labels", `{"results":[{"id":13,"name":"release","prefix":"global"}]}`, `[{"id":"13","name":"release","prefix":"global"}]`},
+		{"attachment labels", "labels", []string{"--attachment-id", "42"}, "/api/v2/attachments/42/labels", `{"results":[{"id":"14","name":"diagram","prefix":"global"}]}`, `[{"id":"14","name":"diagram","prefix":"global"}]`},
+		{"custom labels", "labels", []string{"--custom-content-id", "42"}, "/api/v2/custom-content/42/labels", `{"results":[{"id":15,"name":"review","prefix":"my"}]}`, `[{"id":"15","name":"review","prefix":"my"}]`},
 		{"space statuses", "statuses", []string{"--space", "RD"}, "/rest/api/space/RD/state", `[{"id":73,"name":"Draft","color":"#abc"}]`, `[{"id":73,"name":"Draft","color":"#abc"}]`},
 		{"personal statuses", "statuses", []string{"--personal"}, "/rest/api/content-states", `[]`, `[]`},
+		{"populated personal statuses", "statuses", []string{"--personal"}, "/rest/api/content-states", `[{"id":74,"name":"My draft","color":"#123456"}]`, `[{"id":74,"name":"My draft","color":"#123456"}]`},
 		{"page status", "statuses", []string{"--page-id", "42"}, "/rest/api/content/42/state", `{"contentState":{"id":73,"name":"Draft","color":"#abc"},"lastUpdated":"ignored"}`, `[{"id":73,"name":"Draft","color":"#abc"}]`},
 		{"unassigned page", "statuses", []string{"--page-id", "42"}, "/rest/api/content/42/state", `{"contentState":null}`, `[]`},
 	}
@@ -169,6 +170,7 @@ func TestMetadataTableOutput(t *testing.T) {
 	}{
 		{"labels", "labels", `{"results":[{"id":"12","name":"alpha","prefix":"global"},{"id":"13","name":"beta","prefix":"team"}]}`, `^NAME +ID +PREFIX\nalpha +12 +global\nbeta +13 +team\n$`, nil},
 		{"statuses", "statuses", `[{"id":73,"name":"In progress","color":"#2684ff"}]`, `^NAME +ID +COLOR\nIn progress +73 +#2684ff\n$`, []string{"--space", "RD"}},
+		{"assigned page status", "statuses", `{"contentState":{"id":74,"name":"Ready for review","color":"#123456"}}`, `^NAME +ID +COLOR\nReady for review +74 +#123456\n$`, []string{"--page-id", "42"}},
 		{"empty labels", "labels", `{"results":[]}`, `^No labels found\.\n$`, nil},
 		{"empty statuses", "statuses", `[]`, `^No statuses found\.\n$`, []string{"--personal"}},
 	} {
@@ -205,6 +207,8 @@ func TestMetadataRequestFailures(t *testing.T) {
 		{"missing page status", []string{"statuses", "list", "--page-id", "42"}, "/rest/api/content/42/state", http.StatusNotFound, confluence.ErrNotFound, false},
 		{"forbidden space statuses", []string{"statuses", "list", "--space", "RD"}, "/rest/api/space/RD/state", http.StatusForbidden, confluence.ErrForbidden, false},
 		{"unauthorized personal statuses", []string{"statuses", "list", "--personal"}, "/rest/api/content-states", http.StatusUnauthorized, confluence.ErrUnauthorized, false},
+		{"unsupported personal statuses endpoint", []string{"statuses", "list", "--personal"}, "/rest/api/content-states", http.StatusNotFound, confluence.ErrNotFound, false},
+		{"unsupported site labels endpoint", []string{"labels", "list"}, "/api/v2/labels", http.StatusNotFound, confluence.ErrNotFound, false},
 		{"missing space lookup", []string{"labels", "list", "--space", "MISSING"}, "/rest/api/space/MISSING", http.StatusNotFound, confluence.ErrNotFound, true},
 		{"forbidden space lookup", []string{"labels", "list", "--space", "RD"}, "/rest/api/space/RD", http.StatusForbidden, confluence.ErrForbidden, true},
 		{"unauthorized space lookup", []string{"labels", "list", "--space", "RD"}, "/rest/api/space/RD", http.StatusUnauthorized, confluence.ErrUnauthorized, true},
