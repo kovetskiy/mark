@@ -32,6 +32,10 @@ type client struct {
 	base    *url.URL
 	baseErr error
 
+	// apiPath is the end of base's path that is mark's own, such as
+	// /rest/api, and no part of the base URL that was configured.
+	apiPath string
+
 	http *http.Client
 
 	// username and password are sent as basic auth when username is set;
@@ -59,6 +63,22 @@ func newClient(base string, httpClient *http.Client, username, password string, 
 	}
 
 	return c
+}
+
+// newAPIClient roots a client at apiPath under the configured base URL.
+func newAPIClient(baseURL, apiPath string, httpClient *http.Client, username, password string, trace string) *client {
+	c := newClient(baseURL+apiPath, httpClient, username, password, trace)
+	c.apiPath = apiPath
+
+	return c
+}
+
+// appended is the escaped path that u, a URL of this client's making, has
+// after the configured base URL.
+func (c *client) appended(u *url.URL) string {
+	configured := strings.TrimSuffix(c.base.EscapedPath(), c.apiPath)
+
+	return strings.TrimPrefix(u.EscapedPath(), configured)
 }
 
 // reply is what do hands back of an answer: the parts of an http.Response
@@ -272,7 +292,9 @@ func (c *client) do(
 	// read. Only a login page is still what it says: the write was sent to
 	// log in. A run that was stopped is worded as that below.
 	if !sentAs(resp, method) && (err == nil || ctx.Err() == nil) && !errors.Is(err, ErrLoginPage) {
-		return answer, &redirectedWriteError{method: method, requested: req.URL, answer: answer}
+		return answer, &redirectedWriteError{
+			method: method, requested: req.URL, appended: c.appended(req.URL), answer: answer,
+		}
 	}
 
 	if !successful(resp.StatusCode) {

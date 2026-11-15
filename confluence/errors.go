@@ -4,8 +4,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 )
 
@@ -315,9 +317,10 @@ func unreadableAnswer(err error) bool {
 
 // ErrWriteRedirected reports that a write was redirected in a way that sends
 // it on as a GET without its body, so that what answered was not asked to
-// write anything: a proxy that moves http to https with a 301, or one host
-// name to another. errors.Is finds it in the error do returns for such an
-// answer, which names where the request went and the server that is.
+// write anything: a proxy that moves http to https with a 301, one host name
+// to another, or a site under a context path. errors.Is finds it in the error
+// do returns for such an answer, which names where the request went and,
+// when the redirect shows it, the base URL that leads there.
 var ErrWriteRedirected = errors.New("a write was redirected and sent on as a read")
 
 // redirectedWriteError is the error for a write whose answer is to the read
@@ -325,17 +328,33 @@ var ErrWriteRedirected = errors.New("a write was redirected and sent on as a rea
 type redirectedWriteError struct {
 	method    string
 	requested *url.URL
-	answer    *reply
+
+	// appended is the escaped path requested has after the configured base
+	// URL; see client.appended.
+	appended string
+
+	answer *reply
 }
 
 func (e *redirectedWriteError) Error() string {
 	// do makes this error of an answer that names its request.
 	sent := e.answer.Request
 
-	// A redirect within the server names no other address to configure.
+	configured := strings.TrimSuffix(e.requested.EscapedPath(), e.appended)
+	prefix, reaches := e.baseURLPath(sent.URL)
+
+	address := ""
+	switch moved := !sameServer(withoutUser(sent.URL), e.requested); {
+	case reaches && (moved || prefix != configured):
+		address = serverOf(sent.URL) + prefix
+	case moved:
+		address = serverOf(sent.URL)
+	}
+
+	// A redirect that shows no other base URL names no address to configure.
 	advice := "the base URL has to be the address Confluence answers at, not one that redirects to it"
-	if !sameServer(withoutUser(sent.URL), e.requested) {
-		advice = fmt.Sprintf("if Confluence is served at %s, use that address in the base URL", serverOf(sent.URL))
+	if address != "" {
+		advice = fmt.Sprintf("if Confluence is served at %s, use that address in the base URL", address)
 	}
 
 	return fmt.Sprintf(
@@ -343,6 +362,20 @@ func (e *redirectedWriteError) Error() string {
 			"that is no answer to the %s; %s",
 		e.method, e.requested.Redacted(), sent.URL.Redacted(), sent.Method, e.answer.Status, e.method, advice,
 	)
+}
+
+// baseURLPath is the path of the base URL on target's server under which
+// the request would have gone to target itself: what target's path has
+// before appended, when it ends in that and has the query that was sent.
+// NewAPI takes a slash off the end of a base URL, so a path ending in one is
+// not offered.
+func (e *redirectedWriteError) baseURLPath(target *url.URL) (string, bool) {
+	prefix, found := strings.CutSuffix(target.EscapedPath(), e.appended)
+	if !found || strings.HasSuffix(prefix, "/") {
+		return "", false
+	}
+
+	return prefix, maps.EqualFunc(e.requested.Query(), target.Query(), slices.Equal)
 }
 
 func (e *redirectedWriteError) Is(target error) bool { return target == ErrWriteRedirected }

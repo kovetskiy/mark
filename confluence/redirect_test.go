@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"net/http/httputil"
 	"net/url"
+	"regexp"
 	"strings"
 	"sync"
 	"testing"
@@ -378,4 +379,154 @@ func TestCheckRedirectKeepsTheLimitAndTheCallersPolicy(t *testing.T) {
 	refused := errors.New("refused")
 	policy := checkRedirect(func(*http.Request, []*http.Request) error { return refused })
 	assert.ErrorIs(t, policy(request, []*http.Request{request}), refused)
+}
+
+// advised is the address a redirected write's error says to use in the base
+// URL, or "" when it names none.
+func advised(err error) string {
+	match := regexp.MustCompile(`; if Confluence is served at (\S+), use that address in the base URL$`).
+		FindStringSubmatch(err.Error())
+	if match == nil {
+		return ""
+	}
+
+	return match[1]
+}
+
+// TestWriteRedirectedNamesTheBaseURLThatReachesIt: when the redirect leads
+// to the same request under another base URL, that base URL is the address
+// to use, context path included, and a write made with it arrives.
+func TestWriteRedirectedNamesTheBaseURLThatReachesIt(t *testing.T) {
+	ctx := context.Background()
+	server := confluencetest.New(t)
+	added := server.AddPage("DOCS", "Page", "page", "")
+
+	address, err := url.Parse(server.URL)
+	require.NoError(t, err)
+	proxy := httputil.NewSingleHostReverseProxy(address)
+
+	// Confluence under /wiki, with everything else of the server redirecting
+	// there: a path under /confluence to the same one under /wiki.
+	underWiki := http.NewServeMux()
+	underWiki.Handle("/wiki/", http.StripPrefix("/wiki", proxy))
+	underWiki.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "/wiki"+strings.TrimPrefix(r.URL.RequestURI(), "/confluence"), http.StatusMovedPermanently)
+	})
+	behind := httptest.NewServer(underWiki)
+	t.Cleanup(behind.Close)
+
+	// Another server, redirecting to the first under the path it was asked.
+	front := redirectingFront(t, behind.URL, http.StatusFound)
+
+	withName := func(base string) string { return strings.Replace(base, "://", "://name@", 1) }
+
+	for name, base := range map[string]string{
+		"another server, to a context path":        front.URL,
+		"another server, a context path replaced":  front.URL + "/confluence",
+		"another server, with a trailing slash":    front.URL + "/confluence/",
+		"the same server, a context path added":    behind.URL,
+		"the same server, a context path replaced": behind.URL + "/confluence",
+		"a user name in the base URL":              withName(behind.URL),
+		"a user name and another server":           withName(front.URL) + "/confluence",
+	} {
+		t.Run(name, func(t *testing.T) {
+			api := NewAPI(base, Options{Username: "user", Password: "token"})
+			page, err := api.GetPageByID(ctx, added.ID)
+			require.NoError(t, err)
+
+			err = api.UpdatePage(ctx, page, "<p>"+name+"</p>", UpdateOptions{})
+			require.ErrorIs(t, err, ErrWriteRedirected)
+			require.Equal(t, behind.URL+"/wiki", advised(err), err.Error())
+
+			api = NewAPI(advised(err), Options{Username: "user", Password: "token"})
+			page, err = api.GetPageByID(ctx, added.ID)
+			require.NoError(t, err)
+			require.NoError(t, api.UpdatePage(ctx, page, "<p>"+name+"</p>", UpdateOptions{}))
+
+			stored, err := api.GetPageByIDExpanded(ctx, added.ID, "body.storage")
+			require.NoError(t, err)
+			assert.Equal(t, "<p>"+name+"</p>", stored.Body.Storage.Value)
+		})
+	}
+}
+
+// TestWriteRedirectedAdvice: the address named is the base URL under which
+// the request would have been the one the redirect led to; a redirect that
+// is to no such request names the server when it is another, and nothing
+// when it is not.
+func TestWriteRedirectedAdvice(t *testing.T) {
+	const none = ""
+
+	for _, test := range []struct {
+		name   string
+		base   string
+		target string
+		want   string
+	}{
+		{"http to https", "http://wiki.example.org", "https://wiki.example.org/rest/api/content/7?status=current", "https://wiki.example.org"},
+		{"http to https under a context path", "http://wiki.example.org/wiki", "https://wiki.example.org/wiki/rest/api/content/7?status=current", "https://wiki.example.org/wiki"},
+		{"another host", "https://old.example.org", "https://wiki.example.org/rest/api/content/7?status=current", "https://wiki.example.org"},
+		{"another port", "https://wiki.example.org", "https://wiki.example.org:8443/rest/api/content/7?status=current", "https://wiki.example.org:8443"},
+		{"a context path added", "https://wiki.example.org", "https://wiki.example.org/wiki/rest/api/content/7?status=current", "https://wiki.example.org/wiki"},
+		{"a deeper context path added", "https://wiki.example.org/a", "https://wiki.example.org/a/b/c/rest/api/content/7?status=current", "https://wiki.example.org/a/b/c"},
+		{"a context path removed", "https://wiki.example.org/wiki", "https://wiki.example.org/rest/api/content/7?status=current", "https://wiki.example.org"},
+		{"a context path replaced", "https://wiki.example.org/confluence", "https://wiki.example.org/wiki/rest/api/content/7?status=current", "https://wiki.example.org/wiki"},
+		{"another scheme and host, and a context path added", "http://old.example.org", "https://wiki.example.org/wiki/rest/api/content/7?status=current", "https://wiki.example.org/wiki"},
+		{"another host, and a context path removed", "https://old.example.org/wiki", "https://wiki.example.org/rest/api/content/7?status=current", "https://wiki.example.org"},
+		{"an escaped context path", "https://wiki.example.org", "https://wiki.example.org/our%20wiki/rest/api/content/7?status=current", "https://wiki.example.org/our%20wiki"},
+		{"a trailing slash on the base URL", "https://wiki.example.org/", "https://wiki.example.org/wiki/rest/api/content/7?status=current", "https://wiki.example.org/wiki"},
+		{"a user name in the base URL", "https://name:word@wiki.example.org", "https://name:word@wiki.example.org/wiki/rest/api/content/7?status=current", "https://wiki.example.org/wiki"},
+		{"a user name in the base URL, and another host", "https://name:word@old.example.org/a", "https://wiki.example.org/wiki/rest/api/content/7?status=current", "https://wiki.example.org/wiki"},
+
+		{"the same server, an unrelated path", "https://wiki.example.org", "https://wiki.example.org/maintenance.html", none},
+		{"the same server, the same request", "https://wiki.example.org/wiki", "https://wiki.example.org/wiki/rest/api/content/7?status=current", none},
+		{"the same server, the query dropped", "https://wiki.example.org", "https://wiki.example.org/wiki/rest/api/content/7", none},
+		{"the same server, another query", "https://wiki.example.org", "https://wiki.example.org/wiki/rest/api/content/7?status=current&os_destination=x", none},
+		{"the same server, a slash at the end", "https://wiki.example.org", "https://wiki.example.org/wiki/rest/api/content/7/?status=current", none},
+		{"the same server, a doubled slash", "https://wiki.example.org", "https://wiki.example.org/wiki//rest/api/content/7?status=current", none},
+		{"the same server, a path that only ends alike", "https://wiki.example.org", "https://wiki.example.org/wiki/other/api/content/7?status=current", none},
+
+		{"another server, an unrelated path", "http://wiki.example.org/wiki", "https://wiki.example.org/maintenance.html", "https://wiki.example.org"},
+		{"another server, the query dropped", "http://wiki.example.org", "https://wiki.example.org/wiki/rest/api/content/7", "https://wiki.example.org"},
+		{"another server, a slash at the end", "http://wiki.example.org", "https://wiki.example.org/wiki/rest/api/content/7/?status=current", "https://wiki.example.org"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := NewAPI(test.base, Options{}).v1
+			requested, err := url.Parse(c.url([]string{"content", "7"}, url.Values{"status": {"current"}}))
+			require.NoError(t, err)
+			target, err := url.Parse(test.target)
+			require.NoError(t, err)
+
+			err = &redirectedWriteError{
+				method:    http.MethodPut,
+				requested: requested,
+				appended:  c.appended(requested),
+				answer:    &reply{Status: "200 OK", Request: &http.Request{Method: http.MethodGet, URL: target}},
+			}
+
+			assert.Equal(t, test.want, advised(err), err.Error())
+			assert.NotContains(t, err.Error(), "word")
+			if test.want == none {
+				assert.Contains(t, err.Error(), "not one that redirects to it")
+			}
+		})
+	}
+}
+
+// TestWriteRedirectedAdviceComparesTheQueryByItsValues: a redirect that
+// writes the same query another way is still to the same request.
+func TestWriteRedirectedAdviceComparesTheQueryByItsValues(t *testing.T) {
+	c := NewAPI("https://wiki.example.org", Options{}).v1
+	requested, err := url.Parse(c.url([]string{"content"}, url.Values{"title": {"a b"}, "spaceKey": {"DOCS"}}))
+	require.NoError(t, err)
+	target, err := url.Parse("https://wiki.example.org/wiki/rest/api/content?title=a%20b&spaceKey=DOCS")
+	require.NoError(t, err)
+
+	err = &redirectedWriteError{
+		method:    http.MethodPost,
+		requested: requested,
+		appended:  c.appended(requested),
+		answer:    &reply{Status: "200 OK", Request: &http.Request{Method: http.MethodGet, URL: target}},
+	}
+	assert.Equal(t, "https://wiki.example.org/wiki", advised(err), err.Error())
 }
