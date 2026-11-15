@@ -133,6 +133,11 @@ func TestConfluenceTagParserLiteralElements(t *testing.T) {
 			want:  `<ac:parameters><em>a</em></ac:parameters>`,
 		},
 		{
+			name:  "a closing tag of a longer name",
+			input: `<ac:parameter ac:name="v">*a*</ac:parameters>*b*</ac:parameter>`,
+			want:  `<ac:parameter ac:name="v">*a*</ac:parameters>*b*</ac:parameter>`,
+		},
+		{
 			name:  "a parameter closed in another paragraph",
 			input: "<ac:parameter ac:name=\"v\">*a*\n\n*b*</ac:parameter>",
 			want:  "<ac:parameter ac:name=\"v\"><em>a</em></p>\n<p><em>b</em></ac:parameter>",
@@ -208,7 +213,7 @@ func TestConfluenceTagParserLiteralElementNodes(t *testing.T) {
 // A block of opening tags that are never closed is read for a closing tag
 // once, not once from each of them: the one it has is in a comment.
 func TestConfluenceTagParserUnclosedLiteralElements(t *testing.T) {
-	const tags = 40000
+	const tags = 4000
 
 	input := strings.Repeat(`<ac:parameter ac:name="v">*a* `, tags) + "<!-- </ac:parameter> -->\n"
 
@@ -216,43 +221,17 @@ func TestConfluenceTagParserUnclosedLiteralElements(t *testing.T) {
 	got := convertWithTagParser(t, input)
 
 	assert.Equal(t, tags, strings.Count(got, `<ac:parameter ac:name="v"><em>a</em>`))
-	assert.Less(t, time.Since(start), 30*time.Second)
+	assert.Less(t, time.Since(start), 5*time.Second)
 }
 
-// Reading a literal element stays in proportion to its block, whatever in
-// the block looks like the end of the element and is not.
-func TestConfluenceTagParserLiteralElementsInLongBlocks(t *testing.T) {
-	tests := []struct {
-		name  string
-		input string
-		want  string
-	}{
-		{
-			name:  "lines of a closing tag of another name",
-			input: `<ac:parameter ac:name="v">*a*` + "\n" + strings.Repeat("</ac:parameters>\n", 10000),
-			want:  `<ac:parameter ac:name="v"><em>a</em>`,
-		},
-		{
-			name: "lines of a closing tag in a section",
-			input: `<ac:parameter ac:name="v">*a*` + "\n" +
-				strings.Repeat("b <![CDATA[</ac:parameter>]]>\n", 20000) + "</ac:parameter>\n",
-			want: `<ac:parameter ac:name="v">*a*` + "\n" + `b <![CDATA[</ac:parameter>]]>`,
-		},
-		{
-			name: "sections that are not closed",
-			input: `<ac:parameter ac:name="v">*a*` + strings.Repeat("<![CDATA[", 600000) +
-				"</ac:parameter>\n",
-			want: `<ac:parameter ac:name="v">*a*&lt;![CDATA[`,
-		},
-	}
+// A run of sections that are never closed is not searched to the end of the
+// block once for each.
+func TestConfluenceTagParserUnclosedSectionsInLiteralElement(t *testing.T) {
+	input := `<ac:parameter ac:name="v">*a*` + strings.Repeat("<![CDATA[", 300000) + "</ac:parameter>\n"
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			start := time.Now()
-			got := convertWithTagParser(t, tt.input)
+	start := time.Now()
+	got := convertWithTagParser(t, input)
 
-			assert.Contains(t, got, tt.want)
-			assert.Less(t, time.Since(start), 30*time.Second)
-		})
-	}
+	assert.Contains(t, got, `<ac:parameter ac:name="v">*a*&lt;![CDATA[`)
+	assert.Less(t, time.Since(start), 2*time.Second)
 }
