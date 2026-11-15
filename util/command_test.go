@@ -36,7 +36,7 @@ func dispatch(t *testing.T, args ...string) (*string, string, error) {
 
 	var got *string
 	cmd := buildCommand("test", func(_ context.Context, c *cli.Command) error {
-		files := joinPatterns(c.StringSlice("files"))
+		files, _ := joinPatterns(c.StringSlice("files"))
 		got = &files
 		return nil
 	}, nil)

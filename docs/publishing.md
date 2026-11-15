@@ -467,7 +467,10 @@ changing the set changes the pattern the pages are recorded under, as changing
 a single pattern does. Two things follow from that. `--parents-from-path` takes
 no root from several patterns, so give it `--parents-from-path-root`; and
 `--partial` with `--on-orphan archive` or `delete` refuses several patterns as
-it refuses a wildcard: name the files with `--files-from`.
+it refuses a wildcard: name the files with `--files-from`. A pattern that
+matches nothing is reported as a warning when others are given, since the run
+still publishes the rest. A pattern naming a drive (`C:`) cannot be combined with
+another; use relative paths.
 
 A document is held to the boundary the files it names are held to by default
 ([attachments](attachments.md#where-an-attachment-may-come-from), includes),

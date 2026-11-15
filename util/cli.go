@@ -347,6 +347,11 @@ func RunPublish(ctx context.Context, cmd *cli.Command) (err error) {
 		return err
 	}
 
+	files, err := joinPatterns(cmd.StringSlice("files"))
+	if err != nil {
+		return err
+	}
+
 	titleFromH1, titleFromFilename := titleFrom(cmd)
 	parents := splitParents(cmd.String("parents"), cmd.String("parents-delimiter"))
 
@@ -408,7 +413,7 @@ func RunPublish(ctx context.Context, cmd *cli.Command) (err error) {
 			},
 			Output: os.Stdout,
 		},
-		Files: joinPatterns(cmd.StringSlice("files")),
+		Files: files,
 		Paths: paths,
 		Connection: mark.ConnectionConfig{
 			BaseURL:               creds.BaseURL,

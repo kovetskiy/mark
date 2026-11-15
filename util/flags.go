@@ -178,7 +178,7 @@ func publishFlags(config *configFile) []cli.Flag {
 		&cli.StringFlag{
 			Name:    "parents-from-path-root",
 			Value:   "",
-			Usage:   "the directory --parents-from-path measures from. Taken from the --files pattern when not given, which is everything before its first wildcard.",
+			Usage:   "the directory --parents-from-path measures from. Taken from the --files pattern when not given, which is everything before its first wildcard; several --files patterns give no root, so name it.",
 			Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_PARENTS_FROM_PATH_ROOT"), config.value("parents-from-path-root")),
 		},
 		&cli.BoolFlag{
