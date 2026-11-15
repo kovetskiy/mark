@@ -2045,7 +2045,7 @@ func (r *publishRun) processFile(ctx context.Context, in input) (*confluence.Pag
 	if err != nil {
 		return nil, nil, err
 	}
-	doc.declaresPage = declaresPageUnder(doc.root, doc.resolver, r.publishes)
+	doc.declaresPage = declaresPageUnder(doc.resolver, r.publishes)
 
 	if err := r.resolveRestrictions(ctx, doc); err != nil {
 		return nil, nil, err
@@ -2458,24 +2458,32 @@ func linksUnder(ctx context.Context, resolver *page.LinkResolver) func(target, t
 }
 
 // declaresPageUnder says, for the renderer, whether a linked file that is not
-// Markdown is a page this run publishes, asking what the resolver asks of the
-// file with the same options. A link to such a file waits for its page rather
-// than being attached. A file that reads as a page and is not among the run's
-// is attached while it has no page, as a file is that was exported from a
-// page's attachments.
-func declaresPageUnder(files page.LinkFiles, resolver *page.LinkResolver, publishes func(string) bool) func(string) bool {
+// Markdown is a page this run publishes, as the resolver reads it. A link to
+// such a file waits for its page rather than being attached. A file that reads
+// as a page and is not among the run's is attached while it has no page, as a
+// file is that was exported from a page's attachments.
+//
+// The renderer asks on both halves of a link and has to hear the same answer,
+// so each file is read once for the document.
+func declaresPageUnder(resolver *page.LinkResolver, publishes func(string) bool) func(string) bool {
 	if resolver == nil || publishes == nil {
 		return nil
 	}
+
+	answers := map[string]bool{}
 
 	return func(name string) bool {
 		if !publishes(name) {
 			return false
 		}
 
-		declared, err := page.DeclaresPage(files, name, resolver.Extract)
+		declared, asked := answers[name]
+		if !asked {
+			declared = resolver.DeclaresPage(name)
+			answers[name] = declared
+		}
 
-		return err == nil && declared
+		return declared
 	}
 }
 

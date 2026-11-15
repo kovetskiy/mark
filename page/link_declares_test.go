@@ -33,7 +33,7 @@ func TestDeclaresPageIgnoresDerivedTitles(t *testing.T) {
 	name := filepath.Join(t.TempDir(), "run.sh")
 	require.NoError(t, os.WriteFile(name, []byte("# Run\necho hi\n"), 0o600))
 
-	declared, err := DeclaresPage(attachment.Root{}, name, metadata.ExtractOptions{
+	declared, err := declaresPage(attachment.Root{}, name, metadata.ExtractOptions{
 		Space: "DOCS", TitleFromFilename: true, TitleFromH1: true,
 	})
 	require.NoError(t, err)
@@ -62,7 +62,7 @@ func TestDeclaresPageReadsOnlyTheStartOfAFile(t *testing.T) {
 	require.NoError(t, os.WriteFile(big, bytes.Repeat([]byte("line of log output\n"), 1<<20), 0o600))
 
 	counting := &readCounter{Root: attachment.Root{}}
-	declared, err := DeclaresPage(counting, big, metadata.ExtractOptions{Space: "DOCS"})
+	declared, err := declaresPage(counting, big, metadata.ExtractOptions{Space: "DOCS"})
 	require.NoError(t, err)
 	assert.False(t, declared)
 	assert.LessOrEqual(t, counting.read, headSize)
@@ -70,14 +70,14 @@ func TestDeclaresPageReadsOnlyTheStartOfAFile(t *testing.T) {
 	pdf := filepath.Join(base, "x.pdf")
 	require.NoError(t, os.WriteFile(pdf,
 		[]byte("%PDF-1.4\n\x00\x01<!-- Space: A -->\n<!-- Title: B -->\n"), 0o600))
-	declared, err = DeclaresPage(attachment.Root{}, pdf, metadata.ExtractOptions{})
+	declared, err = declaresPage(attachment.Root{}, pdf, metadata.ExtractOptions{})
 	require.NoError(t, err)
 	assert.False(t, declared, "a binary file is no page whatever it contains")
 
 	rst := filepath.Join(base, "p.rst")
 	require.NoError(t, os.WriteFile(rst,
 		[]byte("<!-- Space: A -->\n<!-- Title: B -->\n"+strings.Repeat("x\n", 1<<20)), 0o600))
-	declared, err = DeclaresPage(attachment.Root{}, rst, metadata.ExtractOptions{})
+	declared, err = declaresPage(attachment.Root{}, rst, metadata.ExtractOptions{})
 	require.NoError(t, err)
 	assert.True(t, declared)
 }

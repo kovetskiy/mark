@@ -350,7 +350,7 @@ func resolveLink(
 		if filepath.Ext(found) != "" && !syntax.IsMarkdownFile(found) {
 			// One that cannot be read is no document mark publishes either,
 			// and is not worth stopping the run for.
-			published, err := DeclaresPage(files, found, opts)
+			published, err := declaresPage(files, found, opts)
 			if err != nil {
 				log.Debug().Err(err).Msgf("Ignoring link to file %q: it cannot be read", found)
 
@@ -607,13 +607,31 @@ type headReader interface {
 }
 
 // DeclaresPage reports whether a file that is not Markdown is published as a
+// page, read from the files and with the options r resolves its links with.
+// One that cannot be read is not.
+func (r *LinkResolver) DeclaresPage(name string) bool {
+	if r == nil {
+		return false
+	}
+
+	files := r.Files
+	if files == nil {
+		files = attachment.Root{}
+	}
+
+	declared, err := declaresPage(files, name, r.Extract)
+
+	return err == nil && declared
+}
+
+// declaresPage reports whether a file that is not Markdown is published as a
 // page: it sets its own Title, and has a space, its own or the run's.
 //
 // A title taken from the filename or the heading does not count, or every
 // script would be a page. Only the start of the file is read, and a file that
 // does not sniff as text is not one. The resolver and the renderer both ask
 // this, so that a link is never both a page link and an attachment.
-func DeclaresPage(files LinkFiles, found string, opts metadata.ExtractOptions) (bool, error) {
+func declaresPage(files LinkFiles, found string, opts metadata.ExtractOptions) (bool, error) {
 	var (
 		head []byte
 		err  error

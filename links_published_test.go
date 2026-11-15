@@ -72,3 +72,32 @@ func TestAttachReferencedLeavesPublishedNonMarkdownPagesAlone(t *testing.T) {
 		})
 	}
 }
+
+// A linked document handed over from memory is read as the resolver reads it,
+// whatever a file of its name on disk holds: the link waits for the page and
+// the file on disk is not attached.
+func TestAttachReferencedReadsALinkedDocumentFromTheRun(t *testing.T) {
+	server := confluencetest.New(t)
+	home := server.AddPage("DOCS", "Home", "page", "")
+	server.SetHomepage("DOCS", home.ID)
+
+	dir := t.TempDir()
+	writeFile(t, dir, "p.rst", "Source text, with no headers.\n")
+
+	require.NoError(t, Run(context.Background(), Config{
+		PublishConfig: PublishConfig{Output: io.Discard, Rendering: RenderingConfig{AttachReferenced: true}},
+		Documents: []Document{
+			{Path: filepath.Join(dir, "doc.md"), Content: []byte("<!-- Space: DOCS -->\n<!-- Title: Doc -->\n\nSee [r](p.rst).\n")},
+			{Path: filepath.Join(dir, "p.rst"), Content: []byte("<!-- Space: DOCS -->\n<!-- Title: Rst Page -->\n\nBody.\n")},
+		},
+		Connection: ConnectionConfig{BaseURL: server.URL, Username: "user", Password: "token"},
+	}))
+
+	api := confluence.NewAPI(server.URL, confluence.Options{Username: "user", Password: "token"})
+	doc, err := api.FindPage(context.Background(), "DOCS", "Doc", confluence.ContentPage)
+	require.NoError(t, err)
+	require.NotNil(t, doc)
+
+	assert.Empty(t, server.Attachments(doc.ID))
+	assert.Contains(t, server.Page(doc.ID).Body, `/x/`)
+}
