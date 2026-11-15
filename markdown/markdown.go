@@ -479,6 +479,7 @@ func (c *ConfluenceExtension) imageRenderer() html.Extension {
 func (c *ConfluenceExtension) linkRenderer() html.Extension {
 	r := crenderer.NewConfluenceLinkRenderer(c.Stdlib, c, c.Path, c.Options.AttachReferenced).(*crenderer.ConfluenceLinkRenderer)
 	r.Root = c.Options.Root
+	r.DeclaresPage = c.Options.DeclaresPage
 
 	return r
 }

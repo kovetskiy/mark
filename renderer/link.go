@@ -37,6 +37,11 @@ type ConfluenceLinkRenderer struct {
 
 	// Root is where a linked file is read from; the zero Root is the disk.
 	Root attachment.Root
+
+	// DeclaresPage says whether a file is published as a page, whose link is
+	// never an attachment, whether or not the page exists yet. Nil says no
+	// file is.
+	DeclaresPage func(name string) bool
 }
 
 // NewConfluenceLinkRenderer creates a new instance of the ConfluenceLinkRenderer.
@@ -231,6 +236,10 @@ func (r *ConfluenceLinkRenderer) localFile(link *ast.Link, source []byte) (strin
 	for _, name := range names {
 		info, err := r.Root.Stat(filepath.Join(filepath.Dir(r.Path), name))
 		if err == nil && !info.IsDir() {
+			if r.DeclaresPage != nil && r.DeclaresPage(filepath.Join(filepath.Dir(r.Path), name)) {
+				return "", false
+			}
+
 			return name, true
 		}
 	}
