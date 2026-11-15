@@ -83,7 +83,8 @@ func TestRoundTripTextFeaturesWouldParse(t *testing.T) {
 
 // TestRoundTripMacroParameterText: the text of a macro parameter, which mark
 // publishes as written, is exported as written, in a paragraph and in a table
-// cell.
+// cell. It holds export's literalText to the parser's literal elements: text
+// exported with Markdown escapes would be published with its backslashes.
 func TestRoundTripMacroParameterText(t *testing.T) {
 	for _, text := range []string{
 		".*Guide.*", "a_b_ __init__", `C:\dir\*.txt`, "a `b` c", "Guide|Notes", `Guide\|Notes`,

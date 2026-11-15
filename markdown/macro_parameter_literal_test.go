@@ -1,9 +1,12 @@
 package markdown
 
 import (
+	"context"
 	"testing"
 
+	"github.com/kovetskiy/mark/v17/stdlib"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // A macro parameter is a string Confluence reads as it stands, so the
@@ -84,6 +87,20 @@ func TestMacroParameterIsLiteral(t *testing.T) {
 			`b*</ac:parameter></ac:structured-macro>`+"\n")
 
 		assert.Contains(t, out, `<ac:parameter ac:name="v">*a`+"\n"+`b*</ac:parameter>`)
+	})
+
+	// The line break is part of the value; --strip-linebreaks joins the lines
+	// of the paragraph around it.
+	t.Run("over two lines with StripLinebreaks", func(t *testing.T) {
+		std, err := stdlib.New(context.Background(), nil)
+		require.NoError(t, err)
+
+		out, _, err := CompileMarkdown(t.Context(),
+			[]byte("a\nb <ac:parameter>x\ny *z*</ac:parameter> c\nd\n"), std, "test.md",
+			Options{StripLinebreaks: true})
+		require.NoError(t, err)
+
+		assert.Equal(t, "<p>a b <ac:parameter>x\ny *z*</ac:parameter> c d</p>\n", out)
 	})
 
 	t.Run("in a table cell", func(t *testing.T) {
