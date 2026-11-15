@@ -97,9 +97,11 @@ func withinSource(start, stop int, source []byte) bool {
 	return start >= 0 && start <= stop && stop <= len(source)
 }
 
-// ExtractDirectiveContent is ExtractNodeRawContent with inline code left out:
-// the text of a node and of everything under it, joined, without what stood
-// between the pieces. No directive is read from it; see directiveSource.
+// ExtractDirectiveContent is ExtractNodeRawContent with inline code left out.
+//
+// Deprecated: joined text can read as a comment nobody wrote, so mark reads
+// no directive from it. Use HTMLBytes for the markup of one raw HTML node, or
+// ExtractNodeRawContent for a node's text.
 func ExtractDirectiveContent(node ast.Node, source []byte) []byte {
 	if node.Kind() == ast.KindCodeSpan {
 		return nil
@@ -129,12 +131,8 @@ func ExtractDirectiveContent(node ast.Node, source []byte) []byte {
 	return out
 }
 
-// directiveSource is the markup a directive is read from: one node goldmark
-// took whole as raw HTML, or markup an expansion put in. A comment is always
-// one such node, as it is one run of bytes to the pass that expands directives
-// before goldmark. Text is never one, and neither is a container: joined, its
-// pieces lose what stood between them -- a line break, a link's brackets -- and
-// a "<" and a "!--" that were apart would read as a comment nobody wrote.
+// directiveSource is the markup of one node goldmark took whole as raw HTML,
+// or that an expansion put in: joined text can read as a comment nobody wrote.
 func directiveSource(node ast.Node, source []byte) []byte {
 	switch n := node.(type) {
 	case *ast.HTMLBlock, *ast.RawHTML:

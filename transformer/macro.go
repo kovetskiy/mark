@@ -14,9 +14,8 @@ import (
 	"github.com/yuin/goldmark/v2/text"
 )
 
-// macroText is the text a macro is applied to: one piece of the document's
-// text. Each piece is matched by itself, since a match over several joined
-// would be rewritten without the markup between them.
+// macroText is one piece of the document's text: a match over several
+// joined would be rewritten without the markup between them.
 func macroText(node ast.Node, source []byte) []byte {
 	switch n := node.(type) {
 	case *ast.Text:
@@ -30,10 +29,8 @@ func macroText(node ast.Node, source []byte) []byte {
 	return nil
 }
 
-// joinText takes into node the text nodes that follow it with nothing
-// between them. goldmark ends a Text at a character that might have opened
-// markup -- a "[", a "*" -- and a pattern that holds one is matched against
-// the text as it was written, not against those parts.
+// joinText takes into node the text that follows it with nothing between:
+// goldmark ends a Text at a "[" or a "*" that a pattern may hold.
 func joinText(node ast.Node, source []byte) {
 	for next := node.NextSibling(); next != nil && joinNext(node, next, source); next = node.NextSibling() {
 		node.Parent().RemoveChild(next)
