@@ -194,6 +194,24 @@ var subDocumentParser = sync.OnceValue(func() parser.Parser {
 	)
 })
 
+// inlineParser reads every line as a paragraph's, so that no block opens.
+var inlineParser = sync.OnceValue(func() parser.Parser {
+	return parser.New(
+		parser.WithDefaultParsers(false),
+		parser.WithBlockParsers(
+			util.Prioritized(parser.NewParagraphParser(), 1000),
+		),
+		parser.WithInlineParsers(
+			util.Prioritized(cparser.NewConfluenceTagParser(), 99),
+			util.Prioritized(parser.NewCodeSpanParser(), 100),
+			util.Prioritized(parser.NewLinkParser(), 200),
+			util.Prioritized(parser.NewAutoLinkParser(), 300),
+			util.Prioritized(parser.NewRawHTMLParser(), 400),
+			util.Prioritized(parser.NewEmphasisParser(), 500),
+		),
+	)
+})
+
 // ShapeTransformers give the tree the shape the transformers and renderers
 // here read: the FootnoteList first, TextBlocks right after, and the footnote
 // backlinks last of all. The FootnoteList goes first because taking a footnote

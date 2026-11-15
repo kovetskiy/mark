@@ -76,50 +76,34 @@ func joinNext(node, next ast.Node, source []byte) bool {
 	return false
 }
 
-// lineGuard stands in for what precedes a piece of text on its line while
-// the piece's expansion is parsed: by itself "- done", after a link, would
-// open a list. It reads as white space, as the start of a line does, and
-// unlike a space it is not dropped from the start of a paragraph.
-const lineGuard = "\u00a0"
-
 // outerSpace is the white space parsing drops from the ends of a line.
 const outerSpace = " \t"
 
-// startsBlock reports whether node is the first thing in a paragraph, where
-// text can be the start of a block of another kind. In a heading or a table
-// cell it follows the block's own marker, and inside markup the markup's.
-func startsBlock(node ast.Node) bool {
-	return node.PreviousSibling() == nil && isParagraph(node.Parent())
-}
-
-// parseExpansion parses what a macro made of the piece of text at node into
-// a sub-document that can be put in its place. Unless the piece starts a
-// block, its first line is read as the rest of a line and opens none.
-//
-// The spaces the expansion starts and ends with are put back: parsing drops
-// them, and they separate the piece from the markup on either side of it.
+// parseExpansion parses what a macro made of the text at node, and puts back
+// the spaces parsing drops: they separate it from the markup on either side.
 func parseExpansion(node ast.Node, expanded []byte) (ast.Node, error) {
-	midLine := !startsBlock(node)
-
 	source := bytes.TrimRight(expanded, outerSpace)
 	trail := expanded[len(source):]
 
+	alone := standsAlone(node)
+
 	var lead []byte
-	if midLine {
+	if !alone {
 		body := bytes.TrimLeft(source, outerSpace)
-		lead = source[:len(source)-len(body)]
-		source = append([]byte(lineGuard), body...)
+		lead, source = source[:len(source)-len(body)], body
 	}
 
-	subDoc := parseSubDocument(source)
+	subDoc := parseInPlaceOf(node, source)
 	if err := convertSegmentsToStrings(subDoc, source); err != nil {
 		return nil, err
 	}
 
-	if midLine {
-		if guard, ok := subDoc.FirstChild().FirstChild().(*String); ok {
-			guard.Value = append(bytes.Clone(lead), bytes.TrimPrefix(guard.Value, []byte(lineGuard))...)
-		}
+	if !alone && subDoc.FirstChild() == nil {
+		subDoc.AppendChild(ast.NewParagraph())
+	}
+
+	if first := subDoc.FirstChild(); len(lead) > 0 && first != nil {
+		first.InsertBefore(first.FirstChild(), NewString(bytes.Clone(lead)))
 	}
 
 	if last := subDoc.LastChild(); len(trail) > 0 && last != nil && isParagraph(last) {
