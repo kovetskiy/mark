@@ -523,6 +523,20 @@ func (f documentFiles) ReadFile(name string) ([]byte, error) {
 	return f.root.ReadFile(name)
 }
 
+// ReadHead reads at most n bytes from the start of name, so that telling
+// whether a linked file is a page costs no more beside Documents than without.
+func (f documentFiles) ReadHead(name string, n int) ([]byte, error) {
+	if in, ok := f.inputs.byPath[f.inputs.pathKey(name)]; ok {
+		if !in.document {
+			return attachment.Root{}.ReadHead(in.file, n)
+		}
+
+		return in.content[:min(n, len(in.content))], nil
+	}
+
+	return f.root.ReadHead(name, n)
+}
+
 // documentInfo describes a document that is not on disk.
 type documentInfo struct {
 	name string

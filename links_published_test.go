@@ -101,3 +101,27 @@ func TestAttachReferencedReadsALinkedDocumentFromTheRun(t *testing.T) {
 	assert.Empty(t, server.Attachments(doc.ID))
 	assert.Contains(t, server.Page(doc.ID).Body, `/x/`)
 }
+
+// The start of a file is all that is read of it beside Documents too, from
+// memory, from the run's files and from the root alike.
+func TestDocumentFilesReadOnlyTheStartOfAFile(t *testing.T) {
+	dir := t.TempDir()
+	file := writeFile(t, dir, "run.rst", "0123456789")
+	other := writeFile(t, dir, "other.log", "abcdefghij")
+	memory := filepath.Join(dir, "memory.rst")
+
+	inputs, err := indexInputs([]string{file}, []Document{{Path: memory, Content: []byte("ABCDEFGHIJ")}})
+	require.NoError(t, err)
+
+	files := documentFiles{inputs: inputs}
+
+	for name, want := range map[string]string{file: "0123", other: "abcd", memory: "ABCD"} {
+		head, err := files.ReadHead(name, 4)
+		require.NoError(t, err)
+		assert.Equal(t, want, string(head), name)
+	}
+
+	head, err := files.ReadHead(memory, 64)
+	require.NoError(t, err)
+	assert.Equal(t, "ABCDEFGHIJ", string(head))
+}
