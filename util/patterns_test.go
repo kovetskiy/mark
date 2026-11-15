@@ -94,3 +94,12 @@ func TestJoinPatternsRefusesADrive(t *testing.T) {
 	_, err := joinPatterns([]string{"C:/x/*.md", "y.md"})
 	assert.ErrorContains(t, err, "names a drive")
 }
+
+func TestJoinPatternsReadsBackslashesAsSeparatorsOnWindows(t *testing.T) {
+	if filepath.Separator != '\\' {
+		t.Skip("a backslash is an escape here")
+	}
+	got, err := joinPatterns([]string{"a" + string(filepath.Separator) + "{b,c}.md", "d.md"})
+	require.NoError(t, err)
+	assert.Equal(t, "{a/{b,c}.md,d.md}", got)
+}

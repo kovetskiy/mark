@@ -123,21 +123,21 @@ func (c *configFile) settle(root *cli.Command) error {
 
 // value is a source for the setting under key.
 func (c *configFile) value(key string) cli.ValueSource {
-	if c.keys == nil {
-		c.keys = map[string]bool{}
-	}
-	c.keys[key] = true
-	return &configValue{file: c, key: key}
+	return c.source(key, "")
 }
 
 // lines is value for a flag whose list items may hold a comma: a list is
 // joined with newlines instead.
 func (c *configFile) lines(key string) cli.ValueSource {
+	return c.source(key, patternSeparator)
+}
+
+func (c *configFile) source(key, separator string) cli.ValueSource {
 	if c.keys == nil {
 		c.keys = map[string]bool{}
 	}
 	c.keys[key] = true
-	return &configValue{file: c, key: key, separator: patternSeparator}
+	return &configValue{file: c, key: key, separator: separator}
 }
 
 // hold makes source answer nothing until settle. urfave/cli resolves the

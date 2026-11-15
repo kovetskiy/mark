@@ -80,8 +80,9 @@ func joinPatterns(patterns []string) (string, error) {
 	}
 
 	for i, pattern := range distinct {
-		// A leading ./ matches nothing inside braces.
-		distinct[i] = escapeAlternative(strings.TrimPrefix(pattern, "./"))
+		// A leading ./ matches nothing inside braces, and a backslash is a
+		// separator here, not an escape, on Windows.
+		distinct[i] = escapeAlternative(strings.TrimPrefix(filepath.ToSlash(pattern), "./"))
 	}
 
 	for _, pattern := range distinct {
