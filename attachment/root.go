@@ -120,9 +120,10 @@ func (r Root) OnDisk(name string) bool {
 // attachment ResolveLocalAttachment and ResolveLocalAttachments read through
 // r, and every reference CheckReadable passes. A Root reading from an fs.FS
 // holds them inside it as well; on the local disk b is the whole boundary, so
-// a directory above the working directory allows more than the zero Boundary. Open, Stat and ReadFile are unchanged, so a caller reading a file
-// that is not the document's to publish, such as another document a link
-// names, reads it as before.
+// a directory above the working directory allows more than the zero Boundary.
+// Open, Stat and ReadFile are unchanged, so a caller reading a file that is
+// not the document's to publish, such as another document a link names, reads
+// it as before.
 //
 // BoundaryDocument holds a file to the document's directory, the base those
 // functions are given, in an fs.FS as on disk; a name under --include-path,

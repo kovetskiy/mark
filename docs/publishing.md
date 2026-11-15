@@ -417,9 +417,10 @@ You can also use `**` to get all files recursively.
 mark publish -f "**/docs/*.md"
 ```
 
-A document is held to the same boundary as the files it names
-([attachments](attachments.md#where-an-attachment-may-come-from), includes):
-one named inside the directory Mark is running in has to resolve inside it,
+A document is held to the boundary the files it names are held to by default
+([attachments](attachments.md#where-an-attachment-may-come-from), includes),
+and `--attachment-root` moves that boundary for those files only, not for the
+document: one named inside the directory Mark is running in has to resolve inside it,
 symlinks followed. A glob such as `docs/**/*.md` follows symlinks, so a
 `docs/notes.md` or a `docs/shared` directory linking out of the repository fails
 that file, with `outside the project`, rather than being published; a symlink
