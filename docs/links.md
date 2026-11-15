@@ -42,12 +42,14 @@ So is a link to a file whose extension is not a Markdown one (`.sh`, `.py`,
 `--files "docs/**/*.rst"`, say, is a page when it sets its own `Title` and has
 a `Space`, its own or the one given by `--space`; a title taken from
 `--title-from-filename` or `--title-from-h1` does not count. Only the first
-64 KiB of such a file is read to tell, so its headers have to come first. A
-link to a file that is a page is looked up like any other, and with
-`--attach-referenced` it is never attached, whether or not the page exists yet;
-a script or data file that is not a page is attached. A file with no extension
-at all is read like a Markdown one, so `LICENSE` and `Makefile` are looked up
-when titles come from file names. Links are resolved on
+64 KiB of such a file is read to tell, so its headers have to come first, and
+one that cannot be read is left as written like a script. A link to a file
+that is a page is looked up like any other. With `--attach-referenced` it is
+not attached once the page exists, or while the run that publishes the file
+has yet to create it; a script or data file is attached, and so is a file with
+such headers that the run does not publish and that has no page. A file with
+no extension at all is read like a Markdown one, so `LICENSE` and `Makefile`
+are looked up when titles come from file names. Links are resolved on
 the parsed document, so a link that appears inside a code span or a fenced or
 indented code block is left alone -- a page documenting Markdown gets to show
 its examples unchanged. Files pulled in with `Include` are resolved along with
@@ -89,9 +91,12 @@ request gate can check links without publishing anything:
 mark publish --compile-only --check-links all --files "docs/**/*.md"
 ```
 
-A link to a file that exists but is not a page -- a script, a PDF, an image --
-is not reported: it is left as written and nothing about it can be wrong in
-Confluence. A link to one that does not exist is.
+A link to a file that exists but is not a page -- a script, a PDF, an image, a
+text file with no headers -- is not reported, whether or not it can be read:
+it is left as written and nothing about it can be wrong in Confluence. A link
+to one that does not exist is. A file named as a Markdown one, or with no
+extension, is read as a document, and is reported when it is not text or has
+no title.
 
 Some of the answers come from Confluence. A relative link to a document is
 rewritten to that document's page, which is looked up, and a `confluence` link

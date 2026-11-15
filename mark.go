@@ -1187,6 +1187,7 @@ func Run(ctx context.Context, config Config) (err error) {
 	pub.tracker = tracker
 	pub.ancestryTracker = ancestryTracker
 	pub.deferrals = deferrals
+	pub.publishes = run.has
 	pub.warnings = map[string]*report.Warnings{}
 	if len(documents) > 0 {
 		pub.inputs = run
@@ -1935,6 +1936,11 @@ type publishRun struct {
 	// Nil, as a Publisher has it, starts each read afresh.
 	warnings map[string]*report.Warnings
 
+	// publishes says whether a file is one the run publishes, for a link to
+	// one whose page is not there yet. Nil, as a Publisher has it, knows of
+	// none: its caller hands it one file at a time.
+	publishes func(file string) bool
+
 	// inputs indexes the run's files and Documents by name, for links
 	// between them and for the second pass; nil when it has no Documents.
 	inputs *runInputs
@@ -1967,6 +1973,9 @@ type document struct {
 	meta     *metadata.Meta
 	markdown []byte
 	resolver *page.LinkResolver
+	// declaresPage says whether a linked file that is not Markdown is a page
+	// the run publishes; nil says none is.
+	declaresPage func(name string) bool
 	// restrictions are the document's declared restrictions, resolved to
 	// users and groups; nil when it declares none.
 	restrictions *confluence.ResolvedRestrictions
@@ -2036,6 +2045,7 @@ func (r *publishRun) processFile(ctx context.Context, in input) (*confluence.Pag
 	if err != nil {
 		return nil, nil, err
 	}
+	doc.declaresPage = declaresPageUnder(doc.root, doc.resolver, r.publishes)
 
 	if err := r.resolveRestrictions(ctx, doc); err != nil {
 		return nil, nil, err
@@ -2447,14 +2457,22 @@ func linksUnder(ctx context.Context, resolver *page.LinkResolver) func(target, t
 	}
 }
 
-// declaresPageUnder answers, for the renderer, the question the resolver asks
-// of a linked file that is not Markdown, with the same options.
-func declaresPageUnder(files page.LinkFiles, resolver *page.LinkResolver) func(string) bool {
-	if resolver == nil {
+// declaresPageUnder says, for the renderer, whether a linked file that is not
+// Markdown is a page this run publishes, asking what the resolver asks of the
+// file with the same options. A link to such a file waits for its page rather
+// than being attached. A file that reads as a page and is not among the run's
+// is attached while it has no page, as a file is that was exported from a
+// page's attachments.
+func declaresPageUnder(files page.LinkFiles, resolver *page.LinkResolver, publishes func(string) bool) func(string) bool {
+	if resolver == nil || publishes == nil {
 		return nil
 	}
 
 	return func(name string) bool {
+		if !publishes(name) {
+			return false
+		}
+
 		declared, err := page.DeclaresPage(files, name, resolver.Extract)
 
 		return err == nil && declared
@@ -3287,7 +3305,7 @@ func (c RenderingConfig) documentConfig(ctx context.Context, res *resources, doc
 	cfg.DropH1 = c.DropH1
 	cfg.ImageAlign = imageAlign
 	cfg.ResolveLink = linksUnder(ctx, doc.resolver)
-	cfg.DeclaresPage = declaresPageUnder(doc.root, doc.resolver)
+	cfg.DeclaresPage = doc.declaresPage
 	cfg.Warnings = doc.warnings
 	cfg.Root = doc.root
 
