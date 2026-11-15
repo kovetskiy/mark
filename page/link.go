@@ -345,10 +345,10 @@ func resolveLink(
 
 		// A script or data file is no document whatever its content sniffs as,
 		// and reading its headers would title it and look it up as a page --
-		// unless it declares its own space and title, which is how a file
+		// unless it declares a title and has a space, which is how a file
 		// published through --files is told from one that is not.
 		if filepath.Ext(found) != "" && !syntax.IsMarkdownFile(found) {
-			published, err := declaresPage(files, found, opts)
+			published, err := DeclaresPage(files, found, opts)
 			if err != nil {
 				return "", nil, err
 			}
@@ -592,21 +592,53 @@ func (d *Deferrals) Files() []string {
 	return files
 }
 
-// declaresPage reports whether a file names its own space and title, with
-// nothing borrowed from the run: a title derived from the filename or heading
-// and a default space do not count, or every script would be a page.
-func declaresPage(files LinkFiles, found string, opts metadata.ExtractOptions) (bool, error) {
-	contents, err := files.ReadFile(found)
+// headSize bounds what is read to decide whether a file declares a page: its
+// headers or front matter come first, and a file that is not a document should
+// cost no more than this however large it is.
+const headSize = 64 << 10
+
+// headReader is a LinkFiles that can read the start of a file without the rest.
+type headReader interface {
+	ReadHead(name string, n int) ([]byte, error)
+}
+
+// DeclaresPage reports whether a file that is not Markdown is published as a
+// page: it sets its own Title, and has a space, its own or the run's.
+//
+// A title taken from the filename or the heading does not count, or every
+// script would be a page. Only the start of the file is read, and a file that
+// does not sniff as text is not one. The resolver and the renderer both ask
+// this, so that a link is never both a page link and an attachment.
+func DeclaresPage(files LinkFiles, found string, opts metadata.ExtractOptions) (bool, error) {
+	var (
+		head []byte
+		err  error
+	)
+
+	if hr, ok := files.(headReader); ok {
+		head, err = hr.ReadHead(found, headSize)
+	} else {
+		head, err = files.ReadFile(found)
+		if err == nil && len(head) > headSize {
+			head = head[:headSize]
+		}
+	}
+
 	if err != nil {
 		return false, fmt.Errorf("read file %s: %w", found, err)
 	}
 
+	if !strings.HasPrefix(http.DetectContentType(head), "text/") {
+		return false, nil
+	}
+
 	own := metadata.ExtractOptions{
 		Filename:    found,
+		Space:       opts.Space,
 		FrontMatter: opts.FrontMatter,
 	}
 
-	meta, _, err := metadata.ExtractMeta(mdsource.Normalize(contents), own)
+	meta, _, err := metadata.ExtractMeta(mdsource.Normalize(head), own)
 	if err != nil || meta == nil {
 		return false, nil //nolint:nilerr // a file whose headers do not read declares no page
 	}

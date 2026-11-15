@@ -2447,6 +2447,20 @@ func linksUnder(ctx context.Context, resolver *page.LinkResolver) func(target, t
 	}
 }
 
+// declaresPageUnder answers, for the renderer, the question the resolver asks
+// of a linked file that is not Markdown, with the same options.
+func declaresPageUnder(files page.LinkFiles, resolver *page.LinkResolver) func(string) bool {
+	if resolver == nil {
+		return nil
+	}
+
+	return func(name string) bool {
+		declared, err := page.DeclaresPage(files, name, resolver.Extract)
+
+		return err == nil && declared
+	}
+}
+
 // resolveRestrictions resolves the document's declared restrictions before
 // anything is written, and on a dry run too, so that a user that resolves to
 // nobody, or to more than one person, fails here rather than after a real run
@@ -3273,6 +3287,7 @@ func (c RenderingConfig) documentConfig(ctx context.Context, res *resources, doc
 	cfg.DropH1 = c.DropH1
 	cfg.ImageAlign = imageAlign
 	cfg.ResolveLink = linksUnder(ctx, doc.resolver)
+	cfg.DeclaresPage = declaresPageUnder(doc.root, doc.resolver)
 	cfg.Warnings = doc.warnings
 	cfg.Root = doc.root
 

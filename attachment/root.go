@@ -358,6 +358,17 @@ func (r Root) ReadFile(name string) ([]byte, error) {
 	return fs.ReadFile(r.fsys, inside)
 }
 
+// ReadHead reads at most n bytes from the start of the file name names.
+func (r Root) ReadHead(name string, n int) ([]byte, error) {
+	f, err := r.Open(name)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+
+	return io.ReadAll(io.LimitReader(f, int64(n)))
+}
+
 // CheckReadable is CheckReadable held to r's boundary: on the local disk the
 // same check, and in an fs.FS that reference, joined to base unless it is
 // absolute, stays inside it. An absolute reference is refused, unless
