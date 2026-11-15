@@ -348,9 +348,13 @@ func resolveLink(
 		// unless it declares a title and has a space, which is how a file
 		// published through --files is told from one that is not.
 		if filepath.Ext(found) != "" && !syntax.IsMarkdownFile(found) {
+			// One that cannot be read is no document mark publishes either,
+			// and is not worth stopping the run for.
 			published, err := DeclaresPage(files, found, opts)
 			if err != nil {
-				return "", nil, err
+				log.Debug().Err(err).Msgf("Ignoring link to file %q: it cannot be read", found)
+
+				return "", nil, nil
 			}
 
 			if !published {
@@ -376,8 +380,8 @@ func resolveLink(
 		// and all: its headers are what the link is rewritten from.
 		linkContents = mdsource.Normalize(linkContents)
 
-		// This helps to determine if found link points to file that's
-		// not markdown or have mark required metadata
+		// The headers say whether the file is a document mark publishes,
+		// and as which page.
 		opts.Filename = found
 		linkMeta, linkBody, err := readMeta(linkContents, opts)
 		if err != nil {
