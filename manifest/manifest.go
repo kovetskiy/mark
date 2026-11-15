@@ -2061,7 +2061,9 @@ func (s *Store) Survivors(spaceKey, glob string) int {
 // It is not a pure query. A recorded path that is gone from the run, and whose
 // page another document published this run or another path still records, be
 // it under another run's pattern, is not returned but forgotten: its entry is
-// dropped and its shard marked for writing. The change is in
+// dropped and its shard marked for writing. So is the entry of a document
+// this run recorded against the same page in another space: the page went
+// there with it. The change is in
 // memory until Save, so a dry run, whose read-only store never writes, leaves
 // the stored manifest as it was.
 func (s *Store) Orphans(spaceKey string) []string {
@@ -2094,6 +2096,17 @@ func (s *Store) orphans(spaceKey string) []string {
 				continue
 			}
 			if !s.covers(path, entry) {
+				continue
+			}
+			// The page went to another space with its document, which records
+			// it there: nothing is left behind here to remove.
+			if other, ok := s.recordedElsewhere(spaceKey, path, entry.PageID); ok {
+				log.Info().Msgf(
+					"%s now publishes to space %q, where its page %s is; space %q no longer tracks it",
+					path, other, entry.PageID, spaceKey,
+				)
+				delete(state.shards[i].pages, path)
+				state.shards[i].dirty = true
 				continue
 			}
 			// A page another document published this run is that document's
@@ -2166,6 +2179,27 @@ func (s *Store) heldPages(state *spaceState) map[string]string {
 	}
 
 	return held
+}
+
+// recordedElsewhere returns the space other than spaceKey in which this run
+// recorded path against pageID, in a manifest that is being kept. Called with
+// s.mu held.
+func (s *Store) recordedElsewhere(spaceKey, path, pageID string) (string, bool) {
+	if !s.runFiles[path] {
+		return "", false
+	}
+
+	for _, other := range s.sortedSpaces() {
+		state := s.spaces[other]
+		if other == spaceKey || state.untracked || !state.claimed[pageID] || state.byPage[pageID] != path {
+			continue
+		}
+		if entry, ok := state.shards[shardFor(path)].pages[path]; ok && entry.PageID == pageID {
+			return other, true
+		}
+	}
+
+	return "", false
 }
 
 // Spaces returns the space keys this store has loaded, sorted.

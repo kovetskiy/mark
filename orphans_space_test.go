@@ -300,3 +300,52 @@ func TestOnOrphanLeavesThePageADocumentLeftInAnotherSpace(t *testing.T) {
 		})
 	}
 }
+
+// TestOnOrphanForgetsAnEntryWhosePageWentWithItsDocument: the page was moved
+// to the other space and the document's Space header followed, so the space
+// it left has no page of it to remove or to report on every run.
+func TestOnOrphanForgetsAnEntryWhosePageWentWithItsDocument(t *testing.T) {
+	for _, space := range []string{"", "ONE"} {
+		t.Run("space "+space, func(t *testing.T) {
+			ctx := context.Background()
+			server := confluencetest.New(t)
+			one := server.AddSpace("ONE")
+			for _, key := range []string{"ONE", "TWO"} {
+				server.SetHomepage(key, server.AddPage(key, "Home "+key, "page", "").ID)
+			}
+			api := confluence.NewAPI(server.URL, confluence.Options{Username: "user", Password: "token"})
+
+			dir := t.TempDir()
+			writeFile(t, dir, "keep.md", "<!-- Space: ONE -->\n<!-- Title: Keep -->\n\nKeep.\n")
+			moved := writeFile(t, dir, "moved.md", "<!-- Space: ONE -->\n<!-- Title: Moved -->\n\nMoved.\n")
+
+			config := spaceOrphanConfig(server, dir, report.OnOrphanDelete)
+			require.NoError(t, Run(ctx, config))
+
+			// The fake cannot move a page between spaces: the entry is pointed
+			// at a page of the same title in TWO instead.
+			old := findPageID(t, api, "ONE", "Moved")
+			there := server.AddPage("TWO", "Moved", "page", findPageID(t, api, "TWO", "Home TWO"))
+			server.DeletePage(old)
+			repointEntries(t, server, one.ID,
+				manifest.PropertyKey(manifest.ShardFor(filepath.ToSlash(moved))), old, there.ID)
+
+			writeFile(t, dir, "moved.md", "<!-- Space: TWO -->\n<!-- Title: Moved -->\n\nMoved.\n")
+
+			var out bytes.Buffer
+			config.Page.Space = space
+			config.Output = &out
+			config.Report.OutputFormat = report.FormatJSON
+			require.NoError(t, Run(ctx, config))
+
+			assert.False(t, server.Page(there.ID).Trashed)
+			assert.Empty(t, decodeReport(t, out.Bytes()).Orphans)
+			assert.False(t, trackedIn(t, api, "ONE", moved), "the space it left stops tracking it")
+
+			entry, known, err := manifest.NewStore(api).Lookup(ctx, "TWO", moved)
+			require.NoError(t, err)
+			require.True(t, known)
+			assert.Equal(t, there.ID, entry.PageID)
+		})
+	}
+}

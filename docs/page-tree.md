@@ -503,7 +503,10 @@ where the mapping cannot apply -- is a warning.
 * A document whose **`Space` header changed** publishes nothing to the space
   it left, so the page it had there is an orphan of that space, handled like
   any other: by a run given that `--space` or none, and left alone and
-  reported, as above, by a run given the space it moved to.
+  reported, as above, by a run given the space it moved to. Where the page
+  itself was moved to the new space and the document publishes to it there,
+  nothing is left behind: the space it left stops tracking it and says so in
+  the log.
 * A document that opted out with `Synchronized: false` still counts as present.
 * `--dry-run` reports what would go and touches nothing.
 
