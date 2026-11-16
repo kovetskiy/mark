@@ -9,7 +9,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/yuin/goldmark/v2/parser"
 	"github.com/yuin/goldmark/v2/renderer/html"
-	"github.com/yuin/goldmark/v2/util"
 )
 
 func admonitionRenderers() []html.Extension {
@@ -21,9 +20,7 @@ func admonitionRenderers() []html.Extension {
 }
 
 func admonitionParserOptions() []parser.Option {
-	return []parser.Option{
-		parser.WithBlockParsers(util.Prioritized(cparser.NewAdmonitionParser(), 100)),
-	}
+	return cparser.NewAdmonitionParser().ParserOptions(nil)
 }
 
 // TestAdmonitionMacroMapping covers the MkDocs classes that have a Confluence

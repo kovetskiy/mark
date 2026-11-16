@@ -50,13 +50,9 @@ var markdownFeatures = map[string]markdownFeature{
 		},
 	},
 	"mkdocsadmonitions": {
-		parserOptions: func(*parser.Config) []parser.Option {
-			// The HTML block parser goes ahead of goldmark's own at 900, so
-			// that it is the one that opens HTML blocks.
-			return []parser.Option{parser.WithBlockParsers(
-				util.Prioritized(cparser.NewAdmonitionParser(), 100),
-				util.Prioritized(cparser.NewAdmonitionHTMLBlockParser(), 899),
-			)}
+		parserOptions: func(cfg *parser.Config) []parser.Option {
+			// Added directly, as an extension cannot hand goldmark another.
+			return cparser.NewAdmonitionParser().ParserOptions(cfg)
 		},
 		renderer: func(featureDeps) html.Extension {
 			return crenderer.NewConfluenceMkDocsAdmonitionRenderer()

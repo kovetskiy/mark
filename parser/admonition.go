@@ -145,14 +145,26 @@ func (n *closingRunBlock) Dump(_ []byte) *ast.NodeDump {
 	return ast.NewNodeDump(n, nil)
 }
 
-type admonitionParser struct{}
+type admonitionParserExtension struct{}
 
-// NewAdmonitionParser returns a block parser for MkDocs admonitions. Register
-// NewAdmonitionHTMLBlockParser beside it, so that a closing run ends an HTML
-// block that would otherwise go on to the next blank line.
-func NewAdmonitionParser() parser.BlockParser {
-	return &admonitionParser{}
+// NewAdmonitionParser returns a parser.Extension for MkDocs admonitions. It
+// registers the admonition block parser, and an HTML block parser ahead of
+// goldmark's own so that a closing run ends an HTML block that would otherwise
+// go on to the next blank line; the two only read admonitions right together.
+func NewAdmonitionParser() parser.Extension {
+	return &admonitionParserExtension{}
 }
+
+// ParserOptions implements parser.Extension.
+func (e *admonitionParserExtension) ParserOptions(_ *parser.Config) []parser.Option {
+	return []parser.Option{parser.WithBlockParsers(
+		util.Prioritized[parser.BlockParser](&admonitionParser{}, 100),
+		// Below goldmark's HTML block parser at 900, so this one opens them.
+		util.Prioritized[parser.BlockParser](admonitionHTMLBlockParser{parser.NewHTMLBlockParser()}, 899),
+	)}
+}
+
+type admonitionParser struct{}
 
 // waitingKey holds the parse's *waiting.
 var waitingKey = parser.NewContextKey()
@@ -445,20 +457,13 @@ func (b *admonitionParser) CanAcceptIndentedLine() bool {
 }
 
 // admonitionHTMLBlockParser is goldmark's HTML block parser, but for a block
-// that ends at a blank line: a line of a closing run that closes an
-// admonition waiting in the block around it ends it, as it ends a paragraph.
+// that ends at a blank line, such as <div> or </details>: a line of a closing
+// run that closes an admonition waiting in the block around it ends it, as it
+// ends a paragraph. A run in a <pre>, <script>, <style> or <textarea> block, a
+// comment, a declaration or CDATA stays the block's text, as one in a fenced
+// code block does.
 type admonitionHTMLBlockParser struct {
 	parser.BlockParser
-}
-
-// NewAdmonitionHTMLBlockParser returns goldmark's HTML block parser with a
-// closing run ending a block like <div> or </details> that would otherwise go
-// on to the next blank line. Register it beside NewAdmonitionParser, ahead of
-// goldmark's own (at a priority below 900). A run in a <pre>, <script>,
-// <style> or <textarea> block, a comment, a declaration or CDATA stays the
-// block's text, as one in a fenced code block does.
-func NewAdmonitionHTMLBlockParser() parser.BlockParser {
-	return admonitionHTMLBlockParser{parser.NewHTMLBlockParser()}
 }
 
 func (b admonitionHTMLBlockParser) Continue(node ast.Node, reader text.Reader, pc parser.Context) parser.State {
