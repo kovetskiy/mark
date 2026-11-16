@@ -21,10 +21,23 @@ const openingLineLimit = 60
 // compiled is the text that was parsed, which at holds offsets into, and
 // written the text CompileMarkdown was given, whose lines the warnings name.
 func warnStrandedBodies(written, compiled []byte, at []int, warnings *report.Warnings) {
+	lineOf := mdsource.LinesOf(compiled, written)
+
+	// The admonitions come in the order they were parsed, so each line is
+	// counted on from the one before.
+	counted, line := 0, 1
+
 	for _, start := range at {
 		if start < 0 || start >= len(compiled) {
 			continue
 		}
+
+		if start < counted {
+			counted, line = 0, 1
+		}
+
+		line += bytes.Count(compiled[counted:start], []byte("\n"))
+		counted = start
 
 		opening := compiled[start:]
 		if end := bytes.IndexByte(opening, '\n'); end >= 0 {
@@ -37,9 +50,7 @@ func warnStrandedBodies(written, compiled []byte, at []int, warnings *report.War
 		}
 
 		closing := string(opening[:run])
-		line := mdsource.LineOf(compiled, written, 1+bytes.Count(compiled[:start], []byte("\n")))
-
-		warnings.AddAt(line, report.WarningAdmonitionBody,
+		warnings.AddAt(lineOf(line), report.WarningAdmonitionBody,
 			"the lines after %q are not indented and no line of %q ends them, so they are published after "+
 				"the admonition and not in it; indent them under it, or end them with a line of %q",
 			shortened(strings.TrimSpace(string(opening)), openingLineLimit), closing, closing,
