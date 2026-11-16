@@ -2149,10 +2149,10 @@ func (r *publishRun) readDocument(in input) (*document, error) {
 
 	// From here on a warning about a line counts in the text that is
 	// compiled, which is the text read without its headers.
-	body := markdown
+	bodyLineOf := mdsource.LinesOf(markdown, read)
 
 	warnings.MapLines(func(line int) int {
-		if line = mdsource.LineOf(body, read, line); line > 0 && lineOf != nil {
+		if line = bodyLineOf(line); line > 0 && lineOf != nil {
 			return lineOf(line)
 		}
 

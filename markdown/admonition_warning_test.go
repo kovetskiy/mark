@@ -2,7 +2,9 @@ package markdown
 
 import (
 	"context"
+	"fmt"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -164,4 +166,40 @@ func TestAdmonitionBodyWarningNamesTheLineWritten(t *testing.T) {
 	require.Len(t, warnings, 1)
 	assert.Zero(t, warnings[0].Line)
 	assert.Contains(t, warnings[0].Message, `"!!! note"`)
+}
+
+// TestAdmonitionBodyWarningsTakeLinearMemory: each warning finds its line in
+// the text written, which is read once for all of them, not once for each.
+func TestAdmonitionBodyWarningsTakeLinearMemory(t *testing.T) {
+	std, err := stdlib.New(context.Background(), nil)
+	require.NoError(t, err)
+
+	allocated := func(admonitions int) uint64 {
+		var source strings.Builder
+		for i := range admonitions {
+			fmt.Fprintf(&source, "!!! note \"T%d\"\nprose %d\n\n", i, i)
+		}
+
+		warnings := report.NewWarnings("test.md")
+
+		var before, after runtime.MemStats
+
+		runtime.GC()
+		runtime.ReadMemStats(&before)
+
+		_, _, err := CompileMarkdown(t.Context(), []byte(source.String()), std, "test.md",
+			Options{Features: []string{"mkdocsadmonitions"}, Warnings: warnings})
+
+		runtime.ReadMemStats(&after)
+		require.NoError(t, err)
+		require.Len(t, warnings.List(), admonitions)
+
+		return after.TotalAlloc - before.TotalAlloc
+	}
+
+	small, large := allocated(500), allocated(2000)
+
+	// Four times the document takes about four times the memory; reading it
+	// again for each warning takes sixteen.
+	assert.Less(t, large, 8*small, "%d bytes for 500 admonitions, %d for 2000", small, large)
 }

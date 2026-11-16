@@ -31,3 +31,18 @@ func TestLineOf(t *testing.T) {
 		})
 	}
 }
+
+// TestLinesOfAnswersEachLine: the function LinesOf returns gives each line
+// what LineOf does, however many it is asked for.
+func TestLinesOfAnswersEachLine(t *testing.T) {
+	original := "<!-- Title: T -->\n\nintro\n!!! note\ntext\n\n!!! note\nmore\n"
+	derived := "intro\n!!! note\nincluded\n\n!!! note\ntext\n"
+
+	lineOf := LinesOf([]byte(derived), []byte(original))
+
+	for line := 0; line <= 8; line++ {
+		assert.Equal(t, LineOf([]byte(derived), []byte(original), line), lineOf(line), "line %d", line)
+	}
+
+	assert.Equal(t, []int{3, 4, 0, 0, 7, 5}, []int{lineOf(1), lineOf(2), lineOf(3), lineOf(4), lineOf(5), lineOf(6)})
+}
