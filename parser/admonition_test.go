@@ -4,7 +4,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/kovetskiy/mark/v17/internal/parsenote"
 	cparser "github.com/kovetskiy/mark/v17/parser"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -702,7 +701,7 @@ func TestAdmonitionsWithoutABodyAreNotNested(t *testing.T) {
 	}
 }
 
-// TestAdmonitionStrandedBodyIsRecorded: the parser records, for whoever
+// TestAdmonitionStrandedBodyIsRecorded: the parser marks, for whoever
 // reports it, each admonition that ended at its opening line although the
 // line straight after it was written as its body: level with it, and with no
 // closing run ahead. An admonition with nothing after it in what holds it,
@@ -738,13 +737,16 @@ func TestAdmonitionStrandedBodyIsRecorded(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			pc := parser.NewContext()
-			admonitionBlocks.Parse([]byte(tt.source), parser.WithContext(pc))
+			doc := admonitionBlocks.Parse([]byte(tt.source))
 
 			var lines []int
-			for _, at := range parsenote.StrandedBodies(pc) {
-				lines = append(lines, 1+strings.Count(tt.source[:at], "\n"))
-			}
+			_ = ast.Walk(doc, func(node ast.Node, entering bool) (ast.WalkStatus, error) {
+				if n, ok := node.(*cparser.Admonition); entering && ok && n.BodyFollows() {
+					lines = append(lines, 1+strings.Count(tt.source[:n.Pos()], "\n"))
+				}
+
+				return ast.WalkContinue, nil
+			})
 
 			assert.Equal(t, tt.lines, lines)
 		})

@@ -2,40 +2,47 @@ package markdown
 
 import (
 	"bytes"
+	"slices"
 	"strings"
 
 	"github.com/kovetskiy/mark/v17/internal/mdsource"
+	cparser "github.com/kovetskiy/mark/v17/parser"
 	"github.com/kovetskiy/mark/v17/report"
+	"github.com/yuin/goldmark/v2/ast"
 )
 
 // openingLineLimit is how much of an admonition's opening line a warning
 // quotes.
 const openingLineLimit = 60
 
-// warnStrandedBodies tells the author of each admonition that is published
-// without the lines written as its body: those that follow its opening line
-// directly, are not indented under it, and are not ended by a closing line.
-// The page shows them under the box and nothing on it says why, so the
-// warning names the line and what keeps them in the box.
+// warnStrandedBodies tells the author of each admonition in doc that is
+// published without the lines written as its body: those that follow its
+// opening line directly, are not indented under it, and are not ended by a
+// closing line. The page shows them under the box and nothing on it says
+// why, so the warning names the line and what keeps them in the box.
 //
-// compiled is the text that was parsed, which at holds offsets into, and
-// written the text CompileMarkdown was given, whose lines the warnings name.
-func warnStrandedBodies(written, compiled []byte, at []int, warnings *report.Warnings) {
+// compiled is the text doc was parsed from, and written the text
+// CompileMarkdown was given, whose lines the warnings name.
+func warnStrandedBodies(written, compiled []byte, doc ast.Node, warnings *report.Warnings) {
+	// In the order they were written, which a transformer can change, as it
+	// moves a footnote's blocks to the end.
+	var at []int
+
+	_ = ast.Walk(doc, func(node ast.Node, entering bool) (ast.WalkStatus, error) {
+		if n, ok := node.(*cparser.Admonition); entering && ok && n.BodyFollows() {
+			at = append(at, n.Pos())
+		}
+
+		return ast.WalkContinue, nil
+	})
+	slices.Sort(at)
+
 	lineOf := mdsource.LinesOf(compiled, written)
 
-	// The admonitions come in the order they were parsed, so each line is
-	// counted on from the one before.
+	// Each line is counted on from the one before.
 	counted, line := 0, 1
 
 	for _, start := range at {
-		if start < 0 || start >= len(compiled) {
-			continue
-		}
-
-		if start < counted {
-			counted, line = 0, 1
-		}
-
 		line += bytes.Count(compiled[counted:start], []byte("\n"))
 		counted = start
 

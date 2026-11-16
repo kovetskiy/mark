@@ -13,7 +13,6 @@ import (
 
 	"github.com/kovetskiy/mark/v17/attachment"
 	"github.com/kovetskiy/mark/v17/includes"
-	"github.com/kovetskiy/mark/v17/internal/parsenote"
 	"github.com/kovetskiy/mark/v17/internal/syntax"
 	"github.com/kovetskiy/mark/v17/macro"
 	cparser "github.com/kovetskiy/mark/v17/parser"
@@ -22,6 +21,7 @@ import (
 	"github.com/kovetskiy/mark/v17/stdlib"
 	ctransformer "github.com/kovetskiy/mark/v17/transformer"
 	"github.com/rs/zerolog/log"
+	"github.com/yuin/goldmark/v2/ast"
 	"github.com/yuin/goldmark/v2/extension"
 	"github.com/yuin/goldmark/v2/parser"
 	"github.com/yuin/goldmark/v2/renderer/html"
@@ -48,9 +48,9 @@ type markdownExtension interface {
 }
 
 // compileMarkdownWithExtension builds the goldmark converter around ext and
-// renders markdown with it, parsing it in pc, which keeps what the block
-// parsers found for the author.
-func compileMarkdownWithExtension(markdown []byte, ext markdownExtension, pc parser.Context, logMessage string) (string, error) {
+// renders markdown with it, returning the page and the tree it was rendered
+// from.
+func compileMarkdownWithExtension(markdown []byte, ext markdownExtension, logMessage string) (string, ast.Node, error) {
 	log.Trace().Msgf(logMessage, string(markdown))
 
 	p := parser.New(append(
@@ -92,15 +92,17 @@ func compileMarkdownWithExtension(markdown []byte, ext markdownExtension, pc par
 		),
 	)
 
+	doc := p.Parse(markdown)
+
 	var buf bytes.Buffer
-	if err := r.Render(&buf, markdown, p.Parse(markdown, parser.WithContext(pc))); err != nil {
-		return "", err
+	if err := r.Render(&buf, markdown, doc); err != nil {
+		return "", nil, err
 	}
 
 	html := buf.Bytes()
 	log.Trace().Msgf("rendered markdown to html:\n%s", string(html))
 
-	return string(html), nil
+	return string(html), doc, nil
 }
 
 // pageTemplates is the template set one page's includes and macros are
@@ -424,8 +426,7 @@ func CompileMarkdown(ctx context.Context, markdown []byte, stdlib *stdlib.Lib, p
 	}
 
 	ghAlertsExtension := newConfluenceExtension(ctx, stdlib, path, opts, tmpl)
-	pc := parser.NewContext()
-	htmlOutput, err := compileMarkdownWithExtension(markdown, ghAlertsExtension, pc, "rendering markdown with GitHub Alerts support:\n%s")
+	htmlOutput, doc, err := compileMarkdownWithExtension(markdown, ghAlertsExtension, "rendering markdown with GitHub Alerts support:\n%s")
 	// A transformer cannot return an error from Transform, so each one that can
 	// fail keeps its failure for collection here.
 	if err == nil && ghAlertsExtension.Pipeline != nil && ghAlertsExtension.Pipeline.GetError() != nil {
@@ -440,7 +441,7 @@ func CompileMarkdown(ctx context.Context, markdown []byte, stdlib *stdlib.Lib, p
 
 	htmlOutput, replaced := sanitizeXMLChars(htmlOutput)
 	warnIllegalXMLChars(markdown, replaced, opts.Warnings)
-	warnStrandedBodies(written, markdown, parsenote.StrandedBodies(pc), opts.Warnings)
+	warnStrandedBodies(written, markdown, doc, opts.Warnings)
 
 	return htmlOutput, append(macroAttachments, ghAlertsExtension.Attachments...), nil
 }

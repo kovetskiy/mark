@@ -7,9 +7,6 @@ type Body struct {
 	// Level is whether the first of them was level with the opening line.
 	Level bool
 
-	// BlankFirst is whether a blank line came before that one.
-	BlankFirst bool
-
 	// Indent and Length are the column and the length of the opening run.
 	Indent, Length int
 
@@ -21,11 +18,10 @@ type Body struct {
 // BodyOf returns how the parse read n's body.
 func BodyOf(n *Admonition) Body {
 	return Body{
-		Level:      n.body.level,
-		BlankFirst: n.body.blankFirst,
-		Indent:     n.body.indent,
-		Length:     n.body.length,
-		ClosedAt:   n.body.closedAt,
+		Level:    n.body.level,
+		Indent:   n.body.indent,
+		Length:   n.body.length,
+		ClosedAt: n.body.closedAt,
 	}
 }
 
