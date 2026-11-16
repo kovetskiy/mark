@@ -301,10 +301,10 @@ func (r reading) closedInLiteralText(literal [][2]int) error {
 //
 // It looks only at an admonition that is not indented in what holds it, whose
 // column is that of the lines of a paragraph after it.
-func (r reading) runLeftAsText(marker byte) error {
+func (r reading) runLeftAsText() error {
 	run := func(at int) int {
 		n := 0
-		for at+n < len(r.source) && r.source[at+n] == marker {
+		for at+n < len(r.source) && r.source[at+n] == '!' {
 			n++
 		}
 
@@ -385,7 +385,7 @@ func checkAdmonitionDocument(document admonitiongen.Document, regular bool) erro
 	}
 
 	if regular {
-		if err := r.runLeftAsText('!'); err != nil {
+		if err := r.runLeftAsText(); err != nil {
 			return err
 		}
 	}
