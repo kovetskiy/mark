@@ -559,9 +559,8 @@ closing line, are published after the box:
 This paragraph follows the box, and mark warns about it.
 ```
 
-mark used to publish them in the box when the document, list item or
-blockquote ended with them, so it [warns](publishing.md#reporting-what-a-run-did)
-about each such admonition, with its line: an `admonition-body` warning in the
+Written there they read as the box's body, so mark
+[warns](publishing.md#reporting-what-a-run-did) about each such admonition, with its line: an `admonition-body` warning in the
 run report. Indent the lines to put them in the box, or end them with a line of
 `!!!`. After a blank line they are taken for what follows an admonition that
 has no body, and nothing is said.

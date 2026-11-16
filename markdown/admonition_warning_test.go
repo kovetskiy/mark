@@ -40,8 +40,8 @@ func compileWarned(t *testing.T, src, path string, features ...string) (string, 
 
 // TestAdmonitionBodyLeftOutIsAWarning: lines written straight after an
 // opening line, not indented and not ended by a closing line, are published
-// after the admonition. They were in it whenever the document ended with
-// them, so the author is told, with the line and what to do about it.
+// after the admonition. Written there they read as its body, so the author
+// is told, with the line and what to do about it.
 func TestAdmonitionBodyLeftOutIsAWarning(t *testing.T) {
 	out, warnings := compileWarned(t, "Intro.\n\n!!! note \"Remember\"\nIn the box, as written.\n", "docs/page.md", "mkdocsadmonitions")
 
