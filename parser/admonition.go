@@ -301,7 +301,7 @@ func (b *admonitionParser) Open(parent ast.Node, reader text.Reader, pc parser.C
 
 	// A run of '!' with nothing after it opens nothing: it closes an
 	// admonition, or is text.
-	if bareRun(line, pos) > 0 {
+	if util.IsBlank(line[i:]) {
 		return openClosingRun(parent, reader, pc, indent, length)
 	}
 

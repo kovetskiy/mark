@@ -441,7 +441,10 @@ func CompileMarkdown(ctx context.Context, markdown []byte, stdlib *stdlib.Lib, p
 
 	htmlOutput, replaced := sanitizeXMLChars(htmlOutput)
 	warnIllegalXMLChars(markdown, replaced, opts.Warnings)
-	warnStrandedBodies(written, markdown, doc, opts.Warnings)
+	// Only that feature parses admonitions, so a page without it has none.
+	if slices.Contains(opts.Features, "mkdocsadmonitions") {
+		warnStrandedBodies(written, markdown, doc, opts.Warnings)
+	}
 
 	return htmlOutput, append(macroAttachments, ghAlertsExtension.Attachments...), nil
 }
