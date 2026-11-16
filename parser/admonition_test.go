@@ -10,7 +10,6 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/yuin/goldmark/v2/ast"
 	"github.com/yuin/goldmark/v2/parser"
-	"github.com/yuin/goldmark/v2/util"
 )
 
 // admonitions parses source and returns every admonition found, in document
@@ -19,7 +18,7 @@ func admonitions(t *testing.T, source string) []string {
 	t.Helper()
 
 	md := parser.New(
-		parser.WithBlockParsers(util.Prioritized(cparser.NewAdmonitionParser(), 100)),
+		cparser.NewAdmonitionParser().ParserOptions(nil)...,
 	)
 
 	src := []byte(source)
@@ -152,7 +151,7 @@ func TestAdmonitionParser(t *testing.T) {
 // own on the node, so nothing random can reach the page.
 func TestAdmonitionParserIsDeterministic(t *testing.T) {
 	md := parser.New(
-		parser.WithBlockParsers(util.Prioritized(cparser.NewAdmonitionParser(), 100)),
+		cparser.NewAdmonitionParser().ParserOptions(nil)...,
 	)
 
 	source := []byte("!!! danger \"D\" {.extra #id}\n    body\n")

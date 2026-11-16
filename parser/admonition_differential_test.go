@@ -18,7 +18,6 @@ import (
 	"github.com/yuin/goldmark/v2/ast"
 	"github.com/yuin/goldmark/v2/parser"
 	"github.com/yuin/goldmark/v2/text"
-	"github.com/yuin/goldmark/v2/util"
 )
 
 // An admonition whose body is level with its opening line ends at that line,
@@ -38,12 +37,7 @@ const (
 	differentialDocuments = 2000
 )
 
-var admonitionBlocks = parser.New(
-	parser.WithBlockParsers(
-		util.Prioritized(cparser.NewAdmonitionParser(), 100),
-		util.Prioritized(cparser.NewAdmonitionHTMLBlockParser(), 899),
-	),
-)
+var admonitionBlocks = parser.New(cparser.NewAdmonitionParser().ParserOptions(nil)...)
 
 // reading is a document as the admonition parser read it.
 type reading struct {
