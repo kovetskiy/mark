@@ -259,6 +259,16 @@ func TestAdmonitionBodyIsIndentedOrClosed(t *testing.T) {
 			want:   []string{"!note", "Paragraph:a", "!tip", "  Paragraph:b", "Paragraph:c"},
 		},
 		{
+			name:   "a run in another column than the opening line closes nothing",
+			source: "!!! note \"T\"\nbody\n  !!!\nafter\n",
+			want:   []string{"!note", "Paragraph:body\n!!!\nafter"},
+		},
+		{
+			name:   "a run closes the admonition opened in its column, not the innermost",
+			source: "!!! note \"outer\"\na\n  !!! tip \"inner\"\n  b\n!!!\nafter\n",
+			want:   []string{"!note", "  Paragraph:a", "  !tip", "  Paragraph:b", "Paragraph:after"},
+		},
+		{
 			name:   "title only, then a sibling",
 			source: "!!! note \"one\"\n\n!!! tip \"two\"\n    b\n\nafter\n",
 			want:   []string{"!note", "!tip", "  Paragraph:b", "Paragraph:after"},
