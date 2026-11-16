@@ -39,10 +39,6 @@ func (b *Bytes) Intn(n int) int {
 // Options says what a document may hold besides admonitions with indented
 // bodies, paragraphs and headings.
 type Options struct {
-	// Marker is the character an admonition is opened and closed by a run
-	// of, '!' when zero.
-	Marker byte
-
 	// Bodiless lets an admonition be written with no body.
 	Bodiless bool
 
@@ -51,7 +47,7 @@ type Options struct {
 	Unindented bool
 	Runless    bool
 
-	// Runs lets a line of the marker alone be written: after an indented
+	// Runs lets a line of '!' alone be written: after an indented
 	// body, in code and HTML, and on its own.
 	Runs bool
 
@@ -62,7 +58,7 @@ type Options struct {
 	// closing line.
 	Unclosed bool
 
-	// DivRuns lets a line of the marker alone be written inside an HTML
+	// DivRuns lets a line of '!' alone be written inside an HTML
 	// block that ends at a blank line, such as a <div>, where an admonition
 	// was opened at the same level before it. Such a line closes that
 	// admonition and cuts the block in two.
@@ -114,10 +110,6 @@ type Document struct {
 // New writes a document from r's choices. It uses tabs only for the odd
 // indented body; Tabbed spells more of a document's blanks with them.
 func New(r Rand, o Options) Document {
-	if o.Marker == 0 {
-		o.Marker = '!'
-	}
-
 	g := &generator{r: r, o: o, left: 30}
 	g.blocks(&place{}, 2+r.Intn(4))
 
@@ -273,7 +265,7 @@ func (g *generator) closing(p *place, length int) {
 }
 
 func (g *generator) run(length int) string {
-	return strings.Repeat(string(g.o.Marker), length)
+	return strings.Repeat("!", length)
 }
 
 func (g *generator) blocks(p *place, count int) {
