@@ -368,7 +368,11 @@ func (b *admonitionParser) Continue(node ast.Node, reader text.Reader, pc parser
 
 		switch {
 		case run > 0:
-			body.closeAt(reader)
+			// A run the admonition around it takes leaves this one empty,
+			// and on the line for that one.
+			if !body.yields(pc, run) {
+				body.closeAt(reader)
+			}
 
 			return parser.Close
 		case w > body.indent:
@@ -413,8 +417,8 @@ func (b *admonitionParser) Continue(node ast.Node, reader text.Reader, pc parser
 }
 
 // yields reports whether a closing run of length '!' that would close this
-// admonition, whose body is indented, goes to an admonition around it
-// instead: the innermost waiting for one in the same block, when the body
+// admonition, whose body is indented or not yet begun, goes to an admonition
+// around it instead: the innermost waiting for one in the same block, when the body
 // already ended at a line level with the opening line, or the one around it
 // when it was opened with more '!' and the run has as many.
 func (b *admonitionBody) yields(pc parser.Context, length int) bool {

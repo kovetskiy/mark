@@ -413,6 +413,11 @@ func TestAdmonitionBodyIsIndentedOrClosed(t *testing.T) {
 			want:   []string{"!quote", "  Paragraph:w2", "  !note", "    Paragraph:w5", "Paragraph:w7\n!!!!\nafter"},
 		},
 		{
+			name:   "a longer run straight after a nested opening line closes the outer one",
+			source: "!!!! quote \"T\"\nw2\n!!! note \"N\"\n!!!!\nafter\n",
+			want:   []string{"!quote", "  Paragraph:w2", "  !note", "Paragraph:after"},
+		},
+		{
 			name:   "each closed by its own run, the outer one opened by a longer run",
 			source: "!!!! quote \"T\"\nw2\n!!! note \"N\"\n    w5\n!!!\n!!!!\nafter\n",
 			want:   []string{"!quote", "  Paragraph:w2", "  !note", "    Paragraph:w5", "Paragraph:after"},
