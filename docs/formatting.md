@@ -539,6 +539,12 @@ and not the admonition around it. When the admonition around it was opened
 with more `!` (`!!!!`) and the line has as many, the line closes that one
 instead.
 
+Lines up to a closing line are read as they would be without the box around
+them, from the margin of the document, list item or blockquote and not from
+the opening line. When the opening line is indented by one to three spaces, a
+line after a blank line that is indented four spaces or more is therefore a code
+block, even where it is indented less than that past the opening line.
+
 A `!!!` line inside a fenced code block is code, and one inside an HTML block
 that a `<pre>`, `<script>`, `<style>` or `<textarea>` tag, a comment, a
 declaration or CDATA opens is that block's text. Any other HTML block, such as
