@@ -231,8 +231,9 @@ publishing, and `warningDetails` says the same with each warning's `kind`, the
 ```
 
 A line is given for a front matter key, a value one cannot hold (the key's
-line), and a header below the opening comments. A document that fails keeps
-what was found before it did.
+line), a header below the opening comments, and an admonition published
+without its body (its opening line; no line when an include holds a line that
+reads the same). A document that fails keeps what was found before it did.
 
 A `kind` is one of:
 
@@ -247,6 +248,7 @@ A `kind` is one of:
 | `attachment` | a file not uploaded, or uploaded and never used |
 | `invalid-characters` | text XML cannot carry, replaced with U+FFFD |
 | `column-widths` | a `Column-Widths` comment that was not applied |
+| `admonition-body` | with `mkdocsadmonitions`, an [admonition](formatting.md#mkdocs-admonitions) whose opening line is followed directly by lines that are neither indented under it nor ended by a `!!!` line: they are published after the box, not in it |
 | `inline-comment` | a comment `--preserve-comments` could not keep |
 | `include` | an include in a fragment that now resolves beside the fragment, not the document |
 | `placement` | a page not placed where its document asks: found outside its declared parents, outside `--parents-from-path-root`, under a parent title several documents declare, given an `Order` its parent cannot be found for, or left behind in the space it used to publish to |

@@ -506,6 +506,60 @@ title, if it has one, in bold at the top. Any other type stays a quotation.
     A yellow box titled "Mind the gap".
 ```
 
+The box holds the lines indented under its opening line. MkDocs asks for four
+spaces; mark takes any indentation deeper than the opening line's. An
+admonition with no indented lines ends at its opening line, and what follows it
+is published after it:
+
+```markdown
+!!! note "Remember"
+
+This paragraph follows the box.
+```
+
+What is published for it is what the opening line gives: a box holding its
+title, an empty box when there is no title, and an empty quotation for a type
+that stays a quotation, whose title is not published with a body either.
+
+Lines that are not indented are part of the box only up to a line of `!!!` that
+closes it:
+
+```markdown
+!!! note "Remember"
+This paragraph is in the box.
+!!!
+```
+
+The closing line starts where the opening line does and has at least as many
+`!` as it. It closes the nearest admonition above it that is still open and
+that it has enough `!` for, so one written this way inside another needs a
+closing line of its own, and the outer one a second. An admonition with an
+indented body needs none, but a `!!!` line straight after its body closes it,
+and not the admonition around it. When the admonition around it was opened
+with more `!` (`!!!!`) and the line has as many, the line closes that one
+instead.
+
+A `!!!` line inside a fenced code block is code, and one inside an HTML block
+that a `<pre>`, `<script>`, `<style>` or `<textarea>` tag, a comment, a
+declaration or CDATA opens is that block's text. Any other HTML block, such as
+one opened by `<div>` or `</details>`, ends at the line, which closes the
+admonition, a comment in that block included.
+
+Lines written straight after the opening line, neither indented nor ended by a
+closing line, are published after the box:
+
+```markdown
+!!! note "Remember"
+This paragraph follows the box, and mark warns about it.
+```
+
+mark used to publish them in the box when the document, list item or
+blockquote ended with them, so it [warns](publishing.md#reporting-what-a-run-did)
+about each such admonition, with its line: an `admonition-body` warning in the
+run report. Indent the lines to put them in the box, or end them with a line of
+`!!!`. After a blank line they are taken for what follows an admonition that
+has no body, and nothing is said.
+
 ## HTML Details/Summary Macro
 
 Standard HTML `<details>` and `<summary>` tags are converted to native
