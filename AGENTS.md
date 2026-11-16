@@ -51,11 +51,13 @@ tests, which take minutes. There is currently no `-short` skip.
 | `report/` | what a run did, for `--output-format` and the run's summary, and the `--on-orphan` actions |
 | `stdlib/` | the `text/template` set that emits all `<ac:*>` markup |
 | `docs/` | the user reference, one page per topic; `README.md` keeps the overview, installation and command-line usage |
+| `internal/admonitiongen` | generated documents around MkDocs admonitions, for the tests that hold the admonition parser's closing runs to the blocks goldmark parses around them |
 | `internal/fspath` | `ResolveDeepest`, a path with symlinks resolved as deep as it exists; `Within`, a path relative to a root it is under; and `Under`, `Within` tried again on resolved paths: so attachment and staged-root containment compare paths the way the files they name compare |
 | `internal/globpattern` | the glob syntax test and escaping shared by `Run`'s checks, the orphan handling and the page manifest's patterns |
 | `internal/goldmarktest` | a goldmark parser and renderer built together, for tests |
 | `internal/htmlblock` | an HTML block's lines without its closing line, as goldmark v1 gave them |
 | `internal/lazy` | the start-on-first-use, discard and close of a run's browser and mermaid engine; Close cancels a start in flight |
+| `internal/parsenote` | what a block parser found for the document's author, carried in the parse's context to `CompileMarkdown`, which reports it: an admonition published without its body |
 | `internal/mdsource` | the raw Markdown before goldmark: where the code is, `<!-- ac:ignore -->` regions, CRLF and BOM normalisation |
 | `internal/rendercheck` | the rendering settings' rules (scales, image alignment, feature names) that `mark.Config` validation and the publish flag checks share |
 | `internal/syntax` | what publishing and export must read alike: heading ids and attribute blocks, anchor keys, the `page#anchor` split, code block info strings and language aliases, admonition markers |
@@ -165,7 +167,10 @@ code reads, and `Value(source)` the decoded text.
 error return, so `transformer.PipelineTransformer` accumulates errors internally and
 `CompileMarkdown` retrieves them with `Pipeline.GetError()` after rendering. A transformer
 that fails silently without recording into the pipeline will produce a wrong page and a
-zero exit code.
+zero exit code. A block parser returns nothing but a node either: what it finds for the
+author goes into the parse's context through `internal/parsenote`, which `CompileMarkdown`
+gives the parse with `parser.WithContext`, and turns into a warning once the document is
+rendered, with the line `mdsource.LineOf` finds for it in the text that was written.
 
 **6. Attachment checksums are content-addressed, but rendered ones are source-addressed.**
 Checksums live in the remote attachment's comment behind `attachment.AttachmentChecksumPrefix`
@@ -256,6 +261,15 @@ compared against `testdata/<name>.html`; variant suffixes cover flag combination
 
 Adding a `.md` fixture without its matching `.html` panics the test — the loader reads
 both unconditionally. There is no `-update` flag; golden files are written by hand.
+
+An MkDocs admonition whose body is level with its opening line ends at that line, and the
+blocks after it are parsed where it opened; a closing run then gives it those blocks, so
+which lines are code, HTML or a list item is goldmark's call alone.
+`parser/admonition_differential_test.go` holds where runs are read to the blocks around
+them on documents `internal/admonitiongen` writes from a fixed seed, and on
+`parser/testdata/admonition-master.json`, the trees the parser gave such documents before
+a level body had to end at a closing run; `FuzzAdmonitionDocuments` is the same for as
+long as it is left running.
 
 Coverage is uneven, and where it is thin matters more than the number. Measured with
 `go test -cover ./...`: `markdown/` 84%, `renderer/` 69%, `confluence/` 84%, `stdlib/` 68%,
