@@ -2,22 +2,18 @@ package mdsource
 
 import "bytes"
 
-// LineOf returns the line of original that line of derived was copied from,
-// both counting from 1, where derived is original with lines taken out of it
-// or put into it, as a document is once its headers are read and its includes
-// expanded.
+// LinesOf returns a function that gives the line of original that a line of
+// derived was copied from, both counting from 1, where derived is original
+// with lines taken out of it or put into it, as a document is once its headers
+// are read and its includes expanded.
 //
 // It is the line of original that reads the same and has as many lines that
 // read the same above it. Where the two texts hold a different number of
-// lines reading so, which of them the line is cannot be told, and LineOf
-// returns 0.
-func LineOf(derived, original []byte, line int) int {
-	return LinesOf(derived, original)(line)
-}
-
-// LinesOf returns LineOf for derived and original as a function of the line,
-// which reads the two texts on its first call and not again, so that finding
-// the lines of many warnings costs what finding one does. The function is not
+// lines reading so, which of them the line is cannot be told, and the
+// function returns 0.
+//
+// The function reads the two texts on its first call and not again, so that
+// finding the lines of many warnings costs what finding one does. It is not
 // for concurrent use.
 func LinesOf(derived, original []byte) func(line int) int {
 	var (

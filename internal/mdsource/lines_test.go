@@ -6,7 +6,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestLineOf(t *testing.T) {
+func TestLinesOf(t *testing.T) {
 	original := "<!-- Title: T -->\n\nintro\n!!! note\ntext\n\n!!! note\nmore\n"
 
 	tests := []struct {
@@ -27,13 +27,13 @@ func TestLineOf(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			assert.Equal(t, tt.want, LineOf([]byte(tt.derived), []byte(original), tt.line))
+			assert.Equal(t, tt.want, LinesOf([]byte(tt.derived), []byte(original))(tt.line))
 		})
 	}
 }
 
 // TestLinesOfAnswersEachLine: the function LinesOf returns gives each line
-// what LineOf does, however many it is asked for.
+// what a new one does, however many it is asked for.
 func TestLinesOfAnswersEachLine(t *testing.T) {
 	original := "<!-- Title: T -->\n\nintro\n!!! note\ntext\n\n!!! note\nmore\n"
 	derived := "intro\n!!! note\nincluded\n\n!!! note\ntext\n"
@@ -41,7 +41,7 @@ func TestLinesOfAnswersEachLine(t *testing.T) {
 	lineOf := LinesOf([]byte(derived), []byte(original))
 
 	for line := 0; line <= 8; line++ {
-		assert.Equal(t, LineOf([]byte(derived), []byte(original), line), lineOf(line), "line %d", line)
+		assert.Equal(t, LinesOf([]byte(derived), []byte(original))(line), lineOf(line), "line %d", line)
 	}
 
 	assert.Equal(t, []int{3, 4, 0, 0, 7, 5}, []int{lineOf(1), lineOf(2), lineOf(3), lineOf(4), lineOf(5), lineOf(6)})
