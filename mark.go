@@ -2017,6 +2017,10 @@ func (r *publishRun) processFile(ctx context.Context, in input) (*confluence.Pag
 		return nil, nil, err
 	}
 
+	// A run keeps the warnings to its end, and the mapping holds the
+	// document's text; no warning names a line once the document is done.
+	defer doc.warnings.MapLines(nil)
+
 	// Before anything is asked of Confluence: a document that has opted out
 	// should cost nothing, not a page lookup and an attachment upload it will
 	// not use.
@@ -2196,18 +2200,6 @@ func (r *publishRun) readDocument(in input) (*document, error) {
 		return nil, err
 	}
 
-	// From here on a warning about a line counts in the text that is
-	// compiled, which is the text read without its headers.
-	bodyLineOf := mdsource.LinesOf(markdown, read)
-
-	warnings.MapLines(func(line int) int {
-		if line = bodyLineOf(line); line > 0 && lineOf != nil {
-			return lineOf(line)
-		}
-
-		return line
-	})
-
 	if meta != nil {
 		if previous, taken := r.hierarchy.Claim(meta.Space, meta.Title, file); taken {
 			return nil, fmt.Errorf(
@@ -2223,6 +2215,19 @@ func (r *publishRun) readDocument(in input) (*document, error) {
 			"the document's metadata is ignored: the page to publish to is named by id")
 		meta = nil
 	}
+
+	// From here on a warning about a line counts in the text that is
+	// compiled, which is the text read without its headers. processFile
+	// drops the mapping once the document is done.
+	bodyLineOf := mdsource.LinesOf(markdown, read)
+
+	warnings.MapLines(func(line int) int {
+		if line = bodyLineOf(line); line > 0 && lineOf != nil {
+			return lineOf(line)
+		}
+
+		return line
+	})
 
 	return &document{
 		input: in, sourceHash: sourceHash, meta: meta, markdown: markdown, warnings: warnings,

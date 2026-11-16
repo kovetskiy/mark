@@ -1,6 +1,8 @@
 package mark
 
 import (
+	"io"
+
 	"testing"
 
 	"github.com/kovetskiy/mark/v17/report"
@@ -72,6 +74,34 @@ func TestAnAdmonitionBodyLeftOutIsAnnotated(t *testing.T) {
 	require.Len(t, annotations, 1, out)
 	assert.Contains(t, annotations[0], "::warning file=")
 	assert.Contains(t, annotations[0], "a.md,line=8::")
+}
+
+// TestADocumentsWarningsKeepNoLineMapping: a run keeps every document's
+// warnings to its end, so once the document is done they keep nothing that
+// maps a line, which would hold the document's text for the rest of the run.
+func TestADocumentsWarningsKeepNoLineMapping(t *testing.T) {
+	file := writeFile(t, t.TempDir(), "a.md", strandedBody["a.md"])
+
+	publisher, err := NewPublisher(t.Context(), nil, PublishConfig{
+		Mode:      ModeConfig{CompileOnly: true, Offline: true},
+		Rendering: RenderingConfig{Features: []string{"mkdocsadmonitions"}},
+		Output:    io.Discard,
+	})
+	require.NoError(t, err)
+	t.Cleanup(publisher.Close)
+
+	// As Run keeps them.
+	publisher.run.warnings = map[string]*report.Warnings{}
+
+	_, err = publisher.Publish(t.Context(), file)
+	require.NoError(t, err)
+
+	warnings := publisher.run.warnings[file]
+	require.NotNil(t, warnings)
+	require.Len(t, warnings.List(), 1, "the admonition's warning")
+
+	warnings.AddAt(1, report.WarningAdmonitionBody, "a later warning")
+	assert.Equal(t, 1, warnings.List()[1].Line, "the line is not mapped")
 }
 
 // TestAnAdmonitionBodyIsNotReportedWithoutTheFeature: with the feature off
