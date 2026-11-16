@@ -301,18 +301,16 @@ func (b *admonitionParser) Open(parent ast.Node, reader text.Reader, pc parser.C
 
 	// A run of '!' with nothing after it opens nothing: it closes an
 	// admonition, or is text.
-	content := withoutLineEnding(line)
-	left := i + util.TrimLeftSpaceLength(content[i:])
-	if left >= len(content) {
+	if bareRun(line, pos) > 0 {
 		return openClosingRun(parent, reader, pc, indent, length)
 	}
 
-	node := parseAdmonitionOpeningLine(reader, left)
+	node := parseAdmonitionOpeningLine(reader, i+util.TrimLeftSpaceLength(line[i:]))
 	node.body = admonitionBody{parent: parent, indent: indent, length: length}
 
 	line, _ = reader.PeekLine()
 	w, pos := util.IndentWidth(line, reader.LineOffset())
-	if run, _ := node.body.closingRun(line, w, pos); w < indent || run > 0 {
+	if w < indent || node.body.closingRun(line, w, pos) > 0 {
 		return node, parser.NoChildren
 	}
 
@@ -342,9 +340,7 @@ func openClosingRun(parent ast.Node, reader text.Reader, pc parser.Context, inde
 		child = next
 	}
 
-	line, segment := reader.PeekLine()
-	node.body.closedAt = segment.Start
-	reader.Advance(segment.Len() - newlineLength(line))
+	node.body.closeAt(reader)
 
 	run := &closingRunBlock{}
 	run.Init(run)
@@ -359,9 +355,9 @@ func (b *admonitionParser) Continue(node ast.Node, reader text.Reader, pc parser
 	}
 	body := &n.body
 
-	line, segment := reader.PeekLine()
+	line, _ := reader.PeekLine()
 	w, pos := util.IndentWidth(line, reader.LineOffset())
-	run, newline := body.closingRun(line, w, pos)
+	run := body.closingRun(line, w, pos)
 
 	switch {
 	case util.IsBlank(line):
@@ -372,7 +368,9 @@ func (b *admonitionParser) Continue(node ast.Node, reader text.Reader, pc parser
 
 		switch {
 		case run > 0:
-			return body.closeAt(reader, segment, newline)
+			body.closeAt(reader)
+
+			return parser.Close
 		case w > body.indent:
 			body.contentIndent = w
 		case w < body.indent || n.HasChildren():
@@ -388,7 +386,9 @@ func (b *admonitionParser) Continue(node ast.Node, reader text.Reader, pc parser
 		}
 
 	case run > 0 && !body.yields(pc, run):
-		return body.closeAt(reader, segment, newline)
+		body.closeAt(reader)
+
+		return parser.Close
 
 	case w <= body.indent:
 		body.ended = true
@@ -432,13 +432,13 @@ func (b *admonitionBody) yields(pc parser.Context, length int) bool {
 	return outer != nil && outer.body.length > b.length && outer.body.length <= length
 }
 
-// closeAt ends the admonition at the closing run on the reader's line.
-func (b *admonitionBody) closeAt(reader text.Reader, segment text.Segment, newline int) parser.State {
+// closeAt records the closing run on the reader's line as the one that closed
+// the admonition, and reads the line up to its newline.
+func (b *admonitionBody) closeAt(reader text.Reader) {
+	line, segment := reader.PeekLine()
 	b.closedAt = segment.Start
 	// Len counts the padding already, which Advance steps over first.
-	reader.Advance(segment.Len() - newline)
-
-	return parser.Close
+	reader.Advance(segment.Len() - newlineLength(line))
 }
 
 // Close takes the line of a closing run out of the tree once the next line
@@ -618,18 +618,17 @@ func bareRun(line []byte, pos int) int {
 
 // closingRun returns the length of the run on line, w columns in with its
 // first '!' at pos, when it closes b: as many '!' as opened it or more, in the
-// opening line's column, with nothing after them. newline is 1 when the line
-// ends in one.
-func (b *admonitionBody) closingRun(line []byte, w, pos int) (length, newline int) {
+// opening line's column, with nothing after them; and 0 otherwise.
+func (b *admonitionBody) closingRun(line []byte, w, pos int) int {
 	if w != b.indent {
-		return 0, 0
+		return 0
 	}
 
-	if length = bareRun(line, pos); length < b.length {
-		return 0, 0
+	if length := bareRun(line, pos); length >= b.length {
+		return length
 	}
 
-	return length, newlineLength(line)
+	return 0
 }
 
 // attributesEndLine reports whether an attribute block in goldmark v1's
