@@ -27,14 +27,18 @@ type Options struct {
 	// rather than newlines.
 	StripLinebreaks bool
 
-	// MermaidOutput is the image a diagram is published as, PNG (the
-	// default) or SVG. MermaidScale multiplies the pixels of a PNG one and
-	// the size the page displays an SVG one at. MermaidBundle keeps the
-	// diagram's source inside the SVG it is published as, and applies to
-	// nothing else.
-	MermaidOutput imageformat.Format
+	// MermaidOutput is how a diagram is published: PNG (the default) or SVG
+	// drawn by mark, or Macro, where the source is published as the instance's
+	// own macro. MermaidScale multiplies the pixels of a PNG one and the size
+	// the page displays an SVG one at, and applies to neither with Macro.
+	// MermaidBundle keeps the diagram's source inside the SVG it is published
+	// as, and applies to nothing else.
+	MermaidOutput mermaid.Output
 	MermaidScale  float64
 	MermaidBundle bool
+	// MermaidMacroName is the ac:name a diagram is published under with Macro;
+	// blank means mermaid.DefaultMacroName.
+	MermaidMacroName string
 	// D2Output is the image a diagram is published as, PNG (the default)
 	// or SVG. D2Scale multiplies the pixels of a PNG one and the size the
 	// page displays an SVG one at.
@@ -97,16 +101,17 @@ type Options struct {
 // diagramConfig is the part of o the fenced code block renderer draws with.
 func (o Options) diagramConfig() crenderer.DiagramConfig {
 	return crenderer.DiagramConfig{
-		Browser:        o.Browser,
-		Mermaid:        o.Mermaid,
-		Features:       o.Features,
-		ImageAlign:     o.ImageAlign,
-		MermaidOutput:  o.MermaidOutput,
-		MermaidScale:   o.MermaidScale,
-		MermaidBundle:  o.MermaidBundle,
-		D2Output:       o.D2Output,
-		D2Scale:        o.D2Scale,
-		D2BundleRemote: o.D2BundleRemote,
+		Browser:          o.Browser,
+		Mermaid:          o.Mermaid,
+		Features:         o.Features,
+		ImageAlign:       o.ImageAlign,
+		MermaidOutput:    o.MermaidOutput,
+		MermaidMacroName: o.MermaidMacroName,
+		MermaidScale:     o.MermaidScale,
+		MermaidBundle:    o.MermaidBundle,
+		D2Output:         o.D2Output,
+		D2Scale:          o.D2Scale,
+		D2BundleRemote:   o.D2BundleRemote,
 	}
 }
 
