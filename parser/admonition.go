@@ -28,7 +28,6 @@ import (
 	"bytes"
 	"strings"
 
-	"github.com/kovetskiy/mark/v17/internal/parsenote"
 	"github.com/kovetskiy/mark/v17/internal/syntax"
 	"github.com/yuin/goldmark/v2/ast"
 	"github.com/yuin/goldmark/v2/parser"
@@ -124,6 +123,13 @@ func NewAdmonition() *Admonition {
 	n := &Admonition{}
 	n.Init(n)
 	return n
+}
+
+// BodyFollows reports whether the lines written as the admonition's body are
+// published after it rather than in it: the line straight after its opening
+// line is level with it, and no closing run ended them.
+func (n *Admonition) BodyFollows() bool {
+	return n.body.level && !n.body.blankFirst && n.body.closedAt == 0
 }
 
 // closingRunBlock is the line of a closing run that closed an admonition with
@@ -336,8 +342,6 @@ func openClosingRun(parent ast.Node, reader text.Reader, pc parser.Context, inde
 		child = next
 	}
 
-	parsenote.Withdraw(pc, node.Pos())
-
 	line, segment := reader.PeekLine()
 	node.body.closedAt = segment.Start
 	reader.Advance(segment.Len() - newlineLength(line))
@@ -379,9 +383,6 @@ func (b *admonitionParser) Continue(node ast.Node, reader text.Reader, pc parser
 		default:
 			body.level = true
 			waitingIn(pc).push(n)
-			if !body.blankFirst {
-				parsenote.StrandedBody(pc, n.Pos())
-			}
 
 			return parser.Close
 		}

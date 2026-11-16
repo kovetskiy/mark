@@ -85,6 +85,12 @@ func TestAdmonitionBodyWarningIsForTheRightAdmonitions(t *testing.T) {
 			lines:  []int{1},
 		},
 		{name: "a run too short to close it", source: "!!!! note\nbody\n!!!\n", lines: []int{1}},
+		{
+			// The footnote's blocks are moved to the end of the page.
+			name:   "in a footnote, before another",
+			source: "Text[^1].\n\n[^1]: Note.\n\n    !!! note\n    in the footnote\n\n!!! tip\nmore\n",
+			lines:  []int{5, 8},
+		},
 
 		{name: "the last thing in the document", source: "text\n\n!!! note \"T\"\n"},
 		{name: "without a newline", source: "!!! note \"T\""},
