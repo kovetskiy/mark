@@ -13,6 +13,7 @@ import (
 
 	"github.com/kovetskiy/mark/v17/attachment"
 	"github.com/kovetskiy/mark/v17/includes"
+	"github.com/kovetskiy/mark/v17/internal/parsenote"
 	"github.com/kovetskiy/mark/v17/internal/syntax"
 	"github.com/kovetskiy/mark/v17/macro"
 	cparser "github.com/kovetskiy/mark/v17/parser"
@@ -47,8 +48,9 @@ type markdownExtension interface {
 }
 
 // compileMarkdownWithExtension builds the goldmark converter around ext and
-// renders markdown with it.
-func compileMarkdownWithExtension(markdown []byte, ext markdownExtension, logMessage string) (string, error) {
+// renders markdown with it, parsing it in pc, which keeps what the block
+// parsers found for the author.
+func compileMarkdownWithExtension(markdown []byte, ext markdownExtension, pc parser.Context, logMessage string) (string, error) {
 	log.Trace().Msgf(logMessage, string(markdown))
 
 	p := parser.New(append(
@@ -91,7 +93,7 @@ func compileMarkdownWithExtension(markdown []byte, ext markdownExtension, logMes
 	)
 
 	var buf bytes.Buffer
-	if err := r.Render(&buf, markdown, p.Parse(markdown)); err != nil {
+	if err := r.Render(&buf, markdown, p.Parse(markdown, parser.WithContext(pc))); err != nil {
 		return "", err
 	}
 
@@ -409,6 +411,8 @@ func CompileMarkdown(ctx context.Context, markdown []byte, stdlib *stdlib.Lib, p
 	// The page's set is handed on to the AST include and macro transformers,
 	// so that they see what the page's own fragments defined. The renderers
 	// keep drawing on the stdlib itself.
+	written := markdown
+
 	_, markdown, macroFiles, err := expandDirectives(path, opts, markdown, tmpl)
 	if err != nil {
 		return "", nil, err
@@ -420,7 +424,8 @@ func CompileMarkdown(ctx context.Context, markdown []byte, stdlib *stdlib.Lib, p
 	}
 
 	ghAlertsExtension := newConfluenceExtension(ctx, stdlib, path, opts, tmpl)
-	htmlOutput, err := compileMarkdownWithExtension(markdown, ghAlertsExtension, "rendering markdown with GitHub Alerts support:\n%s")
+	pc := parser.NewContext()
+	htmlOutput, err := compileMarkdownWithExtension(markdown, ghAlertsExtension, pc, "rendering markdown with GitHub Alerts support:\n%s")
 	// A transformer cannot return an error from Transform, so each one that can
 	// fail keeps its failure for collection here.
 	if err == nil && ghAlertsExtension.Pipeline != nil && ghAlertsExtension.Pipeline.GetError() != nil {
@@ -435,6 +440,7 @@ func CompileMarkdown(ctx context.Context, markdown []byte, stdlib *stdlib.Lib, p
 
 	htmlOutput, replaced := sanitizeXMLChars(htmlOutput)
 	warnIllegalXMLChars(markdown, replaced, opts.Warnings)
+	warnStrandedBodies(written, markdown, parsenote.StrandedBodies(pc), opts.Warnings)
 
 	return htmlOutput, append(macroAttachments, ghAlertsExtension.Attachments...), nil
 }

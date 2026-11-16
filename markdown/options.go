@@ -89,8 +89,10 @@ type Options struct {
 
 	// Warnings collects what was wrong with the document but did not stop it
 	// compiling: a macro attachment not uploaded, a Column-Widths comment not
-	// applied, characters XML cannot carry. Nil only logs them, against the
-	// document's path.
+	// applied, characters XML cannot carry, an admonition published without
+	// the lines written as its body. Nil only logs them, against the
+	// document's path. A warning about one line names the line of the text
+	// given to CompileMarkdown, as far as Warnings.MapLines leaves it that.
 	Warnings *report.Warnings
 }
 

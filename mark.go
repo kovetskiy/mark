@@ -2140,10 +2140,24 @@ func (r *publishRun) readDocument(in input) (*document, error) {
 	warnings.Reread()
 	warnings.MapLines(lineOf)
 
+	read := markdown
+
 	meta, markdown, err := documentMeta(r.config, file, markdown, r.hierarchy, warnings)
 	if err != nil {
 		return nil, err
 	}
+
+	// From here on a warning about a line counts in the text that is
+	// compiled, which is the text read without its headers.
+	body := markdown
+
+	warnings.MapLines(func(line int) int {
+		if line = mdsource.LineOf(body, read, line); line > 0 && lineOf != nil {
+			return lineOf(line)
+		}
+
+		return line
+	})
 
 	if meta != nil {
 		if previous, taken := r.hierarchy.Claim(meta.Space, meta.Title, file); taken {
