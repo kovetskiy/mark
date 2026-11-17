@@ -1,7 +1,6 @@
 package mark
 
 import (
-	"bytes"
 	"context"
 	"os"
 	"path/filepath"
@@ -78,14 +77,10 @@ func otherSpaceFixture(
 	writeFile(t, dir, "own.md", "<!-- Space: TWO -->\n<!-- Title: Own -->\n\nOwn.\n")
 	writeFile(t, dir, "note.md", "<!-- Space: ONE -->\n<!-- Title: Note -->\n\nNote.\n")
 
-	var out bytes.Buffer
 	config := spaceOrphanConfig(server, dir, action)
 	config.Page.Space = space
-	config.Output = &out
-	config.Report.OutputFormat = report.FormatJSON
-	require.NoError(t, Run(ctx, config))
 
-	return server, api, ids, dir, out.String()
+	return server, api, ids, dir, publishJSON(t, config)
 }
 
 // TestOnOrphanLeavesASpaceOnlyAHeaderNames: a run given --space looks for
@@ -157,45 +152,29 @@ func TestOnOrphanKeepsAnEntryOfAPathTheRunPublishesInItsOwnSpace(t *testing.T) {
 }
 
 // TestOnOrphanActsInTheRunsOwnSpace: the space the run was given is still
-// looked at, whatever case it is written in.
+// looked at when its documents spell it in another case, and with the spaces
+// around it read away, as they are for the documents given it.
 func TestOnOrphanActsInTheRunsOwnSpace(t *testing.T) {
-	ctx := context.Background()
-	server, api := spaceOrphanServer(t, "ONE")
+	for space, header := range map[string]string{"one": "<!-- Space: ONE -->\n", " ONE ": ""} {
+		t.Run(space, func(t *testing.T) {
+			ctx := context.Background()
+			server, api := spaceOrphanServer(t, "ONE")
 
-	dir := t.TempDir()
-	writeFile(t, dir, "keep.md", "<!-- Space: ONE -->\n<!-- Title: Keep -->\n\nKeep.\n")
-	writeFile(t, dir, "gone.md", "<!-- Space: ONE -->\n<!-- Title: Gone -->\n\nGone.\n")
+			dir := t.TempDir()
+			writeFile(t, dir, "keep.md", header+"<!-- Title: Keep -->\n\nKeep.\n")
+			writeFile(t, dir, "gone.md", header+"<!-- Title: Gone -->\n\nGone.\n")
 
-	config := spaceOrphanConfig(server, dir, report.OnOrphanDelete)
-	config.Page.Space = "one"
-	require.NoError(t, Run(ctx, config))
+			config := spaceOrphanConfig(server, dir, report.OnOrphanDelete)
+			config.Page.Space = space
+			require.NoError(t, Run(ctx, config))
 
-	gone := findPageID(t, api, "ONE", "Gone")
-	require.NoError(t, os.Remove(filepath.Join(dir, "gone.md")))
-	require.NoError(t, Run(ctx, config))
+			gone := findPageID(t, api, "ONE", "Gone")
+			require.NoError(t, os.Remove(filepath.Join(dir, "gone.md")))
+			require.NoError(t, Run(ctx, config))
 
-	assert.True(t, server.Page(gone).Trashed)
-}
-
-// TestOnOrphanActsInTheRunsOwnSpaceWrittenWithSpacesAround: a space key is
-// read without the spaces around it, as it is for the documents given it.
-func TestOnOrphanActsInTheRunsOwnSpaceWrittenWithSpacesAround(t *testing.T) {
-	ctx := context.Background()
-	server, api := spaceOrphanServer(t, "ONE")
-
-	dir := t.TempDir()
-	writeFile(t, dir, "keep.md", "<!-- Title: Keep -->\n\nKeep.\n")
-	writeFile(t, dir, "gone.md", "<!-- Title: Gone -->\n\nGone.\n")
-
-	config := spaceOrphanConfig(server, dir, report.OnOrphanDelete)
-	config.Page.Space = " ONE "
-	require.NoError(t, Run(ctx, config))
-
-	gone := findPageID(t, api, "ONE", "Gone")
-	require.NoError(t, os.Remove(filepath.Join(dir, "gone.md")))
-	require.NoError(t, Run(ctx, config))
-
-	assert.True(t, server.Page(gone).Trashed)
+			assert.True(t, server.Page(gone).Trashed)
+		})
+	}
 }
 
 // TestOnOrphanActsInEverySpaceWithoutARunSpace: a run given no space takes
@@ -232,16 +211,14 @@ func movedSpaceFixture(
 
 	writeFile(t, dir, "moved.md", "<!-- Space: TWO -->\n<!-- Title: Moved -->\n\nMoved.\n")
 
-	var out bytes.Buffer
 	config.Page.Space = space
-	config.Output = &out
-	config.Report.OutputFormat = report.FormatJSON
 	config.Mode.DryRun = dryRun
+	var out string
 	logged := captureLog(t, func() {
-		require.NoError(t, Run(ctx, config))
+		out = publishJSON(t, config)
 	})
 
-	return server, api, old, dir, logged, out.String()
+	return server, api, old, dir, logged, out
 }
 
 // TestOnOrphanHandlesThePageADocumentLeftInTheRunsSpace: a document whose

@@ -46,8 +46,7 @@ func handleOrphans(
 		// The space a run is given is the one it speaks for. Another is in the
 		// run only because a document's Space header names it, which says
 		// where that document goes and nothing of the other pages tracked
-		// there: they and their entries stay as they are, for a run given
-		// that space.
+		// there: they are left, still tracked, for a run given that space.
 		own := runSpace == "" || strings.EqualFold(runSpace, space)
 
 		orphans := tracker.OrphanEntries(space)
@@ -296,30 +295,26 @@ func handleOrphans(
 // is gone or of a document whose Space header now names another space, so the
 // wording claims neither.
 func leaveOtherSpace(config Config, space, runSpace string, orphans []manifest.Orphan, results *report.Report) {
-	paths := make([]string, 0, len(orphans))
-	for _, orphan := range orphans {
-		paths = append(paths, orphan.Path)
-	}
-
 	reason := fmt.Sprintf(
 		"space %q is not the run's space, %q; a run given --space %s acts on it", space, runSpace, space,
 	)
+
+	paths := make([]string, 0, len(orphans))
+	for _, orphan := range orphans {
+		paths = append(paths, orphan.Path)
+		if !config.Mode.readOnly() {
+			reportKept(results, page.Orphan{
+				Path: orphan.Path, PageID: orphan.Entry.PageID, Title: orphan.Entry.Title,
+			}, reason)
+		}
+	}
+
 	log.Warn().Msgf(
 		"space %q: %d tracked page(s) were not published by this run and are left alone, still tracked, "+
 			"since space %q is not the run's space, %q; to have --on-orphan act on them, "+
 			"publish that space in a run given --space %s: %s",
 		space, len(paths), space, runSpace, space, strings.Join(paths, ", "),
 	)
-
-	if config.Mode.readOnly() {
-		return
-	}
-
-	for _, orphan := range orphans {
-		reportKept(results, page.Orphan{
-			Path: orphan.Path, PageID: orphan.Entry.PageID, Title: orphan.Entry.Title,
-		}, reason)
-	}
 }
 
 // listedScope reports whether the orphans of glob are keys a partial run's
