@@ -1566,7 +1566,8 @@ func stepPast(ctx context.Context, continueOnError bool, file string, err error)
 //
 // A space holds one page of a title, so a Publisher refuses a file whose
 // space, type and title another file it published has, as Run does. A file
-// published again, under the same title or a new one, is not refused; a file
+// published again, under the same title or a new one, is not refused, and one
+// that fails before reaching a page keeps the title it held before; a file
 // renamed between two publishes is another file to it, and is.
 //
 // A Publisher sees one file at a time, never the run's whole list, so it does
@@ -1656,6 +1657,9 @@ func (p *Publisher) publish(ctx context.Context, in input) (*confluence.PageInfo
 
 	target, _, err := p.run.processFile(ctx, in)
 	if err != nil {
+		// A run publishes each file once, so only a Publisher, which may be
+		// handed the file again or another of its title, gives the claim up.
+		p.run.releaseClaim()
 		return target, err
 	}
 
@@ -1987,6 +1991,10 @@ type publishRun struct {
 	titleClaims   map[string]string
 	claimedTitles map[string]string
 
+	// pendingClaim is the title claim of the document in hand until it
+	// reaches its page.
+	pendingClaim *titleClaim
+
 	// yielded holds the documents waiting for the one retitling the page
 	// their title finds, which the run publishes ahead of its turn.
 	yielded map[string]bool
@@ -2120,6 +2128,10 @@ func (r *publishRun) processFile(ctx context.Context, in input) (*confluence.Pag
 	// moves its page under them: a page that is left alone is left where it
 	// is as well.
 	if kept, err := r.leaveDriftedInPlace(ctx, doc); kept != nil || err != nil {
+		if kept != nil {
+			// Left alone, the page is still the document's.
+			r.claimPage(doc.file)
+		}
 		return kept, nil, err
 	}
 
@@ -2252,18 +2264,49 @@ func (r *publishRun) claimTitle(ctx context.Context, doc *document) error {
 		return owner
 	}
 
-	if held, ok := r.claimedTitles[name]; ok && held != key {
-		delete(r.titleClaims, held)
+	r.pendingClaim = nil
+	if held, ok := r.claimedTitles[name]; !ok || held != key {
+		r.pendingClaim = &titleClaim{key: key, name: name, file: doc.file}
+		if ok {
+			r.pendingClaim.gaveUp = held
+			delete(r.titleClaims, held)
+		}
 	}
 	r.titleClaims[key], r.claimedTitles[name] = doc.file, key
 
 	return nil
 }
 
+// titleClaim is a title a document claimed and has not yet published under,
+// and the title it gave up for it.
+type titleClaim struct {
+	key, name, file, gaveUp string
+}
+
+// releaseClaim undoes the claim of a document that failed before it reached
+// a page: its page, if it has one, still carries the title it gave up, and
+// the title it claimed names nothing of it.
+func (r *publishRun) releaseClaim() {
+	c := r.pendingClaim
+	if c == nil {
+		return
+	}
+	r.pendingClaim = nil
+
+	delete(r.titleClaims, c.key)
+	if c.gaveUp == "" {
+		delete(r.claimedTitles, c.name)
+
+		return
+	}
+	r.titleClaims[c.gaveUp], r.claimedTitles[c.name] = c.file, c.gaveUp
+}
+
 // claimPage records file as the one publishing to Page.PageID, once it has
 // reached the page. A file that failed before then leaves the page to the next
 // one; a dry run claims at the same point a real run does.
 func (r *publishRun) claimPage(file string) {
+	r.pendingClaim = nil
 	if r.config.Page.PageID != "" && r.pageFile == "" {
 		r.pageFile = absPath(file)
 	}
