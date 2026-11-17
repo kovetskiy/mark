@@ -827,6 +827,17 @@ func TestKeyIsSlashSeparated(t *testing.T) {
 	assert.NotContains(t, manifest.Key(filepath.Join(cwd, "docs", "a.md")), `\`)
 }
 
+
+// TestKeyOfADocumentDirectoryIsItsOwnSpelling: filepath.Clean puts ".\" before
+// a path whose first element holds a colon on Windows, which would turn the
+// key of a directory's page into one IsDocumentDirectoryKey does not know, and
+// into another key than the one a Linux run records.
+func TestKeyOfADocumentDirectoryIsItsOwnSpelling(t *testing.T) {
+	key := manifest.DocumentDirectoryKey("reference", "reference/api")
+
+	assert.Equal(t, key, manifest.Key(key))
+	assert.True(t, manifest.IsDocumentDirectoryKey(key))
+}
 // TestKeysWrittenBeforeNormalisationAreMigrated: an upgrade must not strand the
 // mapping. A stranded entry has no pattern to report it and no fingerprint to
 // match it, so it becomes dead weight that arrives once and never leaves.
