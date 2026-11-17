@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -420,4 +421,73 @@ func TestADryRunRefusesATitleOfAPageThatWouldBeLeftAlone(t *testing.T) {
 			assert.Equal(t, report.StatusSkipped, reported.Status)
 		}
 	}
+}
+
+// failCreating has the server refuse to create a page, which fails a
+// document after it has claimed its title and before it reaches a page.
+func failCreating(server *confluencetest.Server) {
+	server.SetFail(func(r *http.Request) (int, string, bool) {
+		if r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/rest/api/content/") {
+			return http.StatusBadRequest, `{"message":"refused"}`, true
+		}
+		return 0, "", false
+	})
+}
+
+// TestAPublisherFreesATitleOfAFileThatFailedBeforeItsPage: a file that failed
+// before it reached a page published nothing under its title, so another
+// file of the title is not refused for it.
+func TestAPublisherFreesATitleOfAFileThatFailedBeforeItsPage(t *testing.T) {
+	server, api := docsSpace(t)
+	dir := t.TempDir()
+	one := writeFile(t, dir, "one.md", titledDoc("Shared", "Body of one."))
+	two := writeFile(t, dir, "two.md", titledDoc("Shared", "Body of two."))
+
+	ctx := context.Background()
+	publisher, err := NewPublisher(ctx, api, publishConfig(server.URL, "").PublishConfig)
+	require.NoError(t, err)
+	defer publisher.Close()
+
+	failCreating(server)
+	_, err = publisher.Publish(ctx, one)
+	require.Error(t, err)
+	server.SetFail(nil)
+
+	_, err = publisher.Publish(ctx, two)
+	require.NoError(t, err)
+	assert.Contains(t, bodyOfPageTitled(t, server, "Shared"), "Body of two.")
+}
+
+// TestAPublisherKeepsTheTitleOfAFileWhoseRetitleFailed: a file published
+// again under a new title fails before reaching its page, which keeps the
+// title it had. The file still holds that title, and another file of it is
+// refused rather than published over the page.
+func TestAPublisherKeepsTheTitleOfAFileWhoseRetitleFailed(t *testing.T) {
+	server, api := docsSpace(t)
+	dir := t.TempDir()
+	one := writeFile(t, dir, "one.md", titledDoc("First", "Body of one."))
+
+	ctx := context.Background()
+	publisher, err := NewPublisher(ctx, api, publishConfig(server.URL, "").PublishConfig)
+	require.NoError(t, err)
+	defer publisher.Close()
+
+	_, err = publisher.Publish(ctx, one)
+	require.NoError(t, err)
+
+	writeFile(t, dir, "one.md", titledDoc("Second", "Body of one."))
+	failCreating(server)
+	_, err = publisher.Publish(ctx, one)
+	require.Error(t, err)
+	server.SetFail(nil)
+
+	two := writeFile(t, dir, "two.md", titledDoc("First", "Body of two."))
+	_, err = publisher.Publish(ctx, two)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "one.md already publishes")
+	assert.Contains(t, bodyOfPageTitled(t, server, "First"), "Body of one.")
+
+	three := writeFile(t, dir, "three.md", titledDoc("Second", "Body of three."))
+	_, err = publisher.Publish(ctx, three)
+	require.NoError(t, err, "one.md never published under the title it failed on")
 }
