@@ -235,3 +235,17 @@ func TestConfluenceTagParserUnclosedSectionsInLiteralElement(t *testing.T) {
 	assert.Contains(t, got, `<ac:parameter ac:name="v">*a*&lt;![CDATA[`)
 	assert.Less(t, time.Since(start), 2*time.Second)
 }
+
+// Nor is a block of parameters that each hold a comment never closed: the
+// block has no end for one after the first.
+func TestConfluenceTagParserUnclosedSectionsInLiteralElements(t *testing.T) {
+	const parameters = 25000
+
+	input := strings.Repeat("<ac:parameter><!-- a </ac:parameter>", parameters) + "\n"
+
+	start := time.Now()
+	got := convertWithTagParser(t, input)
+
+	assert.Equal(t, parameters, strings.Count(got, "<ac:parameter>&lt;!-- a </ac:parameter>"))
+	assert.Less(t, time.Since(start), 2*time.Second)
+}
