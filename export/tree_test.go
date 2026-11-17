@@ -54,8 +54,8 @@ func TestOKFIndexHeadingKeepsTrailingHashes(t *testing.T) {
 	} {
 		t.Run(title, func(t *testing.T) {
 			idx := okfIndexes("out", "x", []planned{
-				{id: "1", title: title, output: "out/c.md"},
-				{id: "2", title: "Child", output: "out/c/child.md"},
+				{id: "1", title: title, output: filepath.Join("out", "c.md")},
+				{id: "2", title: "Child", output: filepath.Join("out", "c", "child.md")},
 			})
 			index := idx[filepath.Join("out", "c", "index.md")]
 			assert.Contains(t, index, heading+"\n")

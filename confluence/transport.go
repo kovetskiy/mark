@@ -4,11 +4,13 @@ import (
 	"context"
 	"crypto/tls"
 	"errors"
+	"fmt"
 	"io"
 	"math/rand/v2"
 	"net"
 	"net/http"
 	"net/http/cookiejar"
+	"net/url"
 	"strconv"
 	"time"
 
@@ -58,6 +60,7 @@ func newHTTPClient(insecureSkipVerify bool, base *http.Client) *http.Client {
 		if client.Jar == nil {
 			client.Jar = newCookieJar()
 		}
+		client.CheckRedirect = checkRedirect(client.CheckRedirect)
 
 		return &client
 	}
@@ -86,9 +89,110 @@ func newHTTPClient(insecureSkipVerify bool, base *http.Client) *http.Client {
 	}
 
 	return &http.Client{
-		Jar:       newCookieJar(),
-		Transport: &retryTransport{base: transport},
+		Jar:           newCookieJar(),
+		Transport:     &retryTransport{base: transport},
+		CheckRedirect: checkRedirect(nil),
 	}
+}
+
+// maxRedirects is how many redirects one request follows, as many as
+// net/http's own policy allows.
+const maxRedirects = 10
+
+// checkRedirect is the redirect policy of the client: next, or net/http's
+// own limit when that is nil, after the Authorization header has been taken
+// off a request that a redirect sends to another server than the one it was
+// made to.
+//
+// net/http keeps the header for any port and scheme of the same host name,
+// but the basic auth or token is the configured server's, as the same host
+// and port are what SameInstance and attachment links are held to. It is
+// kept from http to https on the same host and the default ports, which is
+// how a proxy moves a whole site to TLS. Once off it stays off, as it does
+// in net/http, for a chain that comes back.
+//
+// The warning is for the redirect that leaves the server, when it is
+// followed: net/http puts the header back on every later hop, and those are
+// not news.
+func checkRedirect(next func(req *http.Request, via []*http.Request) error) func(*http.Request, []*http.Request) error {
+	return func(req *http.Request, via []*http.Request) error {
+		leaves := false
+		if len(via) > 0 && req.Header.Get("Authorization") != "" {
+			hops := append(via[1:len(via):len(via)], req)
+			for _, hop := range hops {
+				if keepsAuthorization(via[0].URL, hop.URL) {
+					continue
+				}
+
+				req.Header.Del("Authorization")
+				leaves = hop == req
+
+				break
+			}
+		}
+
+		var err error
+		switch {
+		case next != nil:
+			err = next(req, via)
+		case len(via) >= maxRedirects:
+			err = fmt.Errorf("stopped after %d redirects", maxRedirects)
+		}
+
+		if leaves && err == nil {
+			log.Warn().
+				Str("requested", serverOf(via[0].URL)).
+				Str("redirected_to", serverOf(req.URL)).
+				Msg("a redirect led to another server than the one requested, " +
+					"so the request goes on without its Authorization header; " +
+					"if Confluence is served there, use that address in the base URL")
+		}
+
+		return err
+	}
+}
+
+// keepsAuthorization says whether a request first made to requested carries
+// its Authorization header on to target: the same scheme, host and port, or
+// https on the same host when both are on their default ports.
+//
+// A user name in the base URL is in requested, and a relative Location
+// carries it on to target; it is whoever configured the base URL's, so it
+// makes neither another server. One a Location puts there itself does.
+func keepsAuthorization(requested, target *url.URL) bool {
+	if target.User.String() == requested.User.String() {
+		target = withoutUser(target)
+	}
+
+	from, errA := originOf(withoutUser(requested))
+	to, errB := originOf(target)
+	if errA != nil || errB != nil {
+		return false
+	}
+
+	if from.scheme == "http" && from.port == 80 && to.scheme == "https" && to.port == 443 {
+		return from.host == to.host
+	}
+
+	return from == to
+}
+
+// withoutUser is u without the user name and password in it.
+func withoutUser(u *url.URL) *url.URL {
+	if u.User == nil {
+		return u
+	}
+
+	bare := *u
+	bare.User = nil
+
+	return &bare
+}
+
+// serverOf names the server u reaches, for a message: its scheme, host and
+// port, without the path and query of the one request.
+func serverOf(u *url.URL) string {
+	return u.Scheme + "://" + u.Host
 }
 
 // newCookieJar returns a jar for Confluence Server's session cookie, or nil

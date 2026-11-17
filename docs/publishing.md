@@ -43,6 +43,16 @@ page and copy one of the forms above, or leave `--url` out. When the URL comes
 from `MARK_PAGE_URL` or the configuration file, where `mark export` may need
 it, `--url ""` on the command line sets it aside for one run.
 
+The base URL has to be the address Confluence itself answers at, not one
+that redirects to it. Reads follow a redirect, but a write that is redirected
+with a 301, 302 or 303 arrives as a `GET` without its body, so mark fails it
+and names the address it was sent on to as a base URL: use that, such as
+`https://` in place of `http://`, or `https://example.org/wiki` when the
+redirect puts `/wiki` in front of the path. A redirect to some other path
+names only the server, or nothing when it stays on the same one. The
+`Authorization` header goes with a redirect only to the same scheme, host and
+port, or from `http` to `https` on the same host and the default ports.
+
 `mark export --url` is the same setting, under the same names. It reads
 `/display/KEY/Title` and blog post addresses as well, since it looks the page
 up rather than writing to it.
@@ -66,8 +76,11 @@ mark publish --page-header generated.md --files "docs/**/*.md"
 ```
 
 A file with a Markdown extension (`.md`, `.markdown`, `.mdown`, `.mkd`, `.mkdn`
-or `.mdwn`) is compiled like a document, with the same `--features`. Anything
-else is published as Confluence storage format. Either way it is a Go template,
+or `.mdwn`) is compiled like a document, with the same `--features`; the files
+it names are held to the default boundary around its own directory
+([attachments](attachments.md#where-an-attachment-may-come-from)), not to
+`--attachment-root`, since you give the header and a document's author does
+not. Anything else is published as Confluence storage format. Either way it is a Go template,
 executed once per page with:
 
 | field | value |
@@ -221,8 +234,9 @@ publishing, and `warningDetails` says the same with each warning's `kind`, the
 ```
 
 A line is given for a front matter key, a value one cannot hold (the key's
-line), and a header below the opening comments. A document that fails keeps
-what was found before it did.
+line), a header below the opening comments, and an admonition published
+without its body (its opening line; no line when an include holds a line that
+reads the same). A document that fails keeps what was found before it did.
 
 A `kind` is one of:
 
@@ -237,6 +251,7 @@ A `kind` is one of:
 | `attachment` | a file not uploaded, or uploaded and never used |
 | `invalid-characters` | text XML cannot carry, replaced with U+FFFD |
 | `column-widths` | a `Column-Widths` comment that was not applied |
+| `admonition-body` | with `mkdocsadmonitions`, an [admonition](formatting.md#mkdocs-admonitions) whose opening line is followed directly by lines that are neither indented under it nor ended by a `!!!` line: they are published after the box, not in it |
 | `inline-comment` | a comment `--preserve-comments` could not keep |
 | `include` | an include in a fragment that now resolves beside the fragment, not the document |
 | `placement` | a page not placed where its document asks: found outside its declared parents, outside `--parents-from-path-root`, under a parent title several documents declare, given an `Order` its parent cannot be found for, or left behind in the space it used to publish to |
@@ -435,9 +450,10 @@ You can also use `**` to get all files recursively.
 mark publish -f "**/docs/*.md"
 ```
 
-A document is held to the same boundary as the files it names
-([attachments](attachments.md#where-an-attachment-may-come-from), includes):
-one named inside the directory Mark is running in has to resolve inside it,
+A document is held to the boundary the files it names are held to by default
+([attachments](attachments.md#where-an-attachment-may-come-from), includes),
+and `--attachment-root` narrows that boundary for those files only, not for
+the document: one named inside the directory Mark is running in has to resolve inside it,
 symlinks followed. A glob such as `docs/**/*.md` follows symlinks, so a
 `docs/notes.md` or a `docs/shared` directory linking out of the repository fails
 that file, with `outside the project`, rather than being published; a symlink

@@ -390,3 +390,86 @@ func TestSaveStopsAtAWriteThatIsNoAnswerAboutItsProperty(t *testing.T) {
 	assert.Len(t, manifestPages(t, server, spaceID(t, server, "DOCS")), 2)
 	assert.Len(t, manifestPages(t, server, spaceID(t, server, "TEAM")), 1)
 }
+
+// TestSaveLeavesAShardItCannotReadAgain: a shard another run saved in a
+// format this mark does not read is not saved over, which would drop what it
+// holds; it is reported, and the other shards are saved.
+func TestSaveLeavesAShardItCannotReadAgain(t *testing.T) {
+	for name, value := range map[string]string{
+		"a newer format": `{"version":99,"pages":{"a.md":{"pageId":"1"}},"more":true}`,
+		"not a shard":    `"moved"`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			ctx := t.Context()
+			first, server := newStore(t)
+			server.AddSpace("DOCS")
+			id := spaceID(t, server, "DOCS")
+			beside, apart := sameShard(t, "a.md"), otherShard(t, "a.md")
+
+			require.NoError(t, first.Record(ctx, "DOCS", "a.md", "1", "A", ""))
+			require.NoError(t, first.Record(ctx, "DOCS", beside, "2", "B", ""))
+			require.NoError(t, first.Save(ctx))
+
+			store := newStoreOn(t, server)
+			require.NoError(t, store.Record(ctx, "DOCS", "a.md", "1", "A", "changed"))
+			require.NoError(t, store.Record(ctx, "DOCS", apart, "3", "C", ""))
+
+			key := manifest.PropertyKey(manifest.ShardFor("a.md"))
+			server.SetSpaceProperty(id, key, []byte(value))
+
+			err := store.Save(ctx)
+			require.ErrorIs(t, err, confluence.ErrPropertyConflict)
+			assert.Contains(t, err.Error(), key)
+
+			assert.JSONEq(t, value, string(server.SpaceProperty(id, key).Value), "the shard is left as it was found")
+			assert.NotNil(t, shardOf(server, id, apart), "the other shard is saved")
+
+			_, held, err := store.Recorded(ctx, "DOCS", beside)
+			require.NoError(t, err)
+			assert.True(t, held, "the entry this run left alone is still held")
+		})
+	}
+}
+
+// TestSaveStopsWhenAShardCannotBeReadAgain: a refused shard is read again, and
+// a login Confluence does not accept by then would meet every later request
+// the same, so the save ends there.
+func TestSaveStopsWhenAShardCannotBeReadAgain(t *testing.T) {
+	ctx := t.Context()
+	first, server := newStore(t)
+	server.AddSpace("DOCS")
+	apart := otherShard(t, "a.md")
+
+	require.NoError(t, first.Record(ctx, "DOCS", "a.md", "1", "A", ""))
+	require.NoError(t, first.Record(ctx, "DOCS", apart, "2", "B", ""))
+	require.NoError(t, first.Save(ctx))
+
+	left := newStoreOn(t, server)
+	right := newStoreOn(t, server)
+	for _, run := range []*manifest.Store{left, right} {
+		require.NoError(t, run.Record(ctx, "DOCS", "a.md", "1", "A", "changed"))
+		require.NoError(t, run.Record(ctx, "DOCS", apart, "2", "B", "changed"))
+	}
+	require.NoError(t, left.Save(ctx))
+
+	listings, writes := 0, 0
+	server.SetFailHeaders(http.Header{
+		"Content-Type":         {"text/html"},
+		"X-Seraph-LoginReason": {"AUTHENTICATED_FAILED"},
+	})
+	server.SetFail(func(r *http.Request) (int, string, bool) {
+		switch {
+		case r.Method == http.MethodPut:
+			writes++
+		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/properties"):
+			listings++
+			return http.StatusOK, "<html><body>Log in</body></html>", true
+		}
+		return 0, "", false
+	})
+
+	err := right.Save(ctx)
+	require.ErrorIs(t, err, confluence.ErrLoginPage)
+	assert.Equal(t, 1, writes, "the shards after the first were not attempted")
+	assert.Equal(t, 1, listings)
+}

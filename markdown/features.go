@@ -50,10 +50,9 @@ var markdownFeatures = map[string]markdownFeature{
 		},
 	},
 	"mkdocsadmonitions": {
-		parserOptions: func(*parser.Config) []parser.Option {
-			return []parser.Option{parser.WithBlockParsers(
-				util.Prioritized(cparser.NewAdmonitionParser(), 100),
-			)}
+		parserOptions: func(cfg *parser.Config) []parser.Option {
+			// Added directly, as an extension cannot hand goldmark another.
+			return cparser.NewAdmonitionParser().ParserOptions(cfg)
 		},
 		renderer: func(featureDeps) html.Extension {
 			return crenderer.NewConfluenceMkDocsAdmonitionRenderer()

@@ -134,6 +134,48 @@ document is something a contributor writes.
 If a legitimate attachment lives outside, publish from a directory that contains
 both it and the documents.
 
+`--attachment-root` (`attachment-root` in the configuration file,
+`MARK_ATTACHMENT_ROOT`) narrows that boundary. A file has to be inside both
+the boundary above and the root, so the root never lets a document reach a
+file the default refuses:
+
+* `document` holds each document to its own directory and what is below it.
+  For a repository with one document per directory, it stops one document from
+  publishing another's files: `<!-- Attachment: ../other-doc/file.pdf -->` is
+  refused, though the file is inside the directory Mark is running in.
+* A path holds every document to that directory, whichever directory the
+  document is in. A relative path is taken from the directory Mark is running
+  in, and the directory has to exist. A document outside the directory cannot
+  publish the files beside it, and a directory above the one Mark is running
+  in, such as `..` or `/`, allows no more than the default. A directory really
+  called `document` is written `./document`: `document` alone is the keyword
+  above, and Mark warns when it finds such a directory where it is running.
+
+Symlinks are followed either way, and a file outside the root fails the
+document with `outside the project`, as above; the message says whether the
+default boundary or the root refused it. The root covers every file a
+document names: `<!-- Attachment: -->` headers and patterns, images, files
+links point at with `--attach-referenced`, files macros name, and a d2
+diagram's imports and images. A Markdown `--page-header` is given by whoever
+runs Mark rather than written by a document's author, so its images are held
+to the default boundary around the header's own directory, whatever the root.
+The root limits the files a page attaches, not the text a document includes
+or the macro templates it uses: those keep the default boundary, which
+`--include-path` widens, so under `document` an
+`<!-- Include: ../other-doc/x -->` can still read another document's
+directory. The document itself is held to the boundary described in
+[publishing](publishing.md), whatever the root.
+
+In the Go library this is `RenderingConfig.AttachmentRoot`, an
+`attachment.Boundary`, or `attachment.BoundaryDocument` for `document`. The
+`attachment.Root` a document's files are read through carries it
+(`Root.WithBoundary`), so for `CompileMarkdown` it is
+`markdown.Options.Root`. A `Document` read from an `fs.FS` may name anything
+inside the FS by default, and with `document` only what is in its own
+directory there; a path is a directory on disk, which holds nothing of an FS,
+so such a `Document` is refused under one: narrow the FS with `fs.Sub`
+instead. A refused file is `attachment.ErrOutsideProject` to `errors.Is`.
+
 ## Use HTML img tags for sizing
 
 Standard HTML `<img>` tags (inline, block, single-line, or multi-line) are converted into `<ac:image>` macros. This allows you to specify sizing while keeping the document readable in standard Markdown renderers like GitHub:

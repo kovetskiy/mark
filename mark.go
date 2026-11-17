@@ -488,7 +488,19 @@ type RenderingConfig struct {
 	// or empty for none.
 	ImageAlign       string
 	AttachReferenced bool
-	IncludePath      string
+	// AttachmentRoot is how far the files a document names may reach, with
+	// symlinks followed: its Attachment: headers, images, files links point
+	// at with AttachReferenced, files macros name, and a d2 diagram's imports
+	// and images. A file outside it fails the document with
+	// attachment.ErrOutsideProject. Empty is the default boundary, the
+	// document's directory or the working directory, or a Document's FS;
+	// attachment.BoundaryDocument is the document's directory alone; anything
+	// else is a directory on disk, which must exist, and which a Document with
+	// an FS is refused under. Either narrows the default and never widens it:
+	// a file has to be inside both. Includes keep their own boundary, which
+	// IncludePath widens, and a Markdown PageHeader's images the default.
+	AttachmentRoot attachment.Boundary
+	IncludePath    string
 	// PageHeader is a template placed at the top of every page: Markdown
 	// when it has a Markdown extension, storage format otherwise.
 	PageHeader string
@@ -609,14 +621,39 @@ func (c PublishConfig) prepare() (page.LinkChecks, error) {
 
 // Validate checks the settings each document is published with, as Run and
 // NewPublisher do before anything else, without a connection or any
-// documents. It does look on disk for Links.StagedRoot and Links.SourceRoot,
-// so call it once they exist. A link setting it refuses is a
-// *LinkConfigError. Run checks the settings
+// documents. It does look on disk for Links.StagedRoot, Links.SourceRoot and
+// a directory Rendering.AttachmentRoot names, so call it once they exist. A
+// link setting it refuses is a *LinkConfigError. Run checks the settings
 // about the run as a whole as well, which this does not.
 func (c PublishConfig) Validate() error {
 	_, err := c.prepare()
 
 	return err
+}
+
+// attachmentRootSetting names RenderingConfig.AttachmentRoot to the library
+// caller and on the command line, as the attachment package does.
+const attachmentRootSetting = "Rendering.AttachmentRoot (--attachment-root)"
+
+// warnAttachmentRoot says when AttachmentRoot is the keyword "document"
+// and a directory of that name is in the working directory, where a relative
+// path root is looked for: the keyword holds each document to its own
+// directory, which is not what someone naming that directory meant.
+func (r RenderingConfig) warnAttachmentRoot() {
+	if r.AttachmentRoot != attachment.BoundaryDocument {
+		return
+	}
+
+	info, err := os.Stat(string(attachment.BoundaryDocument))
+	if err != nil || !info.IsDir() {
+		return
+	}
+
+	log.Warn().Msgf(
+		"%s %q holds each document to its own directory, not to the directory %q here; name that directory %q",
+		attachmentRootSetting, string(attachment.BoundaryDocument), string(attachment.BoundaryDocument),
+		"."+string(filepath.Separator)+string(attachment.BoundaryDocument),
+	)
 }
 
 // validate refuses rendering settings the renderers cannot act on.
@@ -645,6 +682,10 @@ func (r RenderingConfig) validate() error {
 				output.field, output.value,
 			)
 		}
+	}
+
+	if err := r.AttachmentRoot.Validate(); err != nil {
+		return fmt.Errorf("invalid %s: %w", attachmentRootSetting, err)
 	}
 
 	if r.MermaidBundle && r.MermaidOutput != imageformat.SVG {
@@ -1519,6 +1560,10 @@ func NewPublisher(ctx context.Context, api *confluence.API, config PublishConfig
 func newPublisher(
 	ctx context.Context, api *confluence.API, config PublishConfig, checks page.LinkChecks,
 ) (*Publisher, error) {
+	// Here rather than in prepare, which Validate shares, so that a run says
+	// it once.
+	config.Rendering.warnAttachmentRoot()
+
 	res, err := newResources(config.Rendering.MermaidEngine)
 	if err != nil {
 		return nil, err
@@ -1972,6 +2017,10 @@ func (r *publishRun) processFile(ctx context.Context, in input) (*confluence.Pag
 		return nil, nil, err
 	}
 
+	// A run keeps the warnings to its end, and the mapping holds the
+	// document's text; no warning names a line once the document is done.
+	defer doc.warnings.MapLines(nil)
+
 	// Before anything is asked of Confluence: a document that has opted out
 	// should cost nothing, not a page lookup and an attachment upload it will
 	// not use.
@@ -2125,6 +2174,10 @@ func absPath(file string) string {
 func (r *publishRun) readDocument(in input) (*document, error) {
 	file := in.file
 
+	// Every file the document names is read through its root, so the root
+	// carries the boundary they are held to.
+	in.root = in.root.WithBoundary(r.config.Rendering.AttachmentRoot)
+
 	source, markdown, lineOf, err := in.read()
 	if err != nil {
 		return nil, err
@@ -2139,6 +2192,8 @@ func (r *publishRun) readDocument(in input) (*document, error) {
 	warnings := r.warningsFor(file)
 	warnings.Reread()
 	warnings.MapLines(lineOf)
+
+	read := markdown
 
 	meta, markdown, err := documentMeta(r.config, file, markdown, r.hierarchy, warnings)
 	if err != nil {
@@ -2160,6 +2215,19 @@ func (r *publishRun) readDocument(in input) (*document, error) {
 			"the document's metadata is ignored: the page to publish to is named by id")
 		meta = nil
 	}
+
+	// From here on a warning about a line counts in the text that is
+	// compiled, which is the text read without its headers. processFile
+	// drops the mapping once the document is done.
+	bodyLineOf := mdsource.LinesOf(markdown, read)
+
+	warnings.MapLines(func(line int) int {
+		if line = bodyLineOf(line); line > 0 && lineOf != nil {
+			return lineOf(line)
+		}
+
+		return line
+	})
 
 	return &document{
 		input: in, sourceHash: sourceHash, meta: meta, markdown: markdown, warnings: warnings,

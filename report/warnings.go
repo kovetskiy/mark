@@ -59,6 +59,11 @@ const (
 	// WarningColumnWidths is a Column-Widths comment that was not applied.
 	WarningColumnWidths WarningKind = "column-widths"
 
+	// WarningAdmonitionBody is an admonition whose opening line is followed
+	// by lines that are not indented under it and that no closing line ends:
+	// they are published after the admonition, not in it.
+	WarningAdmonitionBody WarningKind = "admonition-body"
+
 	// WarningInlineComment is an inline comment that could not be kept on the
 	// page's new body.
 	WarningInlineComment WarningKind = "inline-comment"

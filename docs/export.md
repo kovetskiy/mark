@@ -331,6 +331,16 @@ cells or with lists or macros in them, headings and cells with an alignment or
 a colour, `<pre>` blocks, and HTML that Markdown has no syntax for (`<u>`,
 `<sub>`, a coloured `<span>`), and a blockquote that opens with a
 [colon marker](formatting.md#colon-markers), which would come back as a macro.
+So does a link or an image whose address is relative, such as `../notes.txt`
+or `chart.png`: on the page it is relative to the page, and written as
+Markdown it would name a file beside the document, which publishing links to
+as a page or uploads. That is every image address without a `://`, and every
+link address without one except an anchor (`#...`), a path from the site root
+(`/...`) and `mailto:`; so a `tel:` link is kept as well. Such a link stays an
+`<a>` and such an image an `<ac:image>`, which an `<img>` with such an address
+becomes too, with its `width`, `height`, `title` and `alt`; an `align` or a
+`style` it has is not carried over. An export to read (`--format okf`) writes
+the link and the image as Markdown and leaves the `<img>` as it is.
 Lists and blockquotes are Markdown down to a hundred of them one inside the
 other, and storage format below that, where the indentation Markdown needs on
 every line would outgrow the page.

@@ -450,6 +450,13 @@ func publishFlags(config *configFile) []cli.Flag {
 				config.value("attach-referenced")),
 		},
 		&cli.StringFlag{
+			Name:      "attachment-root",
+			Value:     "",
+			Usage:     "narrows the default boundary, the document's directory or the working directory, that every file a document names (Attachment: headers, images, linked files, files macros name, d2 imports) has to resolve inside, with symlinks followed: \"document\" for the document's own directory, or a path, which must exist. A file has to be inside both, so a path never allows more than the default. Includes, macro templates and a --page-header's images keep their own rules.",
+			TakesFile: true,
+			Sources:   cli.NewValueSourceChain(cli.EnvVar("MARK_ATTACHMENT_ROOT"), config.value("attachment-root")),
+		},
+		&cli.StringFlag{
 			Name:    "image-align",
 			Value:   "",
 			Usage:   "set image alignment (left, center, right). Can be overridden per-file via the Image-Align header.",

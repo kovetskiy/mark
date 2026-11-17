@@ -23,9 +23,10 @@ type inlineWriter struct {
 	ctx inlineContext
 	b   strings.Builder
 
-	// afterBreak is set by a hard line break, whose own newline replaces the
-	// one the text after it starts with.
-	afterBreak bool
+	// trailingBreaks counts the hard line breaks, written with a backslash,
+	// that what has been written so far ends in. The newline of the last one
+	// replaces the one the text after it starts with.
+	trailingBreaks int
 }
 
 func (c *converter) inline(ctx inlineContext) *inlineWriter {
@@ -33,18 +34,43 @@ func (c *converter) inline(ctx inlineContext) *inlineWriter {
 }
 
 func (w *inlineWriter) finish() string {
-	out := w.b.String()
-	// A hard break at the very end breaks nothing, and Markdown would read
-	// the backslash as text.
-	return strings.TrimSuffix(strings.TrimRight(out, " \n"), "\\")
+	// Hard breaks at the very end break nothing, and Markdown would read
+	// the backslash of one as text.
+	out, _ := w.withoutTrailingBreaks()
+
+	return strings.TrimRight(out, " \n")
 }
 
 func (w *inlineWriter) write(s string) {
 	if s == "" {
 		return
 	}
+	// Space after a hard break shows nowhere, and would hide the break from
+	// what takes the trailing ones off.
+	if w.trailingBreaks > 0 && strings.Trim(s, " \t\n") == "" {
+		return
+	}
 	w.b.WriteString(s)
-	w.afterBreak = false
+	w.trailingBreaks = 0
+}
+
+// hardBreak is a hard line break as Markdown writes it.
+const hardBreak = "\\\n"
+
+// withoutTrailingBreaks is what has been written, less the hard line breaks
+// it ends in, and how many those are. Inside emphasis or a link the backslash
+// of the last one would escape the closing delimiter, so they are written
+// after it.
+func (w *inlineWriter) withoutTrailingBreaks() (string, int) {
+	out := w.b.String()
+
+	return out[:len(out)-w.trailingBreaks*len(hardBreak)], w.trailingBreaks
+}
+
+func (w *inlineWriter) lineBreaks(count int) {
+	for range count {
+		w.lineBreak()
+	}
 }
 
 // writeLink writes a link, escaping a "!" just before it, which would make it
@@ -150,7 +176,7 @@ func (w *inlineWriter) text(text string) {
 		text = softBreakSpaces.ReplaceAllString(text, "\n")
 	}
 
-	if w.afterBreak {
+	if w.trailingBreaks > 0 {
 		text = strings.TrimLeft(text, " \t\n")
 	}
 
@@ -169,8 +195,9 @@ func (w *inlineWriter) lineBreak() {
 		return
 	}
 
-	w.write("\\\n")
-	w.afterBreak = true
+	breaks := w.trailingBreaks
+	w.write(hardBreak)
+	w.trailingBreaks = breaks + 1
 }
 
 // emphasis writes strong, emphasis and strikethrough with Markdown's
@@ -181,7 +208,7 @@ func (w *inlineWriter) lineBreak() {
 func (w *inlineWriter) emphasis(n *node, delimiter, tag string) {
 	sub := w.c.inline(w.ctx)
 	sub.nodes(n.children)
-	inner := sub.b.String()
+	inner, breaks := sub.withoutTrailingBreaks()
 
 	core := strings.TrimLeftFunc(inner, unicode.IsSpace)
 	lead := inner[:len(inner)-len(core)]
@@ -189,9 +216,15 @@ func (w *inlineWriter) emphasis(n *node, delimiter, tag string) {
 	trail := core[len(trimmed):]
 	core = trimmed
 
+	if breaks > 0 {
+		// Space ahead of a line break shows nowhere.
+		trail = ""
+	}
+
 	w.write(lead)
 	if core == "" {
 		w.write(trail)
+		w.lineBreaks(breaks)
 		return
 	}
 
@@ -199,7 +232,9 @@ func (w *inlineWriter) emphasis(n *node, delimiter, tag string) {
 	last, _ := utf8.DecodeLastRuneInString(core)
 
 	next := rune(' ')
-	if trail == "" {
+	if breaks > 0 {
+		next = '\\'
+	} else if trail == "" {
 		next = followingRune(n)
 	}
 
@@ -215,6 +250,7 @@ func (w *inlineWriter) emphasis(n *node, delimiter, tag string) {
 		w.write("<" + tag + ">" + core + "</" + tag + ">")
 	}
 	w.write(trail)
+	w.lineBreaks(breaks)
 }
 
 func isPunct(r rune) bool {
@@ -303,8 +339,55 @@ func plainAttrs(n *node, allowed ...string) bool {
 	return true
 }
 
+// plainLink reports whether an <a> can be written as a Markdown link: it says
+// nothing a link cannot, and publishing reads its address as written.
 func (w *inlineWriter) plainLink(n *node) bool {
-	return plainAttrs(n, "href", "title")
+	if !plainAttrs(n, "href", "title") {
+		return false
+	}
+
+	href := n.attr("href")
+	if w.c.opts.Reading || !linkNamesFile(href) {
+		return true
+	}
+
+	_, _, exported := w.exportedPage(href)
+
+	return exported
+}
+
+// linkNamesFile reports whether publishing would look beside the document
+// for what a link's address names: a document to link to as a page, a file to
+// attach, or with "ac:" a page by its title. On the page the address is
+// relative to the page, so it is kept as the <a> it was, which publishing
+// leaves alone.
+func linkNamesFile(href string) bool {
+	if href == "" || strings.Contains(href, "://") {
+		return false
+	}
+
+	for _, prefix := range []string{"#", "/", "mailto:"} {
+		if strings.HasPrefix(href, prefix) {
+			return false
+		}
+	}
+
+	return true
+}
+
+// imageNamesFile is linkNamesFile for an image's address. Publishing looks
+// beside the document for any image that names no host.
+func imageNamesFile(src string) bool {
+	return !strings.Contains(src, "://")
+}
+
+// exportedPage is the file of the exported page a URL on the page points at.
+func (w *inlineWriter) exportedPage(href string) (path, title string, ok bool) {
+	if w.c.opts.PageURLPath == nil {
+		return "", "", false
+	}
+
+	return w.c.opts.PageURLPath(href)
 }
 
 // link writes an <a>, as an autolink when it shows its own address.
@@ -319,11 +402,7 @@ func (w *inlineWriter) link(n *node) {
 	text := n.textContent()
 
 	dest := destination(href)
-	var path, pageTitle string
-	var exported bool
-	if w.c.opts.PageURLPath != nil {
-		path, pageTitle, exported = w.c.opts.PageURLPath(href)
-	}
+	path, pageTitle, exported := w.exportedPage(href)
 	if exported {
 		dest = destination(pathDestination(path))
 		// A link showing its own address would go on showing the old URL; it
@@ -345,8 +424,10 @@ func (w *inlineWriter) link(n *node) {
 
 	sub := w.c.inline(w.ctx)
 	sub.nodes(n.children)
+	inner, breaks := sub.withoutTrailingBreaks()
 
-	w.writeLink("[" + strings.TrimSpace(sub.b.String()) + "](" + dest + linkTitle(title) + ")")
+	w.writeLink("[" + strings.TrimSpace(inner) + "](" + dest + linkTitle(title) + ")")
+	w.lineBreaks(breaks)
 }
 
 // destination writes a link destination: as it is where it can be, and in
@@ -685,6 +766,11 @@ func (w *inlineWriter) imageMarkdown(n *node, use bool) (string, bool) {
 	case target.is("ri:url") && plainAttrs(target, "ri:value"):
 		src = target.attr("ri:value")
 		if src == "" {
+			return "", false
+		}
+		// Kept as storage format, which publishing leaves alone: on the
+		// page the address is relative to the page.
+		if !w.c.opts.Reading && imageNamesFile(src) {
 			return "", false
 		}
 	default:

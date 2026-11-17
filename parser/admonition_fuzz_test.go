@@ -5,7 +5,6 @@ import (
 
 	cparser "github.com/kovetskiy/mark/v17/parser"
 	"github.com/yuin/goldmark/v2/parser"
-	"github.com/yuin/goldmark/v2/util"
 )
 
 // FuzzAdmonitionParser parses arbitrary input with the admonition parser
@@ -46,7 +45,7 @@ func FuzzAdmonitionParser(f *testing.F) {
 	}
 
 	md := parser.New(
-		parser.WithBlockParsers(util.Prioritized(cparser.NewAdmonitionParser(), 100)),
+		cparser.NewAdmonitionParser().ParserOptions(nil)...,
 	)
 
 	f.Fuzz(func(t *testing.T, source string) {

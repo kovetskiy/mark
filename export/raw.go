@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/kovetskiy/mark/v17/attachment"
+	"github.com/kovetskiy/mark/v17/internal/syntax"
 	"github.com/kovetskiy/mark/v17/stdlib"
 )
 
@@ -80,7 +81,17 @@ func (c *converter) writeRaw(b *strings.Builder, n *node, mode rawMode) {
 			return
 		}
 
+		if mode == rawInline && n.insideLiteral() {
+			b.WriteString(literalText(n.text))
+			return
+		}
+
 		b.WriteString(rawText(n.text, mode))
+		return
+	}
+
+	if image, ok := c.relativeImg(n, mode); ok {
+		b.WriteString(image)
 		return
 	}
 
@@ -98,6 +109,53 @@ func (c *converter) writeRaw(b *strings.Builder, n *node, mode rawMode) {
 	}
 
 	b.WriteString("</" + n.name + ">")
+}
+
+// relativeImg writes an <img> whose address names no host as the ac:image
+// publishing makes of one it finds no file for. Left an <img>, publishing
+// would look beside the document for the file; on the page the address is
+// relative to the page. An align or a style it has is not carried over.
+//
+// Publishing looks for no file where it leaves the <img> as written: in a
+// metadata header, and in a <picture> that is part of an HTML block.
+func (c *converter) relativeImg(n *node, mode rawMode) (string, bool) {
+	src := n.attr("src")
+	if !n.is("img") || src == "" || c.opts.Reading || mode == rawLine || !imageNamesFile(src) {
+		return "", false
+	}
+
+	if mode == rawBlock {
+		for parent := n.parent; parent != nil; parent = parent.parent {
+			if parent.is("picture") {
+				return "", false
+			}
+		}
+	}
+
+	var b strings.Builder
+	b.WriteString("<ac:image")
+	for _, a := range []struct{ name, value string }{
+		{"ac:width", pixels(n.attr("width"))},
+		{"ac:height", pixels(n.attr("height"))},
+		{"ac:title", n.attr("title")},
+		{"ac:alt", n.attr("alt")},
+	} {
+		if a.value == "" {
+			continue
+		}
+		if a.name == "ac:width" {
+			b.WriteString(` ac:custom-width="true"`)
+		}
+		b.WriteString(" " + a.name + `="` + escapeAttr(a.value) + `"`)
+	}
+	b.WriteString(`><ri:url ri:value="` + escapeAttr(src) + `"/></ac:image>`)
+
+	return b.String(), true
+}
+
+// pixels is a width or height the way publishing reads one from an <img>.
+func pixels(value string) string {
+	return strings.TrimSuffix(strings.TrimSpace(value), "px")
 }
 
 // openTag is the start tag of an element, self-closed when the element is
@@ -150,6 +208,29 @@ func cdata(text string) string {
 
 	return b.String()
 }
+
+// insideLiteral reports whether n lies in an element mark publishes as
+// written, at any depth: what a parameter holds is not read as Markdown up to
+// its closing tag, the text of an element inside it included.
+func (n *node) insideLiteral() bool {
+	for p := n.parent; p != nil; p = p.parent {
+		if syntax.IsLiteralElement(p.name) {
+			return true
+		}
+	}
+
+	return false
+}
+
+// literalText escapes the text of an element mark publishes as written, such
+// as a macro parameter: it is not read as Markdown, so only XML is escaped. A
+// pipe is a reference because a table cell would end at one, and a backslash
+// before it would be published outside a table.
+func literalText(text string) string {
+	return literalEscaper.Replace(escapeXMLText(text))
+}
+
+var literalEscaper = strings.NewReplacer("\n", "&#10;", "|", "&#124;")
 
 // rawText escapes text between tags written out verbatim.
 func rawText(text string, mode rawMode) string {

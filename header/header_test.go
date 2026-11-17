@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/kovetskiy/mark/v17/attachment"
 	"github.com/kovetskiy/mark/v17/markdown"
 	"github.com/kovetskiy/mark/v17/report"
 	"github.com/kovetskiy/mark/v17/stdlib"
@@ -222,5 +223,38 @@ func TestEveryMarkdownExtensionIsCompiled(t *testing.T) {
 			require.NoError(t, err)
 			assert.Equal(t, "<p><strong>Generated</strong></p>\n", html)
 		})
+	}
+}
+
+// TestMarkdownHeaderKeepsTheDefaultBoundary: the header is not the document,
+// so the Boundary a document's root carries does not hold its images: one
+// beside the header's directory is attached under attachment.BoundaryDocument
+// and under a directory that does not hold it, and one outside the working
+// directory is refused either way.
+func TestMarkdownHeaderKeepsTheDefaultBoundary(t *testing.T) {
+	repo := t.TempDir()
+	t.Chdir(repo)
+	require.NoError(t, os.MkdirAll(filepath.Join(repo, "templates"), 0o755))
+	require.NoError(t, os.MkdirAll(filepath.Join(repo, "images"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(repo, "images", "logo.png"), []byte("png"), 0o600))
+
+	path := filepath.Join("templates", "header.md")
+	require.NoError(t, os.WriteFile(path, []byte("![logo](../images/logo.png)\n"), 0o600))
+
+	outside := filepath.Join("templates", "outside.md")
+	require.NoError(t, os.WriteFile(outside, []byte("![logo](../../elsewhere/logo.png)\n"), 0o600))
+
+	for _, boundary := range []attachment.Boundary{"", attachment.BoundaryDocument, "templates"} {
+		cfg := markdown.Options{Root: attachment.Root{}.WithBoundary(boundary)}
+
+		header, err := Load(t.Context(), path, newStdlib(t), cfg)
+		require.NoError(t, err, "boundary %q", boundary)
+
+		_, attachments, err := header.Render(t.Context(), "doc.md", "Title", "DOCS", cfg)
+		require.NoError(t, err, "boundary %q", boundary)
+		require.Len(t, attachments, 1, "boundary %q", boundary)
+
+		_, err = Load(t.Context(), outside, newStdlib(t), cfg)
+		require.ErrorIs(t, err, attachment.ErrOutsideProject, "boundary %q", boundary)
 	}
 }

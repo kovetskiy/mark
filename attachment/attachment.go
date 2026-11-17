@@ -296,17 +296,25 @@ var ErrOutsideProject = errors.New("outside the project")
 // "/etc/id_rsa" becomes "<base>/etc/id_rsa", which is inside the project and
 // does not exist, so the check passes and the read still happens somewhere
 // else entirely.
+//
+// Root.CheckReadable is the same check held to the Root's Boundary.
 func CheckReadable(base, reference string) error {
+	return Boundary("").checkReadable(base, reference)
+}
+
+// checkReadable is CheckReadable held to b.
+func (b Boundary) checkReadable(base, reference string) error {
 	path := reference
 	if !filepath.IsAbs(path) {
 		path = filepath.Join(base, path)
 	}
 
-	return checkPath(base, path, reference)
+	return b.checkPath(base, path, reference)
 }
 
-// checkAttachmentPath refuses an attachment that resolves outside both the
-// document's own directory and the directory mark is running in.
+// checkAttachmentPath refuses an attachment that resolves outside b: by
+// default, both the document's own directory and the directory mark is
+// running in.
 //
 // A document says which files to upload, and a document is content: on a
 // repository that takes pull requests, a contributor could point an image at
@@ -316,55 +324,185 @@ func CheckReadable(base, reference string) error {
 // Upward paths themselves are ordinary -- "../images/logo.png" is how a docs
 // directory refers to shared assets, and README documents it -- so the boundary
 // is not the document's directory. It is that directory or the one mark was run
-// in, which for a run at the root of a repository is the repository.
+// in, which for a run at the root of a repository is the repository, unless a
+// Boundary draws it elsewhere.
 //
 // Both sides are resolved before the comparison, since a link committed to the
 // repository is as good as a path for reaching outside it -- and since the
 // roots have to be resolved too, or a repository reached through a symlinked
 // path would put every file in it outside itself.
-func checkAttachmentPath(base, name string) error {
-	return checkPath(base, filepath.Join(base, name), name)
+func (b Boundary) checkAttachmentPath(base, name string) error {
+	return b.checkPath(base, filepath.Join(base, name), name)
 }
 
-// checkPath holds a resolved path to the project boundary. named is what the
-// document actually wrote, which is what the reader has to go and look at.
-func checkPath(base, resolved, named string) error {
+// checkPath holds a resolved path to b, drawn around a document in base.
+// named is what the document actually wrote, which is what the reader has to
+// go and look at.
+//
+// The default boundary holds under every b, which only narrows it: a
+// document's author chooses what it names, and a root above the working
+// directory must not let it name more.
+func (b Boundary) checkPath(base, resolved, named string) error {
 	roots := []string{base}
 	if cwd, err := os.Getwd(); err == nil {
 		roots = append(roots, cwd)
 	}
 
-	path, ok := within(roots, resolved)
+	// Reported as the resolved absolute path: "docs/../../id_rsa" cleans down
+	// to "../id_rsa", which says less about where the file actually is than the
+	// reader needs in order to judge it.
+	if path, ok := within(roots, resolved); !ok {
+		return b.outsideDefault(base, named, path)
+	}
+
+	if b == "" {
+		return nil
+	}
+
+	// One directory alone has no working directory beside it to catch a
+	// relative base resolved apart from an absolute name.
+	dir := base
+	if b != BoundaryDocument {
+		dir = string(b)
+	}
+
+	dir, path, ok, err := withinDir(dir, resolved)
+	if err != nil {
+		return fmt.Errorf("unable to hold %q to the attachment root: %w", named, err)
+	}
+
 	if ok {
 		return nil
 	}
 
-	// Reported as the resolved absolute path: "docs/../../id_rsa" cleans down
-	// to "../id_rsa", which says less about where the file actually is than the
-	// reader needs in order to judge it.
-	return fmt.Errorf(
-		"%w: %q resolves to %s, which is outside both %q and the directory mark is "+
-			"running in; publish from a directory that contains it",
-		ErrOutsideProject, named, path, base,
-	)
+	return b.outside(dir, named, path)
+}
+
+// outsideDefault is the refusal of named, which resolves to path, as outside
+// the default boundary drawn around a document in base. Under an attachment
+// root it says so, since a root wider than the default is no reason the file
+// is refused.
+//
+// Both paths are made absolute: run from the document's own directory, base
+// is ".", which says nothing about where the boundary lies.
+func (b Boundary) outsideDefault(base, named, path string) error {
+	if abs, err := filepath.Abs(base); err == nil {
+		base = abs
+	}
+
+	if abs, err := filepath.Abs(path); err == nil {
+		path = abs
+	}
+
+	where := fmt.Sprintf("both %q and the directory mark is running in", base)
+	if b != "" {
+		where += fmt.Sprintf(", the default boundary, which %s %q narrows and never widens", boundarySetting, string(b))
+	}
+
+	return fmt.Errorf("%w: %q resolves to %s, which is outside %s; publish from a directory that contains it",
+		ErrOutsideProject, named, path, where)
+}
+
+// outside is the refusal of named, which resolves to path, as outside dir:
+// the document's directory, or the directory b names. The setting is named
+// as a run's caller knows it, since a relative dir such as "." says nothing
+// about which rule refused the file.
+func (b Boundary) outside(dir, named, path string) error {
+	var where string
+
+	switch b {
+	case BoundaryDocument:
+		where = fmt.Sprintf("the document's directory %q: %s is %q", dir, boundarySetting, string(b))
+	default:
+		where = fmt.Sprintf("%q, the directory %s names", dir, boundarySetting)
+	}
+
+	return fmt.Errorf("%w: %q resolves to %s, which is outside %s", ErrOutsideProject, named, path, where)
+}
+
+// boundarySetting names the Boundary of a run to the library caller and on
+// the command line.
+const boundarySetting = "Rendering.AttachmentRoot (--attachment-root)"
+
+// withinDir is within for one directory, dir and path made absolute first, as
+// Within makes them: one resolved while relative keeps the working
+// directory's own link and reads as outside the other. It returns dir as it
+// compared it too.
+func withinDir(dir, path string) (resolvedDir, resolved string, ok bool, err error) {
+	absDir, err := absolute(dir)
+	if err != nil {
+		return "", "", false, err
+	}
+
+	absPath, err := absolute(path)
+	if err != nil {
+		return "", "", false, err
+	}
+
+	resolvedDir = fspath.ResolveDeepest(absDir)
+	resolved = fspath.ResolveDeepest(absPath)
+
+	return resolvedDir, resolved, withinAny(resolved, []string{resolvedDir}), nil
+}
+
+// absolute is path made absolute without cleaning it, as filepath.Abs does:
+// a ".." after a link is taken from the link's target when the path is
+// opened, and fspath.ResolveDeepest takes it so only if it is still there.
+func absolute(path string) (string, error) {
+	if filepath.IsAbs(path) {
+		return path, nil
+	}
+
+	// On Windows "\x" is on the working directory's drive and "D:x" is
+	// relative to D:'s own directory, so neither goes below the working
+	// directory; filepath.Abs knows where they lead.
+	if filepath.VolumeName(path) != "" || (path != "" && os.IsPathSeparator(path[0])) {
+		return filepath.Abs(path)
+	}
+
+	cwd, err := os.Getwd()
+	if err != nil {
+		return "", err
+	}
+
+	return cwd + string(filepath.Separator) + path, nil
 }
 
 // within reports whether resolved is inside any of roots, both resolved
 // through their symlinks, and returns resolved as it compared it.
+//
+// Each is made absolute before it is resolved, as withinDir does: a relative
+// path resolved first is made absolute against the working directory as
+// $PWD spells it, which through a link is outside the resolved roots.
 func within(roots []string, resolved string) (string, bool) {
-	path := fspath.ResolveDeepest(resolved)
+	path := resolveAbsolute(resolved)
 
 	resolvedRoots := make([]string, 0, len(roots))
 	for _, root := range roots {
-		resolvedRoots = append(resolvedRoots, fspath.ResolveDeepest(root))
+		resolvedRoots = append(resolvedRoots, resolveAbsolute(root))
 	}
 
 	return path, withinAny(path, resolvedRoots)
 }
 
+// resolveAbsolute is path made absolute and resolved through its symlinks,
+// or resolved as given when the working directory cannot be read.
+func resolveAbsolute(path string) string {
+	if abs, err := absolute(path); err == nil {
+		path = abs
+	}
+
+	return fspath.ResolveDeepest(path)
+}
+
 // withinAny reports whether a path is inside any of the roots. It compares the
 // paths as it is given them; resolving one side but not the other is the bug
 // fspath.ResolveDeepest exists to prevent.
+//
+// By name first, and failing that by identity: a directory on the way up
+// from path that is the same file as a root holds it. On a file system that
+// ignores case "Docs" and "docs" are one directory, which resolving keeps
+// spelt as given, and only the identity sees that.
 func withinAny(path string, roots []string) bool {
 	for _, root := range roots {
 		if _, ok := fspath.Within(root, path); ok {
@@ -372,7 +510,41 @@ func withinAny(path string, roots []string) bool {
 		}
 	}
 
+	for _, root := range roots {
+		if sameDirAbove(root, path) {
+			return true
+		}
+	}
+
 	return false
+}
+
+// sameDirAbove reports whether path, resolved, or a directory above it is
+// root. Both are resolved, so every part of path that exists is a real
+// directory and none is reached through a link.
+func sameDirAbove(root, path string) bool {
+	rootInfo, err := os.Stat(root)
+	if err != nil || !rootInfo.IsDir() {
+		return false
+	}
+
+	dir, err := filepath.Abs(path)
+	if err != nil {
+		return false
+	}
+
+	for {
+		if info, err := os.Lstat(dir); err == nil && os.SameFile(rootInfo, info) {
+			return true
+		}
+
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return false
+		}
+
+		dir = parent
+	}
 }
 
 // rootOf is the Root opener reads from: itself, or the disk, as the zero Root

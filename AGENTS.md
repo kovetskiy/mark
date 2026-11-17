@@ -51,6 +51,7 @@ tests, which take minutes. There is currently no `-short` skip.
 | `report/` | what a run did, for `--output-format` and the run's summary, and the `--on-orphan` actions |
 | `stdlib/` | the `text/template` set that emits all `<ac:*>` markup |
 | `docs/` | the user reference, one page per topic; `README.md` keeps the overview, installation and command-line usage |
+| `internal/admonitiongen` | generated documents around MkDocs admonitions, for the tests that hold the admonition parser's closing runs to the blocks goldmark parses around them |
 | `internal/fspath` | `ResolveDeepest`, a path with symlinks resolved as deep as it exists; `Within`, a path relative to a root it is under; and `Under`, `Within` tried again on resolved paths: so attachment and staged-root containment compare paths the way the files they name compare |
 | `internal/globpattern` | the glob syntax test and escaping shared by `Run`'s checks, the orphan handling and the page manifest's patterns |
 | `internal/goldmarktest` | a goldmark parser and renderer built together, for tests |
@@ -58,7 +59,7 @@ tests, which take minutes. There is currently no `-short` skip.
 | `internal/lazy` | the start-on-first-use, discard and close of a run's browser and mermaid engine; Close cancels a start in flight |
 | `internal/mdsource` | the raw Markdown before goldmark: where the code is, `<!-- ac:ignore -->` regions, CRLF and BOM normalisation |
 | `internal/rendercheck` | the rendering settings' rules (scales, image alignment, feature names) that `mark.Config` validation and the publish flag checks share |
-| `internal/syntax` | what publishing and export must read alike: heading ids and attribute blocks, anchor keys, the `page#anchor` split, code block info strings and language aliases, admonition markers |
+| `internal/syntax` | what publishing and export must read alike: heading ids and attribute blocks, anchor keys, the `page#anchor` split, code block info strings and language aliases, admonition markers, the elements whose text is literal |
 
 Pipeline in `publishRun.processFile`: read → normalise CRLF → extract metadata → resolve relative
 links → resolve restricted users and groups → resolve/create page + ancestry → tighten
@@ -130,6 +131,10 @@ registered for a node kind wins.** mark is on goldmark v2.
 - *Inline/block parsers and AST transformers*: `util.Prioritized`, and a **smaller**
   number is tried, or runs, **first**. `ConfluenceTagParser` uses `199` to run before
   goldmark's own link parser at `200`, so that `<ac:*/>` tags are not parsed as links.
+  It also reads an `ac:parameter` (and `ac:default-parameter`, `ac:task-id`,
+  `ac:task-status`) through to its closing tag and appends the text between them to the
+  parent itself, escaped, so that no inline parser sees it: a parameter is a string, not
+  Markdown. Each tag is still a node of its own.
   `util.Prioritized` is generic: give it the interface type,
   `util.Prioritized[parser.ASTTransformer](...)`, when the constructor returns a pointer.
 - *Node renderers*: goldmark v2 keeps one renderer per node kind. `html.New` puts its own
@@ -237,6 +242,10 @@ empty one, or a page or folder that comes without its id. A write already sent i
 it; the backoff before retrying one is cut short at once, unless the write
 finishes one already given grace and so waits within it. An update or move answered with
 a 2xx that is not JSON is checked by reading the page's version back (`confirmVersion`).
+A write that a 301, 302 or 303 turned into a GET is not answered by what answers the GET:
+it ends in `ErrWriteRedirected`, unless that is a login page, and a redirect to another
+scheme, host or port goes without the Authorization header, http to https on the default
+ports aside (`checkRedirect`, around a caller's own `CheckRedirect` too).
 A timeout is never retried. A call site asks `errors.Is`/`statusOf` rather than reading a
 status, and wraps through `requestError`. Anything that remembers an answer -- a cache, a "this
 endpoint is missing" flag, the platform -- must not remember one `IsCancellation` reports.
@@ -252,6 +261,15 @@ compared against `testdata/<name>.html`; variant suffixes cover flag combination
 
 Adding a `.md` fixture without its matching `.html` panics the test — the loader reads
 both unconditionally. There is no `-update` flag; golden files are written by hand.
+
+An MkDocs admonition whose body is level with its opening line ends at that line, and the
+blocks after it are parsed where it opened; a closing run then gives it those blocks, so
+which lines are code, HTML or a list item is goldmark's call alone.
+`parser/admonition_differential_test.go` holds where runs are read to the blocks around
+them on documents `internal/admonitiongen` writes from a fixed seed, and on
+`parser/testdata/admonition-master.json`, the trees the parser gave such documents before
+a level body had to end at a closing run; `FuzzAdmonitionDocuments` is the same for as
+long as it is left running.
 
 Coverage is uneven, and where it is thin matters more than the number. Measured with
 `go test -cover ./...`: `markdown/` 84%, `renderer/` 69%, `confluence/` 84%, `stdlib/` 68%,

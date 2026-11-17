@@ -464,8 +464,10 @@ images, is unaffected.
 Because the file carries what it points at, what it may point at is limited:
 
 * A **file** must be inside the diagram's own directory or the one mark is
-  running in, the same boundary an attachment is held to. One elsewhere is
-  refused, so a diagram naming `/etc/id_rsa` cannot publish it.
+  running in, the same boundary an attachment is held to, which
+  [`--attachment-root`](attachments.md#where-an-attachment-may-come-from)
+  narrows. One elsewhere is refused, so a diagram naming `/etc/id_rsa` cannot
+  publish it.
 * A **URL** is not fetched unless `--d2-bundle-remote` says so. The request is
   made by the document rather than by you, to any address it names -- a loopback
   or cloud metadata one included -- and the answer is published inside the
@@ -505,6 +507,65 @@ title, if it has one, in bold at the top. Any other type stays a quotation.
 !!! warning "Mind the gap"
     A yellow box titled "Mind the gap".
 ```
+
+The box holds the lines indented under its opening line. MkDocs asks for four
+spaces; mark takes any indentation deeper than the opening line's. An
+admonition with no indented lines ends at its opening line, and what follows it
+is published after it:
+
+```markdown
+!!! note "Remember"
+
+This paragraph follows the box.
+```
+
+What is published for it is what the opening line gives: a box holding its
+title, an empty box when there is no title, and an empty quotation for a type
+that stays a quotation, whose title is not published with a body either.
+
+Lines that are not indented are part of the box only up to a line of `!!!` that
+closes it:
+
+```markdown
+!!! note "Remember"
+This paragraph is in the box.
+!!!
+```
+
+The closing line starts where the opening line does and has at least as many
+`!` as it. It closes the nearest admonition above it that is still open and
+that it has enough `!` for, so one written this way inside another needs a
+closing line of its own, and the outer one a second. An admonition with an
+indented body needs none, but a `!!!` line straight after its body closes it,
+and not the admonition around it. When the admonition around it was opened
+with more `!` (`!!!!`) and the line has as many, the line closes that one
+instead.
+
+Lines up to a closing line are read as they would be without the box around
+them, from the margin of the document, list item or blockquote and not from
+the opening line. When the opening line is indented by one to three spaces, a
+line after a blank line that is indented four spaces or more is therefore a code
+block, even where it is indented less than that past the opening line.
+
+A `!!!` line inside a fenced code block is code, and one inside an HTML block
+that a `<pre>`, `<script>`, `<style>` or `<textarea>` tag, a comment, a
+declaration or CDATA opens is that block's text. Any other HTML block, such as
+one opened by `<div>` or `</details>`, ends at the line, which closes the
+admonition, a comment in that block included.
+
+Lines written straight after the opening line, neither indented nor ended by a
+closing line, are published after the box:
+
+```markdown
+!!! note "Remember"
+This paragraph follows the box, and mark warns about it.
+```
+
+Written there they read as the box's body, so mark
+[warns](publishing.md#reporting-what-a-run-did) about each such admonition, with its line: an `admonition-body` warning in the
+run report. Indent the lines to put them in the box, or end them with a line of
+`!!!`. After a blank line they are taken for what follows an admonition that
+has no body, and nothing is said.
 
 Collapsible admonitions are supported too. Confluence's `expand` macro cannot
 start open, so the two spellings render differently:
