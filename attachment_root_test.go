@@ -300,3 +300,49 @@ func TestAttachmentRootDocumentKeepsLinksBetweenDocuments(t *testing.T) {
 		assert.Contains(t, bodyOfPageTitled(t, server, "A"), "/x/")
 	})
 }
+
+// TestAttachmentRootDocumentWarnsOfADirectoryOfThatName: "document" is the
+// keyword even when a directory of that name is in the working directory, so
+// the run says so, for Run and NewPublisher alike, and goes on; "./document"
+// and an absolute path name the directory and are not warned about, and
+// neither is the keyword with no such directory.
+func TestAttachmentRootDocumentWarnsOfADirectoryOfThatName(t *testing.T) {
+	// The log is JSON, which escapes the quotes around the names.
+	const warning = "holds each document to its own directory, not to the directory"
+
+	server, _ := attachmentRootProject(t)
+	repo, err := os.Getwd()
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(filepath.Join("guide", "index.md"),
+		[]byte("<!-- Space: DOCS -->\n<!-- Title: Guide -->\n<!-- Attachment: own.pdf -->\n\nguide\n"), 0o600))
+
+	config := publishConfig(server.URL, "guide/*.md")
+	config.Rendering.AttachmentRoot = attachment.BoundaryDocument
+
+	logged := captureLog(t, func() { require.NoError(t, Run(context.Background(), config)) })
+	assert.NotContains(t, logged, warning, "no directory called document")
+
+	require.NoError(t, os.Mkdir("document", 0o755))
+
+	// Still the keyword, which holds the guide to its own directory and so
+	// lets its own file in: the run goes on.
+	logged = captureLog(t, func() { require.NoError(t, Run(context.Background(), config)) })
+	assert.Contains(t, logged, warning)
+
+	api := confluence.NewAPI(server.URL, confluence.Options{Username: "user", Password: "token"})
+	logged = captureLog(t, func() {
+		publisher, err := NewPublisher(context.Background(), api, config.PublishConfig)
+		require.NoError(t, err)
+		publisher.Close()
+	})
+	assert.Contains(t, logged, warning)
+
+	for _, root := range []attachment.Boundary{
+		attachment.Boundary("." + string(filepath.Separator) + "document"),
+		attachment.Boundary(filepath.Join(repo, "document")),
+	} {
+		config.Rendering.AttachmentRoot = root
+		logged = captureLog(t, func() { _ = Run(context.Background(), config) })
+		assert.NotContains(t, logged, warning, "root %q", root)
+	}
+}

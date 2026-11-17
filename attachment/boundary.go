@@ -22,7 +22,8 @@ import (
 // both, so a directory above the working directory allows no more than the
 // zero value.
 //
-// A directory really called "document" is written "./document".
+// A directory really called "document" is written "./document"; a run
+// given the keyword warns when such a directory is in the working directory.
 type Boundary string
 
 // BoundaryDocument holds each document to its own directory, for a caller that
