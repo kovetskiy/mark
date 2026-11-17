@@ -331,3 +331,76 @@ func TestBoundaryDocumentThroughASymlinkedWorkingDirectory(t *testing.T) {
 		require.NoError(t, Root{}.WithBoundary(boundary).CheckReadable("docs", absolute), "boundary %q", boundary)
 	}
 }
+
+// TestBoundaryThroughASymlinkedWorkingDirectory: mark run from a working
+// directory reached through a link, as the shell reports it in $PWD, holds a
+// relative name to the same files as when run from the directory itself:
+// with the link above the repository, and with the repository the link.
+func TestBoundaryThroughASymlinkedWorkingDirectory(t *testing.T) {
+	layouts := map[string]func(top string) (real, cwd string){
+		"link above the repository": func(top string) (string, string) {
+			require.NoError(t, os.Symlink(filepath.Join(top, "real"), filepath.Join(top, "via")))
+
+			return filepath.Join(top, "real", "repo"), filepath.Join(top, "via", "repo")
+		},
+		"repository is the link": func(top string) (string, string) {
+			require.NoError(t, os.Symlink(filepath.Join(top, "real"), filepath.Join(top, "repo")))
+
+			return filepath.Join(top, "real"), filepath.Join(top, "repo")
+		},
+	}
+
+	for name, layout := range layouts {
+		t.Run(name, func(t *testing.T) {
+			top, err := filepath.EvalSymlinks(t.TempDir())
+			require.NoError(t, err)
+
+			repo, cwd := layout(top)
+			for _, file := range []string{"docs/a.txt", "other/x.txt"} {
+				require.NoError(t, os.MkdirAll(filepath.Join(repo, filepath.Dir(file)), 0o755))
+				require.NoError(t, os.WriteFile(filepath.Join(repo, file), []byte(file), 0o600))
+			}
+
+			outside := filepath.Join(filepath.Dir(repo), "outside", "o.txt")
+			require.NoError(t, os.MkdirAll(filepath.Dir(outside), 0o755))
+			require.NoError(t, os.WriteFile(outside, []byte("outside"), 0o600))
+
+			outsideName, err := filepath.Rel(filepath.Join(repo, "docs"), outside)
+			require.NoError(t, err)
+
+			t.Chdir(cwd)
+			t.Setenv("PWD", cwd)
+
+			allowed := map[Boundary][]string{
+				"":                                    {"a.txt", "../other/x.txt"},
+				BoundaryDocument:                      {"a.txt", "../docs/a.txt"},
+				".":                                   {"a.txt", "../other/x.txt"},
+				"other":                               {"../other/x.txt"},
+				Boundary(cwd):                         {"a.txt", "../other/x.txt"},
+				Boundary(filepath.Join(cwd, "other")): {"../other/x.txt"},
+			}
+			for boundary, names := range allowed {
+				root := Root{}.WithBoundary(boundary)
+				for _, name := range names {
+					_, err := ResolveLocalAttachments(root, "docs", []string{name})
+					require.NoError(t, err, "boundary %q, name %q", boundary, name)
+					require.NoError(t, root.CheckReadable("docs", name), "boundary %q, name %q", boundary, name)
+				}
+			}
+
+			// The attachment root refuses another document's file, not the
+			// default boundary.
+			err = Root{}.WithBoundary(BoundaryDocument).CheckReadable("docs", "../other/x.txt")
+			require.ErrorIs(t, err, ErrOutsideProject)
+			assert.NotContains(t, err.Error(), "the default boundary, which")
+
+			for _, boundary := range []Boundary{"", BoundaryDocument, ".", Boundary(cwd), Boundary(top)} {
+				root := Root{}.WithBoundary(boundary)
+				_, err := ResolveLocalAttachments(root, "docs", []string{outsideName})
+				require.ErrorIs(t, err, ErrOutsideProject, "boundary %q", boundary)
+				require.ErrorIs(t, root.CheckReadable("docs", outsideName), ErrOutsideProject, "boundary %q", boundary)
+				require.ErrorIs(t, root.CheckReadable("docs", outside), ErrOutsideProject, "boundary %q", boundary)
+			}
+		})
+	}
+}

@@ -20,9 +20,14 @@ import (
 // chains and a loop of links, a dangling link, names with ".." in them,
 // spaces and Unicode, and prefix siblings ("docs" beside "docs2" and
 // "docs.bak", "work" beside "work2"). Its work directory is the working
-// directory.
+// directory, reached as itself or through either of two links: one to the
+// tree above it and one to it, both from elsewhere, so that a ".." taken
+// from the link's name lands somewhere else.
 type referenceTree struct {
 	top, work string
+
+	// cwds are the names the working directory is entered by.
+	cwds []string
 
 	roots []Boundary
 	bases []string
@@ -93,11 +98,18 @@ func newReferenceTree(tb testing.TB) referenceTree {
 		}
 	}
 
+	elsewhere, err := filepath.EvalSymlinks(tb.TempDir())
+	require.NoError(tb, err)
+
+	require.NoError(tb, os.Symlink(top, filepath.Join(elsewhere, "top")))
+	require.NoError(tb, os.Symlink(work, filepath.Join(elsewhere, "work")))
+
 	tb.Chdir(work)
 
 	return referenceTree{
 		top:  top,
 		work: work,
+		cwds: []string{work, filepath.Join(elsewhere, "top", "work"), filepath.Join(elsewhere, "work")},
 		roots: []Boundary{
 			"", BoundaryDocument,
 			"docs", "docs/", "./docs", "docs//sub", "docs/sub/..", "docs2", "docs.bak",
@@ -116,6 +128,15 @@ func newReferenceTree(tb testing.TB) referenceTree {
 			"c.txt", "work", "work2", "outside", "nothere", "shared",
 		},
 	}
+}
+
+// enter makes cwd the working directory, as a shell entering it would: the
+// directory is the same, and $PWD, which os.Getwd reports, spells it as cwd.
+func enter(tb testing.TB, cwd string) {
+	tb.Helper()
+
+	tb.Chdir(cwd)
+	tb.Setenv("PWD", cwd)
 }
 
 // names are the names checked: a fixed list of the cases each part was made
@@ -537,36 +558,47 @@ func (tr referenceTree) cases(tb testing.TB, names []string) []referenceCase {
 // dangling link or a loop counts as the link's own name, which the open then
 // fails on with nothing read. In an fs.FS it follows the documented rule for
 // links: a relative target only, never above the root.
+//
+// It runs once for each name the working directory is entered by: the
+// reference reads a relative name from the directory itself, as the open
+// does, whatever $PWD calls it.
 func TestBoundaryAgreesWithAReference(t *testing.T) {
 	tr := newReferenceTree(t)
 
 	cases := tr.cases(t, tr.names(rand.New(rand.NewPCG(1, 2)), 60))
 
-	failures := 0
-	for _, c := range cases {
-		if got := tr.compare(c); got != "" {
-			failures++
-			if failures <= 20 {
-				t.Errorf("%s, root %q, base %q, name %q, readable %v: %s",
-					c.where, c.root.Boundary(), c.base, c.name, c.readable, got)
+	for _, cwd := range tr.cwds {
+		t.Run(cwd, func(t *testing.T) {
+			enter(t, cwd)
+
+			failures := 0
+			for _, c := range cases {
+				if got := tr.compare(c); got != "" {
+					failures++
+					if failures <= 20 {
+						t.Errorf("%s, root %q, base %q, name %q, readable %v: %s",
+							c.where, c.root.Boundary(), c.base, c.name, c.readable, got)
+					}
+				}
 			}
-		}
-	}
 
-	if failures > 20 {
-		t.Errorf("and %d more", failures-20)
-	}
+			if failures > 20 {
+				t.Errorf("and %d more", failures-20)
+			}
 
-	t.Logf("%d checks", len(cases))
+			t.Logf("%d checks", len(cases))
+		})
+	}
 }
 
 // FuzzBoundaryAgreesWithAReference is TestBoundaryAgreesWithAReference for
-// names the fuzzer makes.
+// names the fuzzer makes; where picks the Root, and the name the working
+// directory is entered by.
 func FuzzBoundaryAgreesWithAReference(f *testing.F) {
 	tr := newReferenceTree(f)
 
-	for _, name := range tr.names(rand.New(rand.NewPCG(3, 4)), 50) {
-		f.Add(uint8(0), uint8(0), name, false, uint8(0))
+	for i, name := range tr.names(rand.New(rand.NewPCG(3, 4)), 50) {
+		f.Add(uint8(0), uint8(0), name, false, uint8(2*(i%len(tr.cwds))))
 	}
 
 	dirFS := FSRoot(os.DirFS(tr.work))
@@ -578,6 +610,8 @@ func FuzzBoundaryAgreesWithAReference(f *testing.F) {
 
 		b := tr.roots[int(rootIndex)%len(tr.roots)]
 		base := tr.bases[int(baseIndex)%len(tr.bases)]
+
+		enter(t, tr.cwds[int(where/2)%len(tr.cwds)])
 
 		c := referenceCase{"disk", Root{}.WithBoundary(b), base, name, readable}
 		if where%2 == 1 && !b.NamesDirectory() && !filepath.IsAbs(base) {
