@@ -21,24 +21,53 @@ import (
 // The deepest part rather than the whole path, because the file itself need not
 // exist: a name that is merely misspelled should be refused by the open, which
 // says so, rather than by the boundary, which would say something else.
+//
+// A ".." is taken from where the links before it lead, as the open takes it,
+// so path is not cleaned first: "docs/link/../x", with link pointing
+// elsewhere, opens a file beside link's target, not "docs/x".
 func ResolveDeepest(path string) string {
-	path = filepath.Clean(path)
+	var rest []string
 
-	rest := ""
 	for {
 		if resolved, err := filepath.EvalSymlinks(path); err == nil {
-			return filepath.Join(resolved, rest)
+			return filepath.Join(append([]string{resolved}, rest...)...)
 		}
 
-		parent := filepath.Dir(path)
+		parent, last := splitLast(path)
 		if parent == path {
 			// The root itself did not resolve; nothing is left to walk up to.
-			return filepath.Join(path, rest)
+			return filepath.Join(append([]string{path}, rest...)...)
 		}
 
-		rest = filepath.Join(filepath.Base(path), rest)
+		rest = append([]string{last}, rest...)
 		path = parent
 	}
+}
+
+// splitLast is path without its last element, and that element, as written:
+// unlike filepath.Dir, the parent is not cleaned, so a ".." in it is still
+// there to be resolved. The parent of a single relative element is ".", and
+// a root, or ".", is its own parent.
+func splitLast(path string) (parent, last string) {
+	volume := filepath.VolumeName(path)
+	rest := path[len(volume):]
+
+	trimmed := strings.TrimRightFunc(rest, isSeparator)
+	if trimmed == "" {
+		return path, ""
+	}
+
+	i := strings.LastIndexFunc(trimmed, isSeparator)
+	switch {
+	case i < 0 && trimmed == ".":
+		return path, ""
+	case i < 0:
+		return volume + ".", trimmed
+	case i == 0:
+		return volume + trimmed[:1], trimmed[1:]
+	}
+
+	return volume + trimmed[:i], trimmed[i+1:]
 }
 
 // Within is path relative to root, and false when path is not under it. Both
@@ -71,4 +100,9 @@ func Under(root, path string) (string, bool) {
 	}
 
 	return Within(ResolveDeepest(root), ResolveDeepest(path))
+}
+
+// isSeparator reports whether r separates the elements of a path here.
+func isSeparator(r rune) bool {
+	return r == '/' || r == filepath.Separator
 }
