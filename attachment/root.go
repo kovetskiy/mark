@@ -118,9 +118,10 @@ func (r Root) OnDisk(name string) bool {
 
 // WithBoundary is r with the files a document names held to b: every
 // attachment ResolveLocalAttachment and ResolveLocalAttachments read through
-// r, and every reference CheckReadable passes. A Root reading from an fs.FS
-// holds them inside it as well; on the local disk b is the whole boundary, so
-// a directory above the working directory allows more than the zero Boundary.
+// r, and every reference CheckReadable passes, inside the default boundary
+// as well: the fs.FS for a Root reading from one, and on the local disk the
+// document's directory or the working directory, so a directory above the
+// working directory allows no more than the zero Boundary.
 // Open, Stat and ReadFile are unchanged, so a caller reading a file that is
 // not the document's to publish, such as another document a link names, reads
 // it as before.

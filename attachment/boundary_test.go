@@ -65,7 +65,7 @@ func TestBoundaryDocumentRefusesOutsideTheDocumentsDirectory(t *testing.T) {
 	for _, name := range []string{"../other-doc/file.pdf", "../other-doc/*.pdf", "linked.pdf"} {
 		_, err := ResolveLocalAttachments(root, docs, []string{name})
 		require.ErrorIs(t, err, ErrOutsideProject, name)
-		assert.Contains(t, err.Error(), boundarySetting, name)
+		assert.Contains(t, err.Error(), "the document's directory "+`"`+docs+`": `+boundarySetting, name)
 
 		_, err = ResolveLocalAttachment(root, docs, name)
 		require.ErrorIs(t, err, ErrOutsideProject, name)
@@ -77,7 +77,8 @@ func TestBoundaryDocumentRefusesOutsideTheDocumentsDirectory(t *testing.T) {
 // TestBoundaryRefusalNamesTheSettingAndTheDirectory: run from the document's
 // own directory the base is ".", which tells the reader neither where the
 // boundary is nor which setting drew it, so the refusal gives the directory
-// resolved and names the setting, for "document" and for a directory alike.
+// resolved and names the setting, whether the default boundary or the
+// attachment root refused the file.
 func TestBoundaryRefusalNamesTheSettingAndTheDirectory(t *testing.T) {
 	repo, docs, _ := boundaryProject(t)
 	t.Chdir(docs)
@@ -87,17 +88,19 @@ func TestBoundaryRefusalNamesTheSettingAndTheDirectory(t *testing.T) {
 	err := Root{}.WithBoundary(BoundaryDocument).CheckReadable(".", "../other-doc/file.pdf")
 	require.ErrorIs(t, err, ErrOutsideProject)
 	assert.Equal(t, ErrOutsideProject.Error()+`: "../other-doc/file.pdf" resolves to `+file+
-		`, which is outside the document's directory "`+docs+
-		`": Rendering.AttachmentRoot (--attachment-root) is "document"`, err.Error())
+		`, which is outside both "`+docs+`" and the directory mark is running in, the default boundary, `+
+		`which Rendering.AttachmentRoot (--attachment-root) "document" narrows and never widens; `+
+		`publish from a directory that contains it`, err.Error())
 
-	err = Root{}.WithBoundary(".").CheckReadable(".", "../other-doc/file.pdf")
+	err = Root{}.WithBoundary("images").CheckReadable(".", "notes.pdf")
 	require.ErrorIs(t, err, ErrOutsideProject)
-	assert.Equal(t, ErrOutsideProject.Error()+`: "../other-doc/file.pdf" resolves to `+file+
-		`, which is outside "`+docs+`", the directory Rendering.AttachmentRoot (--attachment-root) names`, err.Error())
+	assert.Equal(t, ErrOutsideProject.Error()+`: "notes.pdf" resolves to `+filepath.Join(docs, "notes.pdf")+
+		`, which is outside "`+filepath.Join(docs, "images")+
+		`", the directory Rendering.AttachmentRoot (--attachment-root) names`, err.Error())
 
 	_, err = ResolveLocalAttachment(Root{}.WithBoundary(BoundaryDocument), ".", "../other-doc/file.pdf")
 	require.ErrorIs(t, err, ErrOutsideProject)
-	assert.Contains(t, err.Error(), `the document's directory "`+docs+`"`)
+	assert.Contains(t, err.Error(), `both "`+docs+`"`)
 }
 
 // TestBoundaryDocumentAllowsBelowTheDocument: the document's directory and
@@ -146,10 +149,82 @@ func TestBoundaryPathHoldsEveryDocumentToIt(t *testing.T) {
 
 	_, err = ResolveLocalAttachment(Root{}.WithBoundary("."), docs, beyond)
 	require.ErrorIs(t, err, ErrOutsideProject)
+}
 
-	// A root wider than the working directory lets a file outside it in.
-	_, err = ResolveLocalAttachment(Root{}.WithBoundary(Boundary(filepath.Dir(repo))), docs, beyond)
-	require.NoError(t, err)
+// TestBoundaryPathNarrowsAndNeverWidens: a directory root holds a file to the
+// default boundary as well as to itself, wherever the directory lies: above
+// the working directory, at it, inside it or beside it. A refusal says which
+// of the two refused the file.
+func TestBoundaryPathNarrowsAndNeverWidens(t *testing.T) {
+	repo, docs, outside := boundaryProject(t)
+
+	const (
+		allowed     = "allowed"
+		byDefault   = "the default boundary"
+		byRoot      = "the attachment root"
+		ownFile     = "notes.pdf"
+		otherDoc    = "../other-doc/file.pdf"
+		defaultText = "the default boundary, which " + boundarySetting
+		rootText    = "the directory " + boundarySetting + " names"
+	)
+
+	beyond := filepath.Join("..", "..", filepath.Base(outside), "outside.pdf")
+	absolute := filepath.Join(outside, "outside.pdf")
+
+	cases := []struct {
+		name  string
+		root  Boundary
+		wants map[string]string
+	}{
+		{"above", Boundary(filepath.Dir(repo)), map[string]string{
+			ownFile: allowed, otherDoc: allowed, beyond: byDefault,
+		}},
+		{"above, relative", "..", map[string]string{
+			ownFile: allowed, otherDoc: allowed, beyond: byDefault,
+		}},
+		{"the filesystem's root", Boundary(string(filepath.Separator)), map[string]string{
+			ownFile: allowed, otherDoc: allowed, beyond: byDefault,
+		}},
+		{"equal", Boundary(repo), map[string]string{
+			ownFile: allowed, otherDoc: allowed, beyond: byDefault,
+		}},
+		{"inside", Boundary(docs), map[string]string{
+			ownFile: allowed, otherDoc: byRoot, beyond: byDefault,
+		}},
+		{"beside", Boundary(outside), map[string]string{
+			ownFile: byRoot, otherDoc: byRoot, beyond: byDefault,
+		}},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			root := Root{}.WithBoundary(c.root)
+
+			for name, want := range c.wants {
+				_, resolveErr := ResolveLocalAttachment(root, docs, name)
+				checkErr := root.CheckReadable(docs, name)
+
+				for _, err := range []error{resolveErr, checkErr} {
+					switch want {
+					case allowed:
+						require.NoError(t, err, name)
+					case byDefault:
+						require.ErrorIs(t, err, ErrOutsideProject, name)
+						assert.Contains(t, err.Error(), defaultText, name)
+					case byRoot:
+						require.ErrorIs(t, err, ErrOutsideProject, name)
+						assert.Contains(t, err.Error(), rootText, name)
+					}
+				}
+			}
+
+			// An attachment's absolute name is joined to the document's
+			// directory; a reference's is read as itself.
+			err := root.CheckReadable(docs, absolute)
+			require.ErrorIs(t, err, ErrOutsideProject)
+			assert.Contains(t, err.Error(), defaultText)
+		})
+	}
 }
 
 // boundaryMap is an fs.FS holding two documents' directories, the guide's
