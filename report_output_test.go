@@ -43,7 +43,18 @@ func splitRun(t *testing.T, format report.Format, mode ModeConfig, update Update
 
 	err := Run(context.Background(), config)
 
-	anonymous := strings.NewReplacer(server.URL, "SERVER", dir, "DIR")
+	// A Windows path is written with doubled backslashes in a JSON string, and
+	// with those doubled again in a string inside one.
+	pairs := []string{server.URL, "SERVER"}
+	for _, backslashes := range []int{4, 2, 1} {
+		escape := strings.NewReplacer(`\`, strings.Repeat(`\`, backslashes))
+		pairs = append(pairs, escape.Replace(dir+string(filepath.Separator)), "DIR/")
+	}
+	for _, backslashes := range []int{4, 2, 1} {
+		escape := strings.NewReplacer(`\`, strings.Repeat(`\`, backslashes))
+		pairs = append(pairs, escape.Replace(dir), "DIR")
+	}
+	anonymous := strings.NewReplacer(pairs...)
 
 	return anonymous.Replace(out.String()), anonymous.Replace(reportOut.String()), err
 }

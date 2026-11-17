@@ -77,7 +77,7 @@ func TestOnOrphanLeavesTheSpaceHomepage(t *testing.T) {
 					assert.False(t, page.Archived, "the homepage stays")
 
 					kept := keptOrphan(t, got, home.ID)
-					assert.Equal(t, homeFile, kept.File)
+					assert.Equal(t, filepath.ToSlash(homeFile), kept.File)
 					assert.Equal(t, report.OnOrphanReport, kept.Action)
 					assert.Equal(t, wantReason, kept.Reason)
 				}
@@ -141,7 +141,7 @@ func TestOnOrphanLeavesTheManifestPage(t *testing.T) {
 					assert.False(t, page.Archived, "the manifest page stays")
 
 					kept := keptOrphan(t, got, records.ID)
-					assert.Equal(t, recordsFile, kept.File)
+					assert.Equal(t, filepath.ToSlash(recordsFile), kept.File)
 					assert.Equal(t, report.OnOrphanReport, kept.Action)
 					assert.Equal(t, `the page manifest of space "DOCS" is kept on it`, kept.Reason)
 				}

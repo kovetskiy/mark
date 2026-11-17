@@ -1098,7 +1098,9 @@ func TestLinkFromAnIncludePathFindsTheHierarchy(t *testing.T) {
 			cwd, err := os.Getwd()
 			require.NoError(t, err)
 			relative, err := filepath.Rel(cwd, dir)
-			require.NoError(t, err)
+			if err != nil {
+				t.Skipf("no relative path from the working directory to the temporary one: %v", err)
+			}
 
 			project, includeDir := dir, relative
 			if relativeRoot {

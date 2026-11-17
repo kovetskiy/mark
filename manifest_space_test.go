@@ -196,7 +196,7 @@ func TestRenameIsNotFollowedIntoAnotherSpace(t *testing.T) {
 
 	warnings := warningsOf(t, out, report.WarningOtherSpace)
 	require.Len(t, warnings, 1)
-	assert.Contains(t, warnings[0].Message, old)
+	assert.Contains(t, warnings[0].Message, filepath.ToSlash(old))
 	assert.Contains(t, warnings[0].Message, elsewhere.ID)
 
 	// The new page is the document's now: a second rename follows it rather
@@ -258,7 +258,7 @@ func TestOnOrphanLeavesAPageInAnotherSpace(t *testing.T) {
 					}
 				}
 				require.NotNil(t, kept, "the entry stays recorded and is reported on every run")
-				assert.Equal(t, moved, kept.File)
+				assert.Equal(t, filepath.ToSlash(moved), kept.File)
 				assert.Equal(t, report.OnOrphanReport, kept.Action)
 				assert.Equal(t, `it is in space "OTHER", not space "DOCS", whose page manifest records it`, kept.Reason)
 			}
