@@ -280,10 +280,13 @@ func TestOnOrphanLeavesThePageADocumentLeftInAnotherSpace(t *testing.T) {
 
 // TestOnOrphanForgetsAnEntryWhosePageWentWithItsDocument: the page was moved
 // to the other space and the document's Space header followed, so the space
-// it left has no page of it to remove or to report on every run.
+// it left has no page of it to remove or to report on every run, whichever
+// of the two the run was given and however the header spells the new one.
 func TestOnOrphanForgetsAnEntryWhosePageWentWithItsDocument(t *testing.T) {
-	for _, space := range []string{"", "ONE"} {
-		t.Run("space "+space, func(t *testing.T) {
+	for _, run := range []struct{ space, header string }{
+		{"", "TWO"}, {"ONE", "TWO"}, {"one", "two"}, {"TWO", "TWO"},
+	} {
+		t.Run("space "+run.space+" header "+run.header, func(t *testing.T) {
 			ctx := context.Background()
 			server := confluencetest.New(t)
 			one := server.AddSpace("ONE")
@@ -307,9 +310,9 @@ func TestOnOrphanForgetsAnEntryWhosePageWentWithItsDocument(t *testing.T) {
 			repointEntries(t, server, one.ID,
 				manifest.PropertyKey(manifest.ShardFor(filepath.ToSlash(moved))), old, there.ID)
 
-			writeFile(t, dir, "moved.md", "<!-- Space: TWO -->\n<!-- Title: Moved -->\n\nMoved.\n")
+			writeFile(t, dir, "moved.md", "<!-- Space: "+run.header+" -->\n<!-- Title: Moved -->\n\nMoved.\n")
 
-			config.Page.Space = space
+			config.Page.Space = run.space
 			out := publishJSON(t, config)
 
 			assert.False(t, server.Page(there.ID).Trashed)
