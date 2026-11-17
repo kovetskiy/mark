@@ -17,6 +17,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/kovetskiy/mark/v17/confluence"
+	"github.com/kovetskiy/mark/v17/internal/syntax"
 	"github.com/kovetskiy/mark/v17/metadata"
 	"github.com/rs/zerolog/log"
 	"golang.org/x/text/unicode/norm"
@@ -738,16 +739,16 @@ func sameDir(a, b string) bool {
 // publishing the export back would read that name as something else. A
 // separator would reach into another directory, and * ? [ ] { } make the
 // Attachment header declaring it a pattern, so each is an underscore. A name
-// ending in .md would be picked up by the glob that names the documents, and
-// read by OKF as a concept without front matter, so it gets .txt after it;
-// Windows drops trailing dots and spaces, so a name ending in .md before
-// those does too.
+// ending in a Markdown extension would be picked up by the glob that names the
+// documents, and read by OKF as a concept without front matter, so it gets
+// .txt after it; Windows drops trailing dots and spaces, so a name ending in
+// one before those does too.
 func localName(filename string) string {
 	name := localNameReplacer.Replace(filename)
 	if name == "." || name == ".." {
 		name = "_" + name
 	}
-	if strings.EqualFold(filepath.Ext(strings.TrimRight(name, ". ")), ".md") {
+	if syntax.IsMarkdownFile(strings.TrimRight(name, ". ")) {
 		name += ".txt"
 	}
 
