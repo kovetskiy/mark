@@ -511,7 +511,11 @@ where the mapping cannot apply -- is a warning.
   reported, as above, by a run given the space it moved to. Where the page
   itself was moved to the new space and the document publishes to it there,
   nothing is left behind: the space it left stops tracking it and says so in
-  the log.
+  the log. That needs the new space's manifest: where the document publishes
+  untracked under `--manifest-page-optional`, nothing else records the page,
+  so the entry stays an orphan of the space it left, handled as above, and
+  `archive` or `delete` leave the page alone as one in another space than its
+  manifest.
 * A document that opted out with `Synchronized: false` still counts as present.
 * `--dry-run` reports what would go and touches nothing.
 

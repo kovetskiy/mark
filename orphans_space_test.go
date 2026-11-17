@@ -407,3 +407,67 @@ func TestOnOrphanUnderHoldsInASpaceTheRunWasNotGiven(t *testing.T) {
 		})
 	}
 }
+
+// TestOnOrphanKeepsAnEntryWhosePageWentToAnUntrackedSpace: a page moved to a
+// space that keeps no manifest, under --manifest-page-optional, is recorded
+// nowhere else, so the space it left keeps its entry as an orphan: left alone
+// and reported by a run given the other space, or under delete since the page
+// is elsewhere, and reported and forgotten under report.
+func TestOnOrphanKeepsAnEntryWhosePageWentToAnUntrackedSpace(t *testing.T) {
+	for _, tc := range []struct {
+		space  string
+		action report.OnOrphan
+		reason string
+	}{
+		{"TWO", report.OnOrphanDelete, `space "ONE" is not the run's space, "TWO"`},
+		{"", report.OnOrphanDelete, `it is in space "TWO", not space "ONE", whose page manifest records it`},
+		{"", report.OnOrphanReport, ""},
+	} {
+		t.Run("space "+tc.space+" "+string(tc.action), func(t *testing.T) {
+			ctx := context.Background()
+			server, api := spaceOrphanServer(t, "ONE", "TWO")
+			handbook := server.AddPage("ONE", "Handbook", "page", findPageID(t, api, "ONE", "Home ONE"))
+
+			dir := t.TempDir()
+			writeFile(t, dir, "keep.md", "<!-- Space: ONE -->\n<!-- Title: Keep -->\n\nKeep.\n")
+			moved := writeFile(t, dir, "moved.md", "<!-- Space: ONE -->\n<!-- Title: Moved -->\n\nMoved.\n")
+
+			config := spaceOrphanConfig(server, dir, tc.action)
+			config.Tracking.ManifestPage = "Handbook"
+			config.Tracking.ManifestPageOptional = true
+			require.NoError(t, Run(ctx, config))
+
+			// The fake cannot move a page between spaces: the entry is pointed
+			// at a page of the same title in TWO instead.
+			old := findPageID(t, api, "ONE", "Moved")
+			there := server.AddPage("TWO", "Moved", "page", findPageID(t, api, "TWO", "Home TWO"))
+			server.DeletePage(old)
+			repointEntries(t, server, handbook.ID,
+				manifest.PropertyKey(manifest.ShardFor(filepath.ToSlash(moved))), old, there.ID)
+
+			writeFile(t, dir, "moved.md", "<!-- Space: TWO -->\n<!-- Title: Moved -->\n\nMoved.\n")
+			config.Page.Space = tc.space
+			got := decodeReport(t, []byte(publishJSON(t, config)))
+
+			assert.False(t, server.Page(there.ID).Trashed)
+			assert.Equal(t, []report.Untracked{{Space: "TWO", ManifestPage: "Handbook"}}, got.Untracked)
+			require.Len(t, got.Orphans, 1)
+			assert.Equal(t, there.ID, got.Orphans[0].PageID)
+			assert.Equal(t, report.OnOrphanReport, got.Orphans[0].Action)
+
+			store := manifest.NewStore(api)
+			store.SetManifestPage("Handbook")
+			_, known, err := store.Lookup(ctx, "ONE", moved)
+			require.NoError(t, err)
+
+			if tc.reason == "" {
+				assert.Empty(t, got.Orphans[0].Reason)
+				assert.False(t, known, "reported, and forgotten as every reported orphan is")
+
+				return
+			}
+			assert.Contains(t, got.Orphans[0].Reason, tc.reason)
+			assert.True(t, known, "the space it left keeps the entry")
+		})
+	}
+}
