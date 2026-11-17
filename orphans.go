@@ -296,7 +296,8 @@ func handleOrphans(
 // wording claims neither.
 func leaveOtherSpace(config Config, space, runSpace string, orphans []manifest.Orphan, results *report.Report) {
 	reason := fmt.Sprintf(
-		"space %q is not the run's space, %q; a run given --space %s acts on it", space, runSpace, space,
+		"space %q is not the run's space, %q; it is left for a run whose --space is %s, or to be removed by hand",
+		space, runSpace, space,
 	)
 
 	paths := make([]string, 0, len(orphans))
@@ -311,9 +312,8 @@ func leaveOtherSpace(config Config, space, runSpace string, orphans []manifest.O
 
 	log.Warn().Msgf(
 		"space %q: %d tracked page(s) were not published by this run and are left alone, still tracked, "+
-			"since space %q is not the run's space, %q; to have --on-orphan act on them, "+
-			"publish that space in a run given --space %s: %s",
-		space, len(paths), space, runSpace, space, strings.Join(paths, ", "),
+			"for a run whose --space is %s or to be removed by hand, since space %q is not the run's space, %q: %s",
+		space, len(paths), space, space, runSpace, strings.Join(paths, ", "),
 	)
 }
 
