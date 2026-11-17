@@ -132,12 +132,13 @@ func TestAttachmentRootValidation(t *testing.T) {
 	}
 }
 
-// TestAttachmentRootHoldsAMarkdownPageHeader: a Markdown page header is
-// compiled from its own path, so its images are held to the root around its
-// own directory: beside another document it passes the default boundary and
-// fails attachment.BoundaryDocument.
-func TestAttachmentRootHoldsAMarkdownPageHeader(t *testing.T) {
-	for _, root := range []attachment.Boundary{"", attachment.BoundaryDocument} {
+// TestPageHeaderKeepsTheDefaultBoundary: a Markdown page header is given by
+// whoever runs mark, not by a document's author, so its images are held to
+// the default boundary around its own directory whatever the attachment
+// root: one beside another document is attached under every root, and one
+// outside the working directory is refused under every root.
+func TestPageHeaderKeepsTheDefaultBoundary(t *testing.T) {
+	for _, root := range []attachment.Boundary{"", attachment.BoundaryDocument, "guide"} {
 		server, _ := attachmentRootProject(t)
 		require.NoError(t, os.WriteFile(filepath.Join("guide", "index.md"),
 			[]byte("<!-- Space: DOCS -->\n<!-- Title: Guide -->\n\nguide\n"), 0o600))
@@ -148,34 +149,42 @@ func TestAttachmentRootHoldsAMarkdownPageHeader(t *testing.T) {
 		config.Rendering.PageHeader = writeFile(t, "templates", "header.md", "![logo](../other-doc/logo.png)\n")
 		config.Rendering.AttachmentRoot = root
 
-		err := Run(context.Background(), config)
-		if root == "" {
-			require.NoError(t, err)
-			continue
-		}
+		require.NoError(t, Run(context.Background(), config), "root %q", root)
 
-		require.ErrorIs(t, err, attachment.ErrOutsideProject)
+		found, err := confluence.NewAPI(server.URL, confluence.Options{Username: "user", Password: "token"}).
+			FindPage(context.Background(), "DOCS", "Guide", "page")
+		require.NoError(t, err)
+		require.NotNil(t, found)
+		assert.Len(t, server.Attachments(found.ID), 1, "root %q", root)
 	}
 }
 
-// TestAttachmentRootRefusesAPageHeaderBeforePublishing: a Markdown page
-// header naming a file outside the root is refused when it is loaded, as
-// anything else wrong with it is, rather than by each document after its page
-// is created.
-func TestAttachmentRootRefusesAPageHeaderBeforePublishing(t *testing.T) {
-	server, _ := attachmentRootProject(t)
-	require.NoError(t, os.WriteFile(filepath.Join("guide", "index.md"),
-		[]byte("<!-- Space: DOCS -->\n<!-- Title: Guide -->\n\nguide\n"), 0o600))
-	writeFile(t, "other-doc", "logo.png", "png")
-	require.NoError(t, os.Mkdir("templates", 0o755))
+// TestPageHeaderOutsideTheDefaultBoundaryIsRefusedBeforePublishing: a
+// Markdown page header naming a file outside the working directory is refused
+// when it is loaded, as anything else wrong with it is, rather than by each
+// document after its page is created, whatever the attachment root.
+func TestPageHeaderOutsideTheDefaultBoundaryIsRefusedBeforePublishing(t *testing.T) {
+	for _, root := range []attachment.Boundary{"", attachment.BoundaryDocument, ".."} {
+		server, _ := attachmentRootProject(t)
+		require.NoError(t, os.WriteFile(filepath.Join("guide", "index.md"),
+			[]byte("<!-- Space: DOCS -->\n<!-- Title: Guide -->\n\nguide\n"), 0o600))
+		require.NoError(t, os.Mkdir("templates", 0o755))
 
-	config := publishConfig(server.URL, "guide/*.md")
-	config.Rendering.PageHeader = writeFile(t, "templates", "header.md", "![logo](../other-doc/logo.png)\n")
-	config.Rendering.AttachmentRoot = attachment.BoundaryDocument
+		repo, err := os.Getwd()
+		require.NoError(t, err)
+		outside := t.TempDir()
+		writeFile(t, outside, "logo.png", "png")
+		name, err := filepath.Rel(filepath.Join(repo, "templates"), filepath.Join(outside, "logo.png"))
+		require.NoError(t, err)
 
-	err := Run(context.Background(), config)
-	require.ErrorIs(t, err, attachment.ErrOutsideProject)
-	assert.Zero(t, server.CountRequests("POST", "/content"), "no page is created")
+		config := publishConfig(server.URL, "guide/*.md")
+		config.Rendering.PageHeader = writeFile(t, "templates", "header.md", "![logo]("+filepath.ToSlash(name)+")\n")
+		config.Rendering.AttachmentRoot = root
+
+		err = Run(context.Background(), config)
+		require.ErrorIs(t, err, attachment.ErrOutsideProject, "root %q", root)
+		assert.Zero(t, server.CountRequests("POST", "/content"), "no page is created under root %q", root)
+	}
 }
 
 // attachmentRootFS holds the guide and the other document of

@@ -76,8 +76,11 @@ mark publish --page-header generated.md --files "docs/**/*.md"
 ```
 
 A file with a Markdown extension (`.md`, `.markdown`, `.mdown`, `.mkd`, `.mkdn`
-or `.mdwn`) is compiled like a document, with the same `--features`. Anything
-else is published as Confluence storage format. Either way it is a Go template,
+or `.mdwn`) is compiled like a document, with the same `--features`; the files
+it names are held to the default boundary around its own directory
+([attachments](attachments.md#where-an-attachment-may-come-from)), not to
+`--attachment-root`, since you give the header and a document's author does
+not. Anything else is published as Confluence storage format. Either way it is a Go template,
 executed once per page with:
 
 | field | value |

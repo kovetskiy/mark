@@ -498,7 +498,7 @@ type RenderingConfig struct {
 	// else is a directory on disk, which must exist, and which a Document with
 	// an FS is refused under. Either narrows the default and never widens it:
 	// a file has to be inside both. Includes keep their own boundary, which
-	// IncludePath widens.
+	// IncludePath widens, and a Markdown PageHeader's images the default.
 	AttachmentRoot attachment.Boundary
 	IncludePath    string
 	// PageHeader is a template placed at the top of every page: Markdown
@@ -3254,8 +3254,5 @@ func (c RenderingConfig) markdownOptions(res *resources) markdown.Options {
 		Features:         c.Features,
 		AttachReferenced: c.AttachReferenced,
 		IncludePath:      c.IncludePath,
-		// The page header is checked against this before the first page is
-		// published; each document's compile replaces it with its own root.
-		Root: attachment.Root{}.WithBoundary(c.AttachmentRoot),
 	}
 }
