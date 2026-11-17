@@ -2,7 +2,7 @@ package renderer
 
 import (
 	"fmt"
-	"strconv"
+	"strings"
 	"unicode"
 	"unicode/utf8"
 
@@ -104,19 +104,18 @@ func (r *ConfluenceMkDocsAdmonitionRenderer) renderMkDocsAdmonition(writer util.
 }
 
 // admonitionTitle is the quoted title of an opening line. MkDocs titles are
-// literal text, so one that is not a Go string literal ("C:\path") is read as
-// the text between its quotes.
+// literal text: only \" and \\ are escapes, as where the parser finds the
+// closing quote.
 func admonitionTitle(n *parser.Admonition) string {
 	raw := string(n.Title)
-	if title, err := strconv.Unquote(raw); err == nil {
-		return title
-	}
-	if len(raw) >= 2 && raw[0] == '"' && raw[len(raw)-1] == '"' {
-		return raw[1 : len(raw)-1]
+	if len(raw) < 2 || raw[0] != '"' || raw[len(raw)-1] != '"' {
+		return ""
 	}
 
-	return ""
+	return admonitionTitleEscapes.Replace(raw[1 : len(raw)-1])
 }
+
+var admonitionTitleEscapes = strings.NewReplacer(`\"`, `"`, `\\`, `\`)
 
 // collapsedAdmonitionTitle is the title of the expand macro around a '???'
 // admonition: the quoted title, or the class with its first letter capitalised
