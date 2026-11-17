@@ -155,12 +155,12 @@ document with `outside the project`, as above; the message says whether the
 default boundary or the root refused it. The root covers every file a
 document names: `<!-- Attachment: -->` headers and patterns, images, files
 links point at with `--attach-referenced`, files macros name, and a d2
-diagram's imports and images. A Markdown `--page-header` is compiled from
-its own path, so its images are held to the root as well: with `document` to
-the header's own directory, and with a path to that directory, which then has
-to hold the header's images too. Includes and macro templates keep their own
-rule, which `--include-path` widens, and the document itself is held to the
-boundary described in [publishing](publishing.md), whatever the root.
+diagram's imports and images. A Markdown `--page-header` is given by whoever
+runs Mark rather than written by a document's author, so its images are held
+to the default boundary around the header's own directory, whatever the root.
+Includes and macro templates keep their own rule, which `--include-path`
+widens, and the document itself is held to the boundary described in
+[publishing](publishing.md), whatever the root.
 
 In the Go library this is `RenderingConfig.AttachmentRoot`, an
 `attachment.Boundary`, or `attachment.BoundaryDocument` for `document`. The
