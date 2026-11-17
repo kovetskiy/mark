@@ -148,7 +148,8 @@ file the default refuses:
   in, and the directory has to exist. A document outside the directory cannot
   publish the files beside it, and a directory above the one Mark is running
   in, such as `..` or `/`, allows no more than the default. A directory really
-  called `document` is written `./document`.
+  called `document` is written `./document`: `document` alone is the keyword
+  above, and Mark warns when it finds such a directory where it is running.
 
 Symlinks are followed either way, and a file outside the root fails the
 document with `outside the project`, as above; the message says whether the

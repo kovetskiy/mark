@@ -624,6 +624,28 @@ func (c PublishConfig) Validate() error {
 	return err
 }
 
+// warnAttachmentRoot says when AttachmentRoot is the keyword "document"
+// and a directory of that name is in the working directory, where a relative
+// path root is looked for: the keyword holds each document to its own
+// directory, which is not what someone naming that directory meant.
+func (r RenderingConfig) warnAttachmentRoot() {
+	if r.AttachmentRoot != attachment.BoundaryDocument {
+		return
+	}
+
+	info, err := os.Stat(string(attachment.BoundaryDocument))
+	if err != nil || !info.IsDir() {
+		return
+	}
+
+	log.Warn().Msgf(
+		"Rendering.AttachmentRoot (--attachment-root) %q holds each document to its own directory, "+
+			"not to the directory %q here; name that directory %q",
+		string(attachment.BoundaryDocument), string(attachment.BoundaryDocument),
+		"."+string(filepath.Separator)+string(attachment.BoundaryDocument),
+	)
+}
+
 // validate refuses rendering settings the renderers cannot act on.
 func (r RenderingConfig) validate() error {
 	// Checked whether or not mermaid is enabled: the engine is made for every
@@ -1508,6 +1530,10 @@ func NewPublisher(ctx context.Context, api *confluence.API, config PublishConfig
 func newPublisher(
 	ctx context.Context, api *confluence.API, config PublishConfig, checks page.LinkChecks,
 ) (*Publisher, error) {
+	// Here rather than in prepare, which Validate shares, so that a run says
+	// it once.
+	config.Rendering.warnAttachmentRoot()
+
 	res, err := newResources(config.Rendering.MermaidEngine)
 	if err != nil {
 		return nil, err
