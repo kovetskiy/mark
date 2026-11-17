@@ -289,6 +289,29 @@ func TestPreparedAttachmentIsNamedCleaned(t *testing.T) {
 	assert.Equal(t, "f.txt", attachment.Filename)
 }
 
+// TestAbsoluteReadsARootedNameOnWindows: "\x" and "D:x" are not absolute on
+// Windows, but neither is below the working directory: CheckWithin and a
+// directory attachment root given that way compare where filepath.Abs says
+// they lead.
+func TestAbsoluteReadsARootedNameOnWindows(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("a name is rooted without a drive only on Windows")
+	}
+
+	for _, name := range []string{`\shared`, `\shared\x.md`, filepath.VolumeName(t.TempDir()) + "shared"} {
+		want, err := filepath.Abs(name)
+		require.NoError(t, err)
+
+		got, err := absolute(name)
+		require.NoError(t, err)
+		assert.Equal(t, want, got, "absolute(%q)", name)
+	}
+
+	got, err := absolute(`docs\x.md`)
+	require.NoError(t, err)
+	assert.True(t, filepath.IsAbs(got), got)
+}
+
 func TestUploadNameCleansBackslashesOnWindows(t *testing.T) {
 	if runtime.GOOS != "windows" {
 		t.Skip("a backslash separates only on Windows")
