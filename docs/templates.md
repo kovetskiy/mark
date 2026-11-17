@@ -168,7 +168,11 @@ a pipe is written `\|`, as it is anywhere in a cell, and published as `|`.
 
 A value written over several lines keeps its line breaks, with
 `--strip-linebreaks` too: that option joins the lines of the paragraph around
-the parameter, not those of the string inside it.
+the parameter, not those of the string inside it. The spaces a line after the
+first starts with are dropped, as they are from any line of a paragraph, a
+value a template writes included. Where indentation matters in a parameter
+written in the document, write each line break as `&#10;` so that the value
+stays on one line.
 
 The opening and the closing tag have to stand in one paragraph: a value with a
 blank line in it is read as Markdown, as is one whose closing tag is missing.
