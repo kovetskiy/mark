@@ -39,11 +39,13 @@ file that has no mark metadata and so is never published.
 
 So is a link to a file whose extension is not a Markdown one (`.sh`, `.py`,
 `.txt`), unless that file is published as a page. A file published through
-`--files "docs/**/*.rst"`, say, is a page when it sets its own `Title` and has
-a `Space`, its own or the one given by `--space`; a title taken from
-`--title-from-filename` or `--title-from-h1` does not count. Only the first
-64 KiB of such a file is read to tell, so its headers have to come first, and
-one that cannot be read is left as written like a script. A link to a file
+`--files "docs/**/*.rst"`, say, is a page, titled as any document is, whether
+from its headers, its heading under `--title-from-h1` or its name under
+`--title-from-filename`. A file the run does not publish is a page only when
+it sets its own `Title` and has a `Space`, its own or the one given by
+`--space`; a title taken from the filename or heading does not count there.
+Only the first 64 KiB of such a file is read to tell, so its headers have to
+come first, and one that cannot be read is left as written like a script. A link to a file
 that is a page is looked up like any other. With `--attach-referenced` it is
 not attached once the page exists, or while the run that publishes the file
 has yet to create it; a script or data file is attached, and so is a file with

@@ -2045,7 +2045,7 @@ func (r *publishRun) processFile(ctx context.Context, in input) (*confluence.Pag
 	if err != nil {
 		return nil, nil, err
 	}
-	doc.declaresPage = declaresPageUnder(doc.resolver, r.publishes)
+	doc.declaresPage = r.publishes
 
 	if err := r.resolveRestrictions(ctx, doc); err != nil {
 		return nil, nil, err
@@ -2430,6 +2430,7 @@ func (r *publishRun) linkResolver(doc *document) (*page.LinkResolver, error) {
 	resolver.SourceFile = file
 	resolver.Deferrals = r.deferrals
 	resolver.Files = r.linkFiles(root)
+	resolver.Publishes = r.publishes
 	resolver.Warnings = doc.warnings
 	resolver.ReadMeta = func(markdown []byte, opts metadata.ExtractOptions) (*metadata.Meta, []byte, error) {
 		// The hierarchy places only the run's own files. Another is published
@@ -2454,36 +2455,6 @@ func (r *publishRun) linkResolver(doc *document) (*page.LinkResolver, error) {
 func linksUnder(ctx context.Context, resolver *page.LinkResolver) func(target, text string) (string, error) {
 	return func(target, text string) (string, error) {
 		return resolver.Resolve(ctx, target, text)
-	}
-}
-
-// declaresPageUnder says, for the renderer, whether a linked file that is not
-// Markdown is a page this run publishes, as the resolver reads it. A link to
-// such a file waits for its page rather than being attached. A file that reads
-// as a page and is not among the run's is attached while it has no page, as a
-// file is that was exported from a page's attachments.
-//
-// The renderer asks on both halves of a link and has to hear the same answer,
-// so each file is read once for the document.
-func declaresPageUnder(resolver *page.LinkResolver, publishes func(string) bool) func(string) bool {
-	if resolver == nil || publishes == nil {
-		return nil
-	}
-
-	answers := map[string]bool{}
-
-	return func(name string) bool {
-		if !publishes(name) {
-			return false
-		}
-
-		declared, asked := answers[name]
-		if !asked {
-			declared = resolver.DeclaresPage(name)
-			answers[name] = declared
-		}
-
-		return declared
 	}
 }
 

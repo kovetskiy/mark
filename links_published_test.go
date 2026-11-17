@@ -125,3 +125,49 @@ func TestDocumentFilesReadOnlyTheStartOfAFile(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "ABCDEFGHIJ", string(head))
 }
+
+// A file the run publishes is a document whatever its name, so one that takes
+// its title from its heading is linked as a page and not attached, and a file
+// the run does not publish needs a title of its own to be one.
+func TestLinkToAPublishedFileWithADerivedTitleIsAPageLink(t *testing.T) {
+	for name, tc := range map[string]struct {
+		glob     string
+		attached []string
+		body     string
+	}{
+		"published":     {glob: "*", body: `/x/`},
+		"not published": {glob: "*.md", attached: []string{"h.rst"}, body: `<ri:attachment ri:filename="h.rst"/>`},
+	} {
+		t.Run(name, func(t *testing.T) {
+			server := confluencetest.New(t)
+			home := server.AddPage("DOCS", "Home", "page", "")
+			server.SetHomepage("DOCS", home.ID)
+
+			dir := t.TempDir()
+			writeFile(t, dir, "h.rst", "# Heading\n\nBody.\n")
+			writeFile(t, dir, "doc.md", "# Doc\n\nSee [r](h.rst).\n")
+
+			require.NoError(t, Run(context.Background(), Config{
+				PublishConfig: PublishConfig{
+					Output:    io.Discard,
+					Page:      PageConfig{Space: "DOCS", TitleFromH1: true},
+					Rendering: RenderingConfig{AttachReferenced: true},
+				},
+				Files:      filepath.Join(dir, tc.glob),
+				Connection: ConnectionConfig{BaseURL: server.URL, Username: "user", Password: "token"},
+			}))
+
+			api := confluence.NewAPI(server.URL, confluence.Options{Username: "user", Password: "token"})
+			doc, err := api.FindPage(context.Background(), "DOCS", "Doc", confluence.ContentPage)
+			require.NoError(t, err)
+			require.NotNil(t, doc)
+
+			var attached []string
+			for _, a := range server.Attachments(doc.ID) {
+				attached = append(attached, a.Filename)
+			}
+			assert.Equal(t, tc.attached, attached)
+			assert.Contains(t, server.Page(doc.ID).Body, tc.body)
+		})
+	}
+}

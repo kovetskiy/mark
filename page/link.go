@@ -95,6 +95,12 @@ type LinkResolver struct {
 	// memory -- answers for them here.
 	Files LinkFiles
 
+	// Publishes says whether a file is one the run publishes, which is a
+	// document whatever its name: a link to it is read for its title as any
+	// document's is, so a .rst published with --files is a page. Nil knows
+	// of none, and a file that is not Markdown is a page only if it says so.
+	Publishes func(file string) bool
+
 	// broken collects the links that failed a check, rather than the first one
 	// stopping the file. Reporting one at a time would mean fixing a link,
 	// running again, and finding the next -- which for a page with six of them
@@ -204,6 +210,7 @@ func (r *LinkResolver) Resolve(ctx context.Context, target, text string) (string
 		r.Extract,
 		r.ReadMeta,
 		r.Files,
+		r.Publishes,
 	)
 	if err != nil {
 		return "", fmt.Errorf("resolve link %q: %w", target, err)
@@ -326,6 +333,7 @@ func resolveLink(
 	opts metadata.ExtractOptions,
 	readMeta func([]byte, metadata.ExtractOptions) (*metadata.Meta, []byte, error),
 	files LinkFiles,
+	publishes func(file string) bool,
 ) (string, *unresolved, error) {
 	var result string
 
@@ -345,9 +353,9 @@ func resolveLink(
 
 		// A script or data file is no document whatever its content sniffs as,
 		// and reading its headers would title it and look it up as a page --
-		// unless it declares a title and has a space, which is how a file
-		// published through --files is told from one that is not.
-		if filepath.Ext(found) != "" && !syntax.IsMarkdownFile(found) {
+		// unless the run publishes it, or it declares a title and has a space.
+		if filepath.Ext(found) != "" && !syntax.IsMarkdownFile(found) &&
+			(publishes == nil || !publishes(found)) {
 			// One that cannot be read is no document mark publishes either,
 			// and is not worth stopping the run for.
 			published, err := declaresPage(files, found, opts)
@@ -604,24 +612,6 @@ const headSize = 64 << 10
 // headReader is a LinkFiles that can read the start of a file without the rest.
 type headReader interface {
 	ReadHead(name string, n int) ([]byte, error)
-}
-
-// DeclaresPage reports whether a file that is not Markdown is published as a
-// page, read from the files and with the options r resolves its links with.
-// One that cannot be read is not.
-func (r *LinkResolver) DeclaresPage(name string) bool {
-	if r == nil {
-		return false
-	}
-
-	files := r.Files
-	if files == nil {
-		files = attachment.Root{}
-	}
-
-	declared, err := declaresPage(files, name, r.Extract)
-
-	return err == nil && declared
 }
 
 // declaresPage reports whether a file that is not Markdown is published as a

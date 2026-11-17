@@ -137,6 +137,9 @@ func TestLocalName(t *testing.T) {
 		"notes.md.":        "notes.md..txt",
 		"notes.MD . ":      "notes.MD . .txt",
 		"notes.md.x":       "notes.md.x",
+		"notes.mkd":        "notes.mkd.txt",
+		"notes.MARKDOWN":   "notes.MARKDOWN.txt",
+		"notes.mdwn . ":    "notes.mdwn . .txt",
 	} {
 		assert.Equal(t, want, localName(filename), "%q", filename)
 	}
