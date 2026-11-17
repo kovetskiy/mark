@@ -256,3 +256,34 @@ func TestAdmonitionCollapsedNested(t *testing.T) {
 	assert.Equal(t, 3, strings.Count(actual, "</ac:structured-macro>"))
 	assert.Contains(t, actual, `<ac:parameter ac:name="title">Inner</ac:parameter>`)
 }
+
+// TestAdmonitionTitleIsLiteral holds a quoted title to MkDocs: only \" and \
+// are escapes, so a Go escape such as \t or \u00e9 stays as written, for both
+// markers.
+func TestAdmonitionTitleIsLiteral(t *testing.T) {
+	tests := []struct {
+		name  string
+		title string
+		want  string
+	}{
+		{"windows path", `C:\temp`, `C:\temp`},
+		{"newline escape", `a\nb`, `a\nb`},
+		{"unicode escape", `\u00e9`, `\u00e9`},
+		{"deep path", `C:\path\to`, `C:\path\to`},
+		{"escaped quote", `say \"hi\"`, `say &#34;hi&#34;`},
+		{"escaped backslash", `a\b`, `a\b`},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			bang := render(t, "!!! note \""+tt.title+"\"\n    The body.\n", admonitionRenderers(), admonitionParserOptions()...)
+			assertWellFormed(t, bang)
+			assert.Contains(t, bang, "<p><strong>"+tt.want+"</strong></p>")
+
+			collapsed := render(t, "??? note \""+tt.title+"\"\n    The body.\n", admonitionRenderers(), admonitionParserOptions()...)
+			assertWellFormed(t, collapsed)
+			assert.Contains(t, collapsed, `<ac:parameter ac:name="title">`+tt.want+`</ac:parameter>`)
+			assert.Contains(t, collapsed, "<p><strong>"+tt.want+"</strong></p>")
+		})
+	}
+}
