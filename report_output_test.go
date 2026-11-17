@@ -43,16 +43,22 @@ func splitRun(t *testing.T, format report.Format, mode ModeConfig, update Update
 
 	err := Run(context.Background(), config)
 
-	// A Windows path is written with doubled backslashes in a JSON string, and
-	// with those doubled again in a string inside one.
+	// A Windows path is written with doubled backslashes in a JSON string, with
+	// those doubled again in a string inside one, and with its colon as %3A in a
+	// GitHub workflow command's file.
 	pairs := []string{server.URL, "SERVER"}
+	spellings := []string{dir, strings.ReplaceAll(dir, ":", "%3A")}
 	for _, backslashes := range []int{4, 2, 1} {
 		escape := strings.NewReplacer(`\`, strings.Repeat(`\`, backslashes))
-		pairs = append(pairs, escape.Replace(dir+string(filepath.Separator)), "DIR/")
+		for _, spelling := range spellings {
+			pairs = append(pairs, escape.Replace(spelling+string(filepath.Separator)), "DIR/")
+		}
 	}
 	for _, backslashes := range []int{4, 2, 1} {
 		escape := strings.NewReplacer(`\`, strings.Repeat(`\`, backslashes))
-		pairs = append(pairs, escape.Replace(dir), "DIR")
+		for _, spelling := range spellings {
+			pairs = append(pairs, escape.Replace(spelling), "DIR")
+		}
 	}
 	anonymous := strings.NewReplacer(pairs...)
 
