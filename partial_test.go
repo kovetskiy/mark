@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -190,6 +191,10 @@ func TestPartialRunRemovingRefusesAPattern(t *testing.T) {
 // TestPartialRunRemovingTakesOneFile: Files spelling one file, an escaped glob
 // character included, names exactly that file, as Paths would.
 func TestPartialRunRemovingTakesOneFile(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip(`a backslash separates path elements on Windows, so a pattern cannot escape "[" there`)
+	}
+
 	server, full, dir := partialFixture(t)
 	bID := pageIDTitled(t, server, "Page b")
 	require.NoError(t, os.Remove(filepath.Join(dir, "b.md")))
@@ -400,14 +405,19 @@ func TestPartialRequiresTrackPages(t *testing.T) {
 // a pattern names.
 func TestPartialRunGivenPaths(t *testing.T) {
 	server, full, dir := partialFixture(t)
-	weird := writeFile(t, dir, "we[a]{b,c}*.md", markdownWithTitle("Page weird"))
+	// Windows has no file name with a '*' in it.
+	weirdName := "we[a]{b,c}*.md"
+	if runtime.GOOS == "windows" {
+		weirdName = "we[a]{b,c}.md"
+	}
+	weird := writeFile(t, dir, weirdName, markdownWithTitle("Page weird"))
 	require.NoError(t, Run(context.Background(), full))
 	bID := pageIDTitled(t, server, "Page b")
 	cID := pageIDTitled(t, server, "Page c")
 	require.NoError(t, os.Remove(filepath.Join(dir, "b.md")))
 	require.NoError(t, os.Remove(filepath.Join(dir, "c.md")))
 
-	writeFile(t, dir, "we[a]{b,c}*.md", markdownWithTitle("Page weird renamed"))
+	writeFile(t, dir, weirdName, markdownWithTitle("Page weird renamed"))
 	require.NoError(t, Run(context.Background(), pathsOf(full, dir, filepath.Base(weird), "b.md")))
 
 	assert.Equal(t, 1, countPagesTitled(t, server, "Page weird renamed"), "the path was published as written")
