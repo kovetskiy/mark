@@ -140,3 +140,15 @@ func TestInScopeReportsARealFailure(t *testing.T) {
 	assert.NotErrorIs(t, err, confluence.ErrNotFound)
 	assert.Contains(t, err.Error(), page.ID)
 }
+
+// TestResolveScopeNamingNothingIsErrScopeNotFound: a caller can tell a space
+// with no such page or folder from a failed request.
+func TestResolveScopeNamingNothingIsErrScopeNotFound(t *testing.T) {
+	server := confluencetest.New(t)
+	server.SetHomepage("DOCS", server.AddPage("DOCS", "Home", "page", "").ID)
+	api := confluence.NewAPI(server.URL, confluence.Options{Username: "user", Password: "token"})
+
+	_, err := ResolveScope(t.Context(), api, "DOCS", "Nowhere")
+	require.ErrorIs(t, err, ErrScopeNotFound)
+	assert.EqualError(t, err, `--orphan-under names "Nowhere", which is not a page or folder in space "DOCS"`)
+}
