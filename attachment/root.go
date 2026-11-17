@@ -480,8 +480,28 @@ func (r Root) inFSDir(dir, joined string) (string, bool) {
 	}
 
 	file = r.resolveDeepest(file)
+	if file == dir || strings.HasPrefix(file, dir+"/") {
+		return file, true
+	}
 
-	return file, file == dir || strings.HasPrefix(file, dir+"/")
+	return file, r.sameFSDirAbove(dir, file)
+}
+
+// sameFSDirAbove is sameDirAbove inside the fs.FS, for one whose FileInfo
+// os.SameFile can compare, as os.DirFS's is.
+func (r Root) sameFSDirAbove(dir, file string) bool {
+	dirInfo, err := fs.Stat(r.fsys, dir)
+	if err != nil || !dirInfo.IsDir() {
+		return false
+	}
+
+	for name := file; name != "."; name = path.Dir(name) {
+		if info, err := fs.Stat(r.fsys, name); err == nil && os.SameFile(dirInfo, info) {
+			return true
+		}
+	}
+
+	return false
 }
 
 // resolveDeepest is name, a path inside the fs.FS, with the symbolic links in
