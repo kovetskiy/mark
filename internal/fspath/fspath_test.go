@@ -3,6 +3,7 @@ package fspath
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -74,8 +75,26 @@ func TestSplitLast(t *testing.T) {
 		{"a", ".", "a"},
 		{".", ".", ""},
 		{"a/b/", "a", "b"},
-		{"//a", "/", "a"},
 	} {
+		parent, last := splitLast(filepath.FromSlash(c.path))
+		assert.Equal(t, filepath.FromSlash(c.parent), parent, c.path)
+		assert.Equal(t, c.last, last, c.path)
+	}
+}
+
+// TestSplitLastDoubleSlash: "//a" is a root and an element on POSIX, but on
+// Windows it starts a UNC path, whose volume is "\\host\share".
+func TestSplitLastDoubleSlash(t *testing.T) {
+	cases := []struct{ path, parent, last string }{{"//a", "/", "a"}}
+	if runtime.GOOS == "windows" {
+		cases = []struct{ path, parent, last string }{
+			{"//host/share/a", `\\host\share\`, "a"},
+			{"//host/share/a/b", `\\host\share\a`, "b"},
+			{"//host/share", `\\host\share`, ""},
+		}
+	}
+
+	for _, c := range cases {
 		parent, last := splitLast(filepath.FromSlash(c.path))
 		assert.Equal(t, filepath.FromSlash(c.parent), parent, c.path)
 		assert.Equal(t, c.last, last, c.path)
