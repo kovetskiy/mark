@@ -353,7 +353,7 @@ func TestExportOKFPageReportsAFailedLookup(t *testing.T) {
 	server, pages := exportTreeSpace(t)
 	server.EditPage(pages["Guide"].ID, `<p>See `+pageLink("C++")+`.</p>`)
 	server.SetFail(func(r *http.Request) (int, string, bool) {
-		if r.URL.Query().Get("title") == "C++" {
+		if lookingUp(r, "C++") {
 			return http.StatusForbidden, `{"message":"no"}`, true
 		}
 		return 0, "", false
