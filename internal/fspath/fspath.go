@@ -26,20 +26,19 @@ import (
 // so path is not cleaned first: "docs/link/../x", with link pointing
 // elsewhere, opens a file beside link's target, not "docs/x".
 func ResolveDeepest(path string) string {
-	var rest []string
-
+	rest := ""
 	for {
 		if resolved, err := filepath.EvalSymlinks(path); err == nil {
-			return filepath.Join(append([]string{resolved}, rest...)...)
+			return filepath.Join(resolved, rest)
 		}
 
 		parent, last := splitLast(path)
 		if parent == path {
 			// The root itself did not resolve; nothing is left to walk up to.
-			return filepath.Join(append([]string{path}, rest...)...)
+			return filepath.Join(path, rest)
 		}
 
-		rest = append([]string{last}, rest...)
+		rest = filepath.Join(last, rest)
 		path = parent
 	}
 }

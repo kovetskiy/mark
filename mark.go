@@ -624,6 +624,10 @@ func (c PublishConfig) Validate() error {
 	return err
 }
 
+// attachmentRootSetting names RenderingConfig.AttachmentRoot to the library
+// caller and on the command line, as the attachment package does.
+const attachmentRootSetting = "Rendering.AttachmentRoot (--attachment-root)"
+
 // warnAttachmentRoot says when AttachmentRoot is the keyword "document"
 // and a directory of that name is in the working directory, where a relative
 // path root is looked for: the keyword holds each document to its own
@@ -639,9 +643,8 @@ func (r RenderingConfig) warnAttachmentRoot() {
 	}
 
 	log.Warn().Msgf(
-		"Rendering.AttachmentRoot (--attachment-root) %q holds each document to its own directory, "+
-			"not to the directory %q here; name that directory %q",
-		string(attachment.BoundaryDocument), string(attachment.BoundaryDocument),
+		"%s %q holds each document to its own directory, not to the directory %q here; name that directory %q",
+		attachmentRootSetting, string(attachment.BoundaryDocument), string(attachment.BoundaryDocument),
 		"."+string(filepath.Separator)+string(attachment.BoundaryDocument),
 	)
 }
@@ -675,7 +678,7 @@ func (r RenderingConfig) validate() error {
 	}
 
 	if err := r.AttachmentRoot.Validate(); err != nil {
-		return fmt.Errorf("invalid Rendering.AttachmentRoot (--attachment-root): %w", err)
+		return fmt.Errorf("invalid %s: %w", attachmentRootSetting, err)
 	}
 
 	if r.MermaidBundle && r.MermaidOutput != imageformat.SVG {

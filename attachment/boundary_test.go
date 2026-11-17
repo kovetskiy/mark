@@ -235,13 +235,12 @@ func boundaryMap() fstest.MapFS {
 	}
 
 	return fstest.MapFS{
-		"guide/index.md":       {Data: []byte("guide")},
-		"guide/images/a.png":   {Data: []byte("a")},
-		"guide/alias.png":      link("images/a.png"),
-		"guide/linked.pdf":     link("../other-doc/file.pdf"),
-		"guide/other":          link("../other-doc"),
-		"other-doc/file.pdf":   {Data: []byte("other")},
-		"other-doc/images.png": {Data: []byte("other image")},
+		"guide/index.md":     {Data: []byte("guide")},
+		"guide/images/a.png": {Data: []byte("a")},
+		"guide/alias.png":    link("images/a.png"),
+		"guide/linked.pdf":   link("../other-doc/file.pdf"),
+		"guide/other":        link("../other-doc"),
+		"other-doc/file.pdf": {Data: []byte("other")},
 	}
 }
 
