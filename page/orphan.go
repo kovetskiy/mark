@@ -28,6 +28,10 @@ type OrphanScope struct {
 	Under string
 }
 
+// ErrScopeNotFound is the error ResolveScope wraps when the space has no page
+// or folder of the name --orphan-under gives.
+var ErrScopeNotFound = errors.New("not a page or folder")
+
 // ResolveScope finds the page or folder --orphan-under names.
 //
 // A title or an id, and a page or a folder, because the thing people want to
@@ -67,8 +71,8 @@ func ResolveScope(ctx context.Context, api *confluence.API, spaceKey, under stri
 	}
 
 	return "", fmt.Errorf(
-		"--orphan-under names %q, which is not a page or folder in space %q",
-		under, spaceKey,
+		"--orphan-under names %q, which is %w in space %q",
+		under, ErrScopeNotFound, spaceKey,
 	)
 }
 

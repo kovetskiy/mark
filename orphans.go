@@ -66,10 +66,14 @@ func handleOrphans(
 			continue
 		}
 
-		// Before any scope is resolved: --orphan-under names a place in the
-		// run's own space.
 		if !own {
-			leaveOtherSpace(config, space, runSpace, orphans, results)
+			inScope, err := otherSpaceInScope(ctx, api, space, config.Tracking.OrphanUnder, orphans)
+			if err != nil {
+				return err
+			}
+			if len(inScope) > 0 {
+				leaveOtherSpace(config, space, runSpace, inScope, results)
+			}
 
 			continue
 		}
@@ -315,6 +319,39 @@ func leaveOtherSpace(config Config, space, runSpace string, orphans []manifest.O
 			"for a run whose --space is %s or to be removed by hand, since space %q is not the run's space, %q: %s",
 		space, len(paths), space, space, runSpace, strings.Join(paths, ", "),
 	)
+}
+
+// otherSpaceInScope returns the orphans of a space the run was not given that
+// lie beneath --orphan-under, as in the run's own space. A space with no page
+// or folder of that name has none there, and the run, which removes nothing in
+// that space, has no cause to fail over it.
+func otherSpaceInScope(
+	ctx context.Context, api *confluence.API, space, under string, orphans []manifest.Orphan,
+) ([]manifest.Orphan, error) {
+	scopeID, err := page.ResolveScope(ctx, api, space, under)
+	if errors.Is(err, page.ErrScopeNotFound) {
+		log.Debug().Msgf("space %q has no page or folder %q, so none of its tracked pages is in scope", space, under)
+
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	inScope := make([]manifest.Orphan, 0, len(orphans))
+	for _, orphan := range orphans {
+		in, err := page.InScope(ctx, api, scopeID, page.Orphan{
+			Path: orphan.Path, PageID: orphan.Entry.PageID, Title: orphan.Entry.Title, Space: space,
+		})
+		if err != nil {
+			return nil, err
+		}
+		if in {
+			inScope = append(inScope, orphan)
+		}
+	}
+
+	return inScope, nil
 }
 
 // listedScope reports whether the orphans of glob are keys a partial run's

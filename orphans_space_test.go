@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/kovetskiy/mark/v17/confluence"
@@ -327,6 +328,82 @@ func TestOnOrphanForgetsAnEntryWhosePageWentWithItsDocument(t *testing.T) {
 			require.NoError(t, err)
 			require.True(t, known)
 			assert.Equal(t, there.ID, entry.PageID)
+		})
+	}
+}
+
+// TestOnOrphanUnderHoldsInASpaceTheRunWasNotGiven: --orphan-under narrows the
+// pages reported in a space the run was not given as it does in the run's own.
+// One with no page or folder of that name has nothing in scope, rather than
+// failing a run that removes nothing there. A dry run says the same.
+func TestOnOrphanUnderHoldsInASpaceTheRunWasNotGiven(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		scoped bool
+	}{{"scope in the space", true}, {"no scope in the space", false}} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := context.Background()
+			server, api := spaceOrphanServer(t, "ONE", "TWO")
+			box := server.AddPage("ONE", "Parent", "page", findPageID(t, api, "ONE", "Home ONE"))
+
+			dir := t.TempDir()
+			inside := writeFile(t, dir, "inside.md",
+				"<!-- Space: ONE -->\n<!-- Parent: Parent -->\n<!-- Title: Inside -->\n\nInside.\n")
+			outside := writeFile(t, dir, "outside.md", "<!-- Space: ONE -->\n<!-- Title: Outside -->\n\nOutside.\n")
+			require.NoError(t, Run(ctx, spaceOrphanConfig(server, dir, report.OnOrphanDelete)))
+			ids := []string{findPageID(t, api, "ONE", "Inside"), findPageID(t, api, "ONE", "Outside")}
+
+			if !tc.scoped {
+				server.RenamePage(box.ID, "Renamed")
+			}
+
+			require.NoError(t, os.Remove(inside))
+			require.NoError(t, os.Remove(outside))
+			writeFile(t, dir, "own.md", "<!-- Space: TWO -->\n<!-- Title: Own -->\n\nOwn.\n")
+			writeFile(t, dir, "note.md", "<!-- Space: ONE -->\n<!-- Title: Note -->\n\nNote.\n")
+
+			config := spaceOrphanConfig(server, dir, report.OnOrphanDelete)
+			config.Page.Space = "TWO"
+			config.Tracking.OrphanUnder = "Parent"
+
+			dry := config
+			dry.Mode.DryRun = true
+			logged := captureLog(t, func() { publishJSON(t, dry) })
+
+			var out string
+			logged += captureLog(t, func() { out = publishJSON(t, config) })
+
+			var warned []string
+			for _, line := range strings.Split(logged, "\n") {
+				if strings.Contains(line, "were not published by this run") {
+					warned = append(warned, line)
+				}
+			}
+
+			for _, id := range ids {
+				assert.False(t, server.Page(id).Trashed)
+			}
+			assert.True(t, trackedIn(t, api, "ONE", inside), "still tracked")
+			assert.True(t, trackedIn(t, api, "ONE", outside))
+			for _, line := range warned {
+				assert.NotContains(t, line, "outside.md", "out of scope: not reported")
+			}
+
+			got := decodeReport(t, []byte(out))
+			if !tc.scoped {
+				assert.Empty(t, got.Orphans)
+				assert.Empty(t, warned)
+
+				return
+			}
+
+			require.Len(t, got.Orphans, 1)
+			assert.Equal(t, ids[0], got.Orphans[0].PageID)
+			assert.Equal(t, report.OnOrphanReport, got.Orphans[0].Action)
+			require.Len(t, warned, 2, "in the dry run and the run")
+			for _, line := range warned {
+				assert.Contains(t, line, filepath.ToSlash(inside))
+			}
 		})
 	}
 }

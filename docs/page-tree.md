@@ -369,6 +369,10 @@ The scope applies to everything Mark does about orphans, not only to removing
 them. A page outside it is not reported either, and is still remembered, so a
 later run with a wider scope knows about it.
 
+A title is looked up in each space that has orphans. Where it names no page or
+folder, a space the run handles orphans in fails the run, and a [space the run
+was not given](#what-stops-a-page-being-removed) has none in scope.
+
 ### Publishing only some of the files
 
 A job that publishes only the files a change touched, beside the run that
@@ -499,7 +503,8 @@ where the mapping cannot apply -- is a warning.
   the `reason` say so: the page is left for a run whose `--space` is that
   space, or to be removed by hand. A run with no `--space` takes its spaces
   from its documents and looks for orphans in each, and so needs a `Space`
-  header in every document.
+  header in every document. `--orphan-under` narrows what is reported there
+  as in the run's own space.
 * A document whose **`Space` header changed** publishes nothing to the space
   it left, so the page it had there is an orphan of that space, handled like
   any other: by a run given that `--space` or none, and left alone and
