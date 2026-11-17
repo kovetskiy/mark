@@ -181,10 +181,13 @@ title indefinitely. That holds for a title changed only in case, which the
 title lookup still finds the page by, with or without `--track-pages`.
 
 A document taking a title another document of the run gives up waits for that
-one: it is published ahead of its turn, and the report lists it there. If it
-fails, or `--no-overwrite` leaves its page alone, the page keeps the title and
-the document taking it is refused rather than published over that page. Two
-documents that swap titles each publish to the page their new title finds.
+one: the document giving the title up is published ahead of its turn, and the
+report lists it there, before the one that waited. If it fails, or
+`--no-overwrite` leaves its page alone, the page keeps the title and the
+document taking it is refused rather than published over that page. Two
+documents that swap titles each publish to the page their new title finds. A
+dry run previews the documents in the same order, and counts a title as given
+up once it has previewed the document retitling its page.
 
 A document that keeps its title is published ahead of its turn in the same way,
 when another document of the run declares that title before it: the page stays

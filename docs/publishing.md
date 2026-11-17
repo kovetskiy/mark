@@ -166,7 +166,10 @@ A page is `published`, `unchanged` (`--changes-only` found nothing to do),
 `published` once everything the run had to do to it -- its body, labels and
 properties -- has been done. Each document appears once, with what finally
 became of it, so one [published again](links.md#links-between-pages-published-together)
-whose second publish failed is `failed`.
+whose second publish failed is `failed`. Documents are listed in the order the
+run took them, which is the order of the files except for one
+[published ahead of its turn](page-tree.md#what-it-detects) for a title
+changing hands.
 
 With `--dry-run` and `--changes-only` together, the report says what a real run
 would do: `would-create` for a page that does not exist yet, `would-update` for
