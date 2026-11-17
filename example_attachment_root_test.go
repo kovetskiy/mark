@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"strings"
 	"testing/fstest"
@@ -56,8 +57,10 @@ func ExamplePublishConfig_Validate_attachmentRoot() {
 
 	// The message ends in the operating system's own words for the missing
 	// directory, so only its start is printed here.
-	message, _, _ := strings.Cut(err.Error(), ": stat ")
-	fmt.Println(message)
+	var pathErr *fs.PathError
+	if errors.As(err, &pathErr) {
+		fmt.Println(strings.TrimSuffix(err.Error(), ": "+pathErr.Error()))
+	}
 	// Output:
 	// true
 	// invalid Rendering.AttachmentRoot (--attachment-root): attachment root "no-such-directory" is not a usable directory
