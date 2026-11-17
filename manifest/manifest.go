@@ -92,7 +92,10 @@ import (
 // and inventing one from the glob would move every key the first time somebody
 // widened it.
 func Key(path string) string {
-	cleaned := filepath.Clean(path)
+	// Clean writes a relative path whose first element holds a colon as
+	// ".\documents:x" on Windows, so that it is not read as a drive; the key
+	// of a directory's page starts that way, and must read the same everywhere.
+	cleaned := strings.TrimPrefix(filepath.Clean(path), "."+string(filepath.Separator))
 
 	if filepath.IsAbs(cleaned) {
 		if cwd, err := os.Getwd(); err == nil {
