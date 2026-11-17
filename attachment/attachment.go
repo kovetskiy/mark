@@ -479,6 +479,11 @@ func within(roots []string, resolved string) (string, bool) {
 // withinAny reports whether a path is inside any of the roots. It compares the
 // paths as it is given them; resolving one side but not the other is the bug
 // fspath.ResolveDeepest exists to prevent.
+//
+// By name first, and failing that by identity: a directory on the way up
+// from path that is the same file as a root holds it. On a file system that
+// ignores case "Docs" and "docs" are one directory, which resolving keeps
+// spelt as given, and only the identity sees that.
 func withinAny(path string, roots []string) bool {
 	for _, root := range roots {
 		if _, ok := fspath.Within(root, path); ok {
@@ -486,7 +491,41 @@ func withinAny(path string, roots []string) bool {
 		}
 	}
 
+	for _, root := range roots {
+		if sameDirAbove(root, path) {
+			return true
+		}
+	}
+
 	return false
+}
+
+// sameDirAbove reports whether path, resolved, or a directory above it is
+// root. Both are resolved, so every part of path that exists is a real
+// directory and none is reached through a link.
+func sameDirAbove(root, path string) bool {
+	rootInfo, err := os.Stat(root)
+	if err != nil || !rootInfo.IsDir() {
+		return false
+	}
+
+	dir, err := filepath.Abs(path)
+	if err != nil {
+		return false
+	}
+
+	for {
+		if info, err := os.Lstat(dir); err == nil && os.SameFile(rootInfo, info) {
+			return true
+		}
+
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return false
+		}
+
+		dir = parent
+	}
 }
 
 // rootOf is the Root opener reads from: itself, or the disk, as the zero Root
