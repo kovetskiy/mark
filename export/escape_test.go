@@ -81,3 +81,26 @@ func TestEscapeDateLikeTheParser(t *testing.T) {
 	assert.Equal(t, `2020 \@date(2020-01-02) and \@date("2020-01-03") but @date() and @date( "' )`,
 		escapeInline(`2020 @date(2020-01-02) and @date("2020-01-03") but @date() and @date( "' )`, inlineOptions{}))
 }
+
+// TestEscapeLineStartAdmonition holds a paragraph line that starts like an
+// admonition opener to being escaped, for both markers.
+func TestEscapeLineStartAdmonition(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{"collapsed", "??? note", `\??? note`},
+		{"collapsed open", "???+ note", `\???+ note`},
+		{"after a line", "text\n??? note", "text\n" + `\??? note`},
+		{"admonition", "!!! note", `\!!! note`},
+		{"mid-line", "what ??? is", "what ??? is"},
+		{"two marks", "?? note", "?? note"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, escapeLineStarts(tt.in))
+		})
+	}
+}
