@@ -491,3 +491,33 @@ func TestAPublisherKeepsTheTitleOfAFileWhoseRetitleFailed(t *testing.T) {
 	_, err = publisher.Publish(ctx, three)
 	require.NoError(t, err, "one.md never published under the title it failed on")
 }
+
+// TestAPublisherWritesACaseOnlyRetitleOnce: the page found under the title it
+// had carries the new casing once the retitle is written, so publishing the
+// file again with --changes-only writes nothing.
+func TestAPublisherWritesACaseOnlyRetitleOnce(t *testing.T) {
+	server, api := docsSpace(t)
+	dir := t.TempDir()
+	file := writeFile(t, dir, "doc.md", titledDoc("Api guide", "Body."))
+
+	ctx := context.Background()
+	config := publishConfig(server.URL, "").PublishConfig
+	config.Update.ChangesOnly = true
+	publisher, err := NewPublisher(ctx, api, config)
+	require.NoError(t, err)
+	defer publisher.Close()
+
+	_, err = publisher.Publish(ctx, file)
+	require.NoError(t, err)
+	id := pageIDTitled(t, server, "Api guide")
+
+	writeFile(t, dir, "doc.md", titledDoc("API Guide", "Body."))
+	_, err = publisher.Publish(ctx, file)
+	require.NoError(t, err)
+	require.Equal(t, "API Guide", server.Page(id).Title)
+
+	version := server.Page(id).Version
+	_, err = publisher.Publish(ctx, file)
+	require.NoError(t, err)
+	assert.Equal(t, version, server.Page(id).Version, "a title already as written is not written again")
+}

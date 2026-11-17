@@ -1917,13 +1917,20 @@ func (api *API) forgetStaleTitles(id, title string, pageType ContentType) {
 	api.pageCacheMutex.Lock()
 	defer api.pageCacheMutex.Unlock()
 
+	// A page kept under a title that differs only in case shares the new
+	// title's key, and would go on carrying the old spelling.
+	if entry, ok := api.pageCacheByID[id]; ok && entry != nil && entry.Title != title {
+		delete(api.pageCacheByID, id)
+	}
+
 	suffix := pageCacheKey("", title, pageType)
 	for key, entry := range api.pageCache {
-		if strings.HasSuffix(key, suffix) {
-			if entry == nil {
+		switch {
+		case entry == nil:
+			if strings.HasSuffix(key, suffix) {
 				delete(api.pageCache, key)
 			}
-		} else if entry != nil && entry.ID == id {
+		case entry.ID == id && entry.Title != title:
 			delete(api.pageCache, key)
 		}
 	}
