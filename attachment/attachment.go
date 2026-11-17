@@ -411,8 +411,6 @@ func (b Boundary) outside(dir, named, path string) error {
 	var where string
 
 	switch b {
-	case "":
-		return b.outsideDefault(dir, named, path)
 	case BoundaryDocument:
 		where = fmt.Sprintf("the document's directory %q: %s is %q", dir, boundarySetting, string(b))
 	default:

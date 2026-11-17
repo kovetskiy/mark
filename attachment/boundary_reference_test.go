@@ -429,7 +429,6 @@ func (tr referenceTree) mirrorFS(tb testing.TB) fstest.MapFS {
 type referenceCase struct {
 	where    string
 	root     Root
-	boundary Boundary
 	base     string
 	name     string
 	readable bool
@@ -458,7 +457,7 @@ func (tr referenceTree) compare(c referenceCase) string {
 			read = c.name
 		}
 
-		want = tr.onDisk(c.boundary, c.base, read)
+		want = tr.onDisk(c.root.Boundary(), c.base, read)
 	default:
 		joined := filepath.Join(c.base, c.name)
 		if c.readable && isAbs(c.name) {
@@ -470,7 +469,7 @@ func (tr referenceTree) compare(c referenceCase) string {
 			dir = tr.work
 		}
 
-		want = fsVerdict(dir, c.boundary, c.base, joined)
+		want = fsVerdict(dir, c.root.Boundary(), c.base, joined)
 	}
 
 	switch {
@@ -478,7 +477,7 @@ func (tr referenceTree) compare(c referenceCase) string {
 		return fmt.Sprintf("refused, the reference allows: %v", err)
 	case want != allowed && err == nil:
 		return "allowed, the reference says " + string(want)
-	case err != nil && c.root.FS() == nil && c.boundary != "":
+	case err != nil && c.root.FS() == nil && c.root.Boundary() != "":
 		// Only on disk does an attachment root sit beside a second limit
 		// that the message has to tell apart.
 		byDefault := strings.Contains(err.Error(), "the default boundary, which")
@@ -505,7 +504,7 @@ func (tr referenceTree) cases(tb testing.TB, names []string) []referenceCase {
 		for _, base := range tr.bases {
 			for _, name := range names {
 				for _, readable := range []bool{false, true} {
-					cases = append(cases, referenceCase{"disk", Root{}.WithBoundary(b), b, base, name, readable})
+					cases = append(cases, referenceCase{"disk", Root{}.WithBoundary(b), base, name, readable})
 
 					// A directory root holds nothing of an fs.FS; a test of
 					// its own says so.
@@ -514,8 +513,8 @@ func (tr referenceTree) cases(tb testing.TB, names []string) []referenceCase {
 					}
 
 					cases = append(cases,
-						referenceCase{"os.DirFS", dirFS.WithBoundary(b), b, base, name, readable},
-						referenceCase{"fstest.MapFS", mapFS.WithBoundary(b), b, base, name, readable},
+						referenceCase{"os.DirFS", dirFS.WithBoundary(b), base, name, readable},
+						referenceCase{"fstest.MapFS", mapFS.WithBoundary(b), base, name, readable},
 					)
 				}
 			}
@@ -549,7 +548,7 @@ func TestBoundaryAgreesWithAReference(t *testing.T) {
 			failures++
 			if failures <= 20 {
 				t.Errorf("%s, root %q, base %q, name %q, readable %v: %s",
-					c.where, c.boundary, c.base, c.name, c.readable, got)
+					c.where, c.root.Boundary(), c.base, c.name, c.readable, got)
 			}
 		}
 	}
@@ -580,9 +579,9 @@ func FuzzBoundaryAgreesWithAReference(f *testing.F) {
 		b := tr.roots[int(rootIndex)%len(tr.roots)]
 		base := tr.bases[int(baseIndex)%len(tr.bases)]
 
-		c := referenceCase{"disk", Root{}.WithBoundary(b), b, base, name, readable}
+		c := referenceCase{"disk", Root{}.WithBoundary(b), base, name, readable}
 		if where%2 == 1 && !b.NamesDirectory() && !filepath.IsAbs(base) {
-			c = referenceCase{"os.DirFS", dirFS.WithBoundary(b), b, base, name, readable}
+			c = referenceCase{"os.DirFS", dirFS.WithBoundary(b), base, name, readable}
 		}
 
 		if got := tr.compare(c); got != "" {

@@ -100,9 +100,9 @@ func (c RenderingConfig) checkDocumentRoot(doc Document) error {
 	}
 
 	return fmt.Errorf(
-		"Document %s reads its files from an FS, which Rendering.AttachmentRoot (--attachment-root) %q, "+
+		"Document %s reads its files from an FS, which %s %q, "+
 			"a directory on disk, cannot hold: narrow the FS with fs.Sub, or use attachment.BoundaryDocument",
-		doc.Path, string(c.AttachmentRoot),
+		doc.Path, attachmentRootSetting, string(c.AttachmentRoot),
 	)
 }
 
