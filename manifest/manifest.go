@@ -2190,8 +2190,9 @@ func (s *Store) recordedElsewhere(spaceKey, path, pageID string) (string, bool) 
 		return "", false
 	}
 
-	for _, other := range s.sortedSpaces() {
-		state := s.spaces[other]
+	// A page is in one space, so at most one other space can match: no order
+	// is needed.
+	for other, state := range s.spaces {
 		if other == spaceKey || state.untracked || !state.claimed[pageID] || state.byPage[pageID] != path {
 			continue
 		}
