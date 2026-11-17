@@ -221,7 +221,7 @@ func (r *publishRun) recordedDocument(
 	if err != nil {
 		return nil, input{}, nil, fmt.Errorf("error while finding page %q: %w", meta.Title, err)
 	}
-	if pg == nil {
+	if pg = r.carrying(pg, meta.Title); pg == nil {
 		return nil, input{}, nil, nil
 	}
 
@@ -283,63 +283,34 @@ func (r *publishRun) renamedFrom(
 	return input{}, false, nil
 }
 
-// titleFreed reports, for a dry run, whether the page the document's title
-// finds would have been retitled by its own document by the document's turn,
-// leaving the title to a new page. It would when that document's new title
-// is itself free, or freed the same way; visiting holds the documents asked
-// about, so that titles swapped between documents are found as they are.
-//
-// A page --no-overwrite would leave alone keeps its title, as does one whose
-// document is refused the title it now declares, and the error is the one a
-// real run refuses the document with.
-func (r *publishRun) titleFreed(
-	ctx context.Context, file, key string, meta *metadata.Meta, visiting map[string]bool,
-) (bool, error) {
-	held, err := r.titleHolder(ctx, file, key, meta)
-	if err != nil || held == nil || visiting[held.holder.file] {
-		return false, err
-	}
-
-	declared := r.titles.readAhead(held.holder).meta
-
-	// A holder refused the title it now declares never retitles the page.
-	claim := runTitleKey(declared.Space, declared.Type, declared.Title)
-	if previous, taken := r.titleClaims[claim]; taken && absPath(previous) != absPath(held.holder.file) {
-		return false, held
-	}
-	if owner, err := r.titleOwner(ctx, held.holder.file, held.holder.key, declared); err != nil {
-		return false, err
-	} else if owner != nil {
-		return false, held
-	}
-
-	if r.noOverwrite {
-		drift, err := hasDrifted(ctx, r.api, r.tracker, declared.Space, held.holder.key, held.page)
-		if err != nil {
-			return false, err
-		}
-		if drift != "" {
-			return false, held
-		}
-	}
-
-	taken, err := r.api.FindPage(ctx, declared.Space, declared.Title, confluence.ContentType(declared.Type))
+// awaitTitleHolder refuses doc, with the error the run acts on by giving the
+// holder its turn first, while its title finds the page of another document
+// of the run that retitles it. A holder waiting on doc cannot go first: the
+// two swapped titles, and each takes the page its title finds.
+func (r *publishRun) awaitTitleHolder(ctx context.Context, doc *document) error {
+	held, err := r.titleHolder(ctx, doc.file, doc.key, doc.meta)
 	if err != nil {
-		return false, fmt.Errorf("error while finding page %q: %w", declared.Title, err)
+		return err
 	}
-	if taken == nil {
-		return true, nil
-	}
-
-	visiting[file] = true
-
-	freed, err := r.titleFreed(ctx, held.holder.file, held.holder.key, declared, visiting)
-	if refused := (*titleHeldError)(nil); errors.As(err, &refused) {
-		// The holder is refused its own title, so it keeps this one.
-		return false, held
+	if held != nil && !r.yielded[held.holder.file] {
+		return held
 	}
 
-	return freed, err
+	return nil
+}
+
+// carrying returns pg, found by title, unless a dry run has previewed the
+// document retitling it: a real run has written the new title by then, and
+// the lookup no longer finds the page.
+func (r *publishRun) carrying(pg *confluence.PageInfo, title string) *confluence.PageInfo {
+	if pg == nil {
+		return nil
+	}
+	if retitled, ok := r.previewTitles[pg.ID]; ok && !strings.EqualFold(retitled, title) {
+		return nil
+	}
+
+	return pg
 }
 
 // refreshStaleParents rewrites parent titles that no longer resolve to the

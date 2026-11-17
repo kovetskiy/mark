@@ -1736,6 +1736,7 @@ func newPublishRun(
 		titleClaims:      map[string]string{},
 		claimedTitles:    map[string]string{},
 		yielded:          map[string]bool{},
+		previewTitles:    map[string]string{},
 	}, nil
 }
 
@@ -1992,6 +1993,11 @@ type publishRun struct {
 	// yielded holds the documents waiting for the one retitling the page
 	// their title finds, which the run publishes ahead of its turn.
 	yielded map[string]bool
+
+	// previewTitles holds, in a dry run, the title each page a previewed
+	// document retitles carries by then, by page id: what a real run's
+	// update has written by the time the next document looks the title up.
+	previewTitles map[string]string
 
 	// warnings holds each document's warnings for the run's report: a second
 	// pass keeps what only the first found, such as a comment it dropped, and
@@ -2602,6 +2608,10 @@ func (r *publishRun) previewLocation(ctx context.Context, doc *document) (pagePr
 		return found, nil
 	}
 
+	if err := r.awaitTitleHolder(ctx, doc); err != nil {
+		return found, err
+	}
+
 	// As a real run does before resolving, or a parent renamed in
 	// Confluence is looked for under its old title and the page is
 	// reported moved on every preview while the real run leaves it be.
@@ -2615,16 +2625,8 @@ func (r *publishRun) previewLocation(ctx context.Context, doc *document) (pagePr
 		return found, fmt.Errorf("unable to resolve page location: %w", err)
 	}
 
-	if pg != nil {
-		// A real run publishes the document that retitles this page first.
-		freed, err := r.titleFreed(ctx, file, doc.key, meta, map[string]bool{})
-		if err != nil {
-			return found, err
-		}
-		if freed {
-			pg = nil
-		}
-	}
+	// A page a previewed document has retitled no longer carries the title.
+	pg = r.carrying(pg, meta.Title)
 
 	if pg == nil {
 		// The title found nothing, which is where a real run consults
@@ -2786,6 +2788,13 @@ func (r *publishRun) preview(ctx context.Context, doc *document) error {
 		PageID: target.ID, URL: url,
 	})
 
+	// The real run's update retitles the page, freeing its title for a
+	// document that waited on this one.
+	if config.Mode.DryRun && previewed != nil && meta != nil && status != report.StatusSkipped &&
+		!strings.EqualFold(previewed.Title, meta.Title) {
+		r.previewTitles[previewed.ID] = meta.Title
+	}
+
 	return nil
 }
 
@@ -2916,13 +2925,9 @@ func (r *publishRun) resolveDocumentPage(ctx context.Context, doc *document) (*d
 	api, meta := r.api, doc.meta
 	dest := &destination{}
 
-	// Before anything is moved or written. A holder waiting on this document
-	// cannot go first: the two swapped titles, and each takes the page its
-	// title finds.
-	if held, err := r.titleHolder(ctx, doc.file, doc.key, meta); err != nil {
+	// Before anything is moved or written.
+	if err := r.awaitTitleHolder(ctx, doc); err != nil {
 		return nil, err
-	} else if held != nil && !r.yielded[held.holder.file] {
-		return nil, held
 	}
 
 	// Parents are named by title, so a parent that has itself been renamed
