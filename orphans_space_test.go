@@ -108,7 +108,8 @@ func TestOnOrphanLeavesASpaceOnlyAHeaderNames(t *testing.T) {
 			for _, orphan := range got.Orphans {
 				assert.Equal(t, report.OnOrphanReport, orphan.Action)
 				assert.Equal(t,
-					`space "ONE" is not the run's space, "TWO"; a run given --space ONE acts on it`, orphan.Reason)
+					`space "ONE" is not the run's space, "TWO"; it is left for a run whose --space is ONE, `+
+						`or to be removed by hand`, orphan.Reason)
 			}
 		})
 	}
@@ -249,8 +250,8 @@ func TestOnOrphanLeavesThePageADocumentLeftInAnotherSpace(t *testing.T) {
 	for _, action := range []report.OnOrphan{report.OnOrphanDelete, report.OnOrphanArchive, report.OnOrphanReport} {
 		t.Run(string(action), func(t *testing.T) {
 			const warning = `space \"ONE\": 1 tracked page(s) were not published by this run and are left alone, ` +
-				`still tracked, since space \"ONE\" is not the run's space, \"TWO\"; ` +
-				`to have --on-orphan act on them, publish that space in a run given --space ONE: `
+				`still tracked, for a run whose --space is ONE or to be removed by hand, ` +
+				`since space \"ONE\" is not the run's space, \"TWO\": `
 
 			server, api, old, dir, logged, out := movedSpaceFixture(t, action, "TWO", false)
 			moved := filepath.Join(dir, "moved.md")
@@ -268,7 +269,8 @@ func TestOnOrphanLeavesThePageADocumentLeftInAnotherSpace(t *testing.T) {
 			assert.Equal(t, old, got.Orphans[0].PageID)
 			assert.Equal(t, report.OnOrphanReport, got.Orphans[0].Action)
 			assert.Equal(t,
-				`space "ONE" is not the run's space, "TWO"; a run given --space ONE acts on it`, got.Orphans[0].Reason)
+				`space "ONE" is not the run's space, "TWO"; it is left for a run whose --space is ONE, `+
+					`or to be removed by hand`, got.Orphans[0].Reason)
 
 			server, api, old, dir, logged, _ = movedSpaceFixture(t, action, "TWO", true)
 			assert.False(t, server.Page(old).Trashed)

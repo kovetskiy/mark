@@ -496,10 +496,10 @@ where the mapping cannot apply -- is a warning.
   stays tracked. With `--space`, a run looks for orphans in that space alone: a
   document's `Space` header says where that document is published, not that the
   other pages tracked in its space are this run's to remove. The warning and
-  the `reason` name the remedy: publish that space in a run given its
-  `--space`. A run with no `--space` takes its spaces from its documents and
-  looks for orphans in each, and so needs a `Space` header in every document.
-  Where neither fits, such a page is left for you to remove.
+  the `reason` say so: the page is left for a run whose `--space` is that
+  space, or to be removed by hand. A run with no `--space` takes its spaces
+  from its documents and looks for orphans in each, and so needs a `Space`
+  header in every document.
 * A document whose **`Space` header changed** publishes nothing to the space
   it left, so the page it had there is an orphan of that space, handled like
   any other: by a run given that `--space` or none, and left alone and
