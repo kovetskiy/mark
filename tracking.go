@@ -161,35 +161,18 @@ func titleTaken(previous, title, space string) error {
 	)
 }
 
-// titleHolder returns, as the error refusing it, the other document of the
-// run whose page the document's title finds while that document now declares
-// another title; nil when there is none.
+// titleHeld returns, as the error refusing it, the other document of the run
+// that the page the document's title finds is recorded for; nil when there is
+// none.
 //
-// The title lookup cannot tell that page from the document's own: it is the
-// page of the title until its document has retitled it. Publishing to it
-// would put two documents on one page and leave the title without one.
-func (r *publishRun) titleHolder(
-	ctx context.Context, file, key string, meta *metadata.Meta,
-) (*titleHeldError, error) {
-	pg, holder, declared, err := r.recordedDocument(ctx, file, key, meta)
-	if err != nil || declared == nil || strings.EqualFold(declared.Title, pg.Title) {
-		return nil, err
-	}
-
-	return &titleHeldError{
-		space: meta.Space, title: meta.Title, page: pg, holder: holder, retitled: declared.Title,
-	}, nil
-}
-
-// titleOwner returns, as the error refusing it, the other document of the
-// run that the page the document's title finds is recorded for and that
-// still declares the title; nil when there is none.
-//
-// The page is that document's whichever of the two comes first, so it has
-// its turn first and the one asking is refused. A page recorded for a
-// document gone from the run belongs to the document of the run that has its
-// content under another name, and to whichever takes the title when none has.
-func (r *publishRun) titleOwner(
+// When that document now declares another title, the lookup cannot tell its
+// page from this document's own until it has retitled it: publishing to it
+// would put two documents on one page and leave the title without one. When
+// it still declares the title, the page is its whichever of the two comes
+// first. Either way it has its turn first. A page recorded for a document
+// gone from the run belongs to the document of the run that has its content
+// under another name, and to whichever takes the title when none has.
+func (r *publishRun) titleHeld(
 	ctx context.Context, file, key string, meta *metadata.Meta,
 ) (*titleHeldError, error) {
 	// A compile asks nothing of Confluence.
@@ -198,11 +181,16 @@ func (r *publishRun) titleOwner(
 	}
 
 	pg, holder, declared, err := r.recordedDocument(ctx, file, key, meta)
-	if err != nil || declared == nil || !strings.EqualFold(declared.Title, pg.Title) {
+	if err != nil || declared == nil {
 		return nil, err
 	}
 
-	return &titleHeldError{space: meta.Space, title: meta.Title, page: pg, holder: holder}, nil
+	held := &titleHeldError{space: meta.Space, title: meta.Title, page: pg, holder: holder}
+	if !strings.EqualFold(declared.Title, pg.Title) {
+		held.retitled = declared.Title
+	}
+
+	return held, nil
 }
 
 // recordedDocument returns the page the document's title finds, the other
@@ -281,22 +269,6 @@ func (r *publishRun) renamedFrom(
 	}
 
 	return input{}, false, nil
-}
-
-// awaitTitleHolder refuses doc, with the error the run acts on by giving the
-// holder its turn first, while its title finds the page of another document
-// of the run that retitles it. A holder waiting on doc cannot go first: the
-// two swapped titles, and each takes the page its title finds.
-func (r *publishRun) awaitTitleHolder(ctx context.Context, doc *document) error {
-	held, err := r.titleHolder(ctx, doc.file, doc.key, doc.meta)
-	if err != nil {
-		return err
-	}
-	if held != nil && !r.yielded[held.holder.file] {
-		return held
-	}
-
-	return nil
 }
 
 // carrying returns pg, found by title, unless a dry run has previewed the
