@@ -453,6 +453,13 @@ func absolute(path string) (string, error) {
 		return path, nil
 	}
 
+	// On Windows "\x" is on the working directory's drive and "D:x" is
+	// relative to D:'s own directory, so neither goes below the working
+	// directory; filepath.Abs knows where they lead.
+	if filepath.VolumeName(path) != "" || (path != "" && os.IsPathSeparator(path[0])) {
+		return filepath.Abs(path)
+	}
+
 	cwd, err := os.Getwd()
 	if err != nil {
 		return "", err
