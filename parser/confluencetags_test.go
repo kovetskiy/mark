@@ -41,16 +41,7 @@ func TestConfluenceTagParserClosingTags(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			md := goldmarktest.New(
-				goldmarktest.WithParserOptions(parser.WithInlineParsers(
-					util.Prioritized(cparser.NewConfluenceTagParser(), 199),
-				)),
-				goldmarktest.WithRendererOptions(html.WithUnsafe()),
-			)
-
-			var buf bytes.Buffer
-			require.NoError(t, md.Convert([]byte(tt.input+"\n"), &buf))
-			got := buf.String()
+			got := convertWithTagParser(t, tt.input+"\n")
 
 			assert.NotContains(t, got, "&lt;/", "a closing Confluence tag must not be escaped")
 			assert.Contains(t, got, tt.input, "the markup must pass through unchanged")
