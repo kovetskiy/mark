@@ -470,15 +470,29 @@ func absolute(path string) (string, error) {
 
 // within reports whether resolved is inside any of roots, both resolved
 // through their symlinks, and returns resolved as it compared it.
+//
+// Each is made absolute before it is resolved, as withinDir does: a relative
+// path resolved first is made absolute against the working directory as
+// $PWD spells it, which through a link is outside the resolved roots.
 func within(roots []string, resolved string) (string, bool) {
-	path := fspath.ResolveDeepest(resolved)
+	path := resolveAbsolute(resolved)
 
 	resolvedRoots := make([]string, 0, len(roots))
 	for _, root := range roots {
-		resolvedRoots = append(resolvedRoots, fspath.ResolveDeepest(root))
+		resolvedRoots = append(resolvedRoots, resolveAbsolute(root))
 	}
 
 	return path, withinAny(path, resolvedRoots)
+}
+
+// resolveAbsolute is path made absolute and resolved through its symlinks,
+// or resolved as given when the working directory cannot be read.
+func resolveAbsolute(path string) string {
+	if abs, err := absolute(path); err == nil {
+		path = abs
+	}
+
+	return fspath.ResolveDeepest(path)
 }
 
 // withinAny reports whether a path is inside any of the roots. It compares the
