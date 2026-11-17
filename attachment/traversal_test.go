@@ -172,3 +172,37 @@ func TestMissingFileIsReportedByTheOpen(t *testing.T) {
 	require.Error(t, err)
 	assert.NotErrorIs(t, err, ErrOutsideProject)
 }
+
+// TestAbsoluteReferenceFollowsDotDotAfterALink: an absolute reference is read
+// as written, so a ".." after a link climbs from the link's target. A link
+// inside the project to the project itself, followed by enough "..", leaves
+// the project, and the check sees that rather than the name with the link
+// cancelled out.
+func TestAbsoluteReferenceFollowsDotDotAfterALink(t *testing.T) {
+	root, docs := project(t)
+
+	deep := filepath.Join(docs, "sub", "deeper")
+	require.NoError(t, os.MkdirAll(deep, 0o755))
+	require.NoError(t, os.Symlink(root, filepath.Join(deep, "back")))
+
+	outside := filepath.Join(filepath.Dir(root), filepath.Base(root)+"-outside")
+	require.NoError(t, os.MkdirAll(outside, 0o755))
+	t.Cleanup(func() { _ = os.RemoveAll(outside) })
+	require.NoError(t, os.WriteFile(filepath.Join(outside, "o.txt"), []byte("outside"), 0o600))
+
+	// Cleaned as written this is docs/sub/<outside>/o.txt, inside docs.
+	reference := deep + "/back/../" + filepath.Base(outside) + "/o.txt"
+	read, err := os.ReadFile(reference)
+	require.NoError(t, err)
+	require.Equal(t, "outside", string(read), "the open climbs from the link's target")
+
+	for _, b := range []Boundary{"", BoundaryDocument} {
+		require.ErrorIs(t, CheckReadable(docs, reference), ErrOutsideProject)
+		require.ErrorIs(t, Root{}.WithBoundary(b).CheckReadable(docs, reference), ErrOutsideProject, "boundary %q", b)
+	}
+
+	// The same climb that stays inside is allowed.
+	require.NoError(t, os.WriteFile(filepath.Join(root, "inside.txt"), []byte("inside"), 0o600))
+	require.NoError(t, CheckReadable(docs, deep+"/back/inside.txt"))
+	require.NoError(t, CheckReadable(docs, deep+"/back/docs/../inside.txt"))
+}

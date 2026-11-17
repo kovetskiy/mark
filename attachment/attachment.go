@@ -431,12 +431,12 @@ const boundarySetting = "Rendering.AttachmentRoot (--attachment-root)"
 // directory's own link and reads as outside the other. It returns dir as it
 // compared it too.
 func withinDir(dir, path string) (resolvedDir, resolved string, ok bool, err error) {
-	absDir, err := filepath.Abs(dir)
+	absDir, err := absolute(dir)
 	if err != nil {
 		return "", "", false, err
 	}
 
-	absPath, err := filepath.Abs(path)
+	absPath, err := absolute(path)
 	if err != nil {
 		return "", "", false, err
 	}
@@ -445,6 +445,22 @@ func withinDir(dir, path string) (resolvedDir, resolved string, ok bool, err err
 	resolved = fspath.ResolveDeepest(absPath)
 
 	return resolvedDir, resolved, withinAny(resolved, []string{resolvedDir}), nil
+}
+
+// absolute is path made absolute without cleaning it, as filepath.Abs does:
+// a ".." after a link is taken from the link's target when the path is
+// opened, and fspath.ResolveDeepest takes it so only if it is still there.
+func absolute(path string) (string, error) {
+	if filepath.IsAbs(path) {
+		return path, nil
+	}
+
+	cwd, err := os.Getwd()
+	if err != nil {
+		return "", err
+	}
+
+	return cwd + string(filepath.Separator) + path, nil
 }
 
 // within reports whether resolved is inside any of roots, both resolved
