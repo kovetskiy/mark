@@ -83,21 +83,30 @@ func TestRoundTripTextFeaturesWouldParse(t *testing.T) {
 
 // TestRoundTripMacroParameterText: the text of a macro parameter, which mark
 // publishes as written, is exported as written, in a paragraph and in a table
-// cell. It holds export's literalText to the parser's literal elements: text
-// exported with Markdown escapes would be published with its backslashes.
+// cell, and so is the text of an element inside one, which is published with
+// the rest of the parameter. It holds export's literalText to the parser's
+// literal elements: text exported with Markdown escapes would be published
+// with its backslashes.
 func TestRoundTripMacroParameterText(t *testing.T) {
+	parameters := map[string]string{
+		"an element's text": `a*b* <ac:link><ri:page ri:content-title="Notes"/>` +
+			`<ac:link-body>c*d* \ e|f_g_ &amp; h</ac:link-body></ac:link>`,
+	}
 	for _, text := range []string{
 		".*Guide.*", "a_b_ __init__", `C:\dir\*.txt`, "a `b` c", "Guide|Notes", `Guide\|Notes`,
 		"a & b < c > d", "&amp; &#42;", "[x](https://example.com)", "two\nlines", "$x$ :smile: @date(2024-01-01)",
 	} {
-		t.Run(text, func(t *testing.T) {
-			macro := `<ac:structured-macro ac:name="x"><ac:parameter ac:name="v">` + escapeXMLText(text) +
-				`</ac:parameter><ac:rich-text-body><p>body</p></ac:rich-text-body></ac:structured-macro>`
-			inline := `<ac:structured-macro ac:name="status"><ac:parameter ac:name="title">` + escapeXMLText(text) +
-				`</ac:parameter></ac:structured-macro>`
+		parameters[text] = escapeXMLText(text)
+	}
+
+	for name, content := range parameters {
+		t.Run(name, func(t *testing.T) {
+			parameter := `<ac:parameter ac:name="title">` + content + `</ac:parameter>`
+			inline := `<ac:structured-macro ac:name="status">` + parameter + `</ac:structured-macro>`
 
 			for _, storage := range []string{
-				macro,
+				`<ac:structured-macro ac:name="x">` + parameter +
+					`<ac:rich-text-body><p>body</p></ac:rich-text-body></ac:structured-macro>`,
 				"<p>before " + inline + " after</p>",
 				"<table><thead><tr><th>h</th></tr></thead><tbody><tr><td>" + inline + "</td></tr></tbody></table>",
 			} {
@@ -110,33 +119,6 @@ func TestRoundTripMacroParameterText(t *testing.T) {
 					"exported Markdown:\n%s", doc.Markdown)
 			}
 		})
-	}
-}
-
-// TestRoundTripMacroParameterElementText: the text of an element inside a
-// macro parameter is published as written with the rest of the parameter, so
-// it is exported as written too.
-func TestRoundTripMacroParameterElementText(t *testing.T) {
-	const parameter = `<ac:parameter ac:name="title">a*b* <ac:link><ri:page ri:content-title="Notes"/>` +
-		`<ac:link-body>c*d* \ e|f_g_ &amp; h</ac:link-body></ac:link></ac:parameter>`
-
-	const (
-		macro = `<ac:structured-macro ac:name="x">` + parameter +
-			`<ac:rich-text-body><p>body</p></ac:rich-text-body></ac:structured-macro>`
-		inline = `<ac:structured-macro ac:name="status">` + parameter + `</ac:structured-macro>`
-	)
-
-	for _, storage := range []string{
-		macro,
-		"<p>before " + inline + " after</p>",
-		"<table><thead><tr><th>h</th></tr></thead><tbody><tr><td>" + inline + "</td></tr></tbody></table>",
-	} {
-		doc, err := Convert(storage, Options{})
-		require.NoError(t, err)
-
-		published := compileWith(t, doc.Markdown, filepath.Join(t.TempDir(), "page.md"), "mention")
-		assert.Equal(t, canonical(t, storage), canonical(t, published),
-			"exported Markdown:\n%s", doc.Markdown)
 	}
 }
 

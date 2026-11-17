@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"regexp"
 	"slices"
-	"strings"
 
 	"github.com/kovetskiy/mark/v17/internal/syntax"
 	"github.com/yuin/goldmark/v2/ast"
@@ -144,15 +143,21 @@ func literalElementName(tag []byte) string {
 		return ""
 	}
 
-	name := string(tag[1:])
-	if end := strings.IndexAny(name, " \t\r\n>"); end >= 0 {
-		name = name[:end]
-	}
-	if syntax.IsLiteralElement(name) {
+	if name := string(elementName(tag)); syntax.IsLiteralElement(name) {
 		return name
 	}
 
 	return ""
+}
+
+// elementName is the name of the element tag opens or closes.
+func elementName(tag []byte) []byte {
+	name := bytes.TrimLeft(tag, "</")
+	if end := bytes.IndexAny(name, " \t\r\n/>"); end >= 0 {
+		name = name[:end]
+	}
+
+	return name
 }
 
 // parseLiteralContent reads on from the opening tag of a literal element to
@@ -218,7 +223,7 @@ func (s *confluenceTagParser) parseLiteralContent(
 			node = s.parseSection(block, closeComment, &unclosed.commentFrom, pc)
 		case bytes.HasPrefix(line, []byte("</")):
 			node = s.parseMultiLineRegexp(closeTagRegexp, block, pc)
-			closes = node != nil && closesElement(node.(*ast.RawHTML).Value.Bytes(block.Source()), name)
+			closes = node != nil && string(elementName(node.(*ast.RawHTML).Value.Bytes(block.Source()))) == name
 		default:
 			node = s.parseMultiLineRegexp(openTagRegexp, block, pc)
 		}
@@ -285,14 +290,6 @@ func (s *confluenceTagParser) parseSection(
 // rawHTML is a node of markup that is not a range of the source.
 func rawHTML(markup []byte) ast.Node {
 	return ast.NewRawHTML(text.NewMultiLineValueFromString(string(markup), text.IdentityDecoder))
-}
-
-// closesElement reports whether tag is the closing tag of the element called
-// name, and not that of one whose name it begins.
-func closesElement(tag []byte, name string) bool {
-	rest, ok := bytes.CutPrefix(tag, []byte("</"+name))
-
-	return ok && bytes.IndexAny(rest[:1], " \t\r\n>") == 0
 }
 
 var openComment = []byte("<!--")
