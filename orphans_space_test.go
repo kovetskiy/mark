@@ -332,14 +332,13 @@ func TestOnOrphanForgetsAnEntryWhosePageWentWithItsDocument(t *testing.T) {
 
 			writeFile(t, dir, "moved.md", "<!-- Space: TWO -->\n<!-- Title: Moved -->\n\nMoved.\n")
 
-			var out bytes.Buffer
 			config.Page.Space = space
-			config.Output = &out
-			config.Report.OutputFormat = report.FormatJSON
-			require.NoError(t, Run(ctx, config))
+			out := publishJSON(t, config)
 
 			assert.False(t, server.Page(there.ID).Trashed)
-			assert.Empty(t, decodeReport(t, out.Bytes()).Orphans)
+			assert.Empty(t, decodeReport(t, []byte(out)).Orphans)
+			assert.Empty(t, warningsOf(t, out, report.WarningPlacement),
+				"no page is left behind in the space it left")
 			assert.False(t, trackedIn(t, api, "ONE", moved), "the space it left stops tracking it")
 
 			entry, known, err := manifest.NewStore(api).Lookup(ctx, "TWO", moved)

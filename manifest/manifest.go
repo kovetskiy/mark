@@ -1416,11 +1416,12 @@ func (s *Store) Record(ctx context.Context, spaceKey, path, pageID, title, hash 
 
 	// The same path recorded in another space means the document moved between
 	// spaces. The page left behind is not deleted and not linked to the new one.
+	// One recording this very page went with the document, and orphans drops it.
 	for otherKey, other := range s.spaces {
 		if otherKey == spaceKey {
 			continue
 		}
-		if entry, ok := other.shards[shardFor(path)].pages[path]; ok {
+		if entry, ok := other.shards[shardFor(path)].pages[path]; ok && entry.PageID != pageID {
 			s.warn(path, report.WarningPlacement,
 				"it previously published to space %q as page %s and now publishes to %q; "+
 					"the page in %q is left behind",
