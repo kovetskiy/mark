@@ -17,9 +17,10 @@ import (
 // images; in an fs.FS, the fs.FS. BoundaryDocument narrows either to the
 // document's directory and what is below it. Any other value is a directory
 // on disk, relative to the working directory or absolute, that every
-// document's files have to be inside, whichever document names them. It
-// stands in place of the default boundary: one above the working directory
-// reaches what the default refuses.
+// document's files have to be inside, whichever document names them. Every
+// Boundary narrows the default and never widens it: a file has to be inside
+// both, so a directory above the working directory allows no more than the
+// zero value.
 //
 // A directory really called "document" is written "./document".
 type Boundary string

@@ -338,41 +338,69 @@ func (b Boundary) checkAttachmentPath(base, name string) error {
 // checkPath holds a resolved path to b, drawn around a document in base.
 // named is what the document actually wrote, which is what the reader has to
 // go and look at.
+//
+// The default boundary holds under every b, which only narrows it: a
+// document's author chooses what it names, and a root above the working
+// directory must not let it name more.
 func (b Boundary) checkPath(base, resolved, named string) error {
-	var path string
-	var ok bool
+	roots := []string{base}
+	if cwd, err := os.Getwd(); err == nil {
+		roots = append(roots, cwd)
+	}
 
+	// Reported as the resolved absolute path: "docs/../../id_rsa" cleans down
+	// to "../id_rsa", which says less about where the file actually is than the
+	// reader needs in order to judge it.
+	if path, ok := within(roots, resolved); !ok {
+		return b.outsideDefault(base, named, path)
+	}
+
+	if b == "" {
+		return nil
+	}
+
+	// One directory alone has no working directory beside it to catch a
+	// relative base resolved apart from an absolute name.
 	dir := base
+	if b != BoundaryDocument {
+		dir = string(b)
+	}
 
-	switch b {
-	case "":
-		roots := []string{base}
-		if cwd, err := os.Getwd(); err == nil {
-			roots = append(roots, cwd)
-		}
-
-		path, ok = within(roots, resolved)
-	default:
-		// One directory alone has no working directory beside it to catch a
-		// relative base resolved apart from an absolute name.
-		if b != BoundaryDocument {
-			dir = string(b)
-		}
-
-		var err error
-		if dir, path, ok, err = withinDir(dir, resolved); err != nil {
-			return fmt.Errorf("unable to hold %q to the attachment root: %w", named, err)
-		}
+	dir, path, ok, err := withinDir(dir, resolved)
+	if err != nil {
+		return fmt.Errorf("unable to hold %q to the attachment root: %w", named, err)
 	}
 
 	if ok {
 		return nil
 	}
 
-	// Reported as the resolved absolute path: "docs/../../id_rsa" cleans down
-	// to "../id_rsa", which says less about where the file actually is than the
-	// reader needs in order to judge it.
 	return b.outside(dir, named, path)
+}
+
+// outsideDefault is the refusal of named, which resolves to path, as outside
+// the default boundary drawn around a document in base. Under an attachment
+// root it says so, since a root wider than the default is no reason the file
+// is refused.
+//
+// Both paths are made absolute: run from the document's own directory, base
+// is ".", which says nothing about where the boundary lies.
+func (b Boundary) outsideDefault(base, named, path string) error {
+	if abs, err := filepath.Abs(base); err == nil {
+		base = abs
+	}
+
+	if abs, err := filepath.Abs(path); err == nil {
+		path = abs
+	}
+
+	where := fmt.Sprintf("both %q and the directory mark is running in", base)
+	if b != "" {
+		where += fmt.Sprintf(", the default boundary, which %s %q narrows and never widens", boundarySetting, string(b))
+	}
+
+	return fmt.Errorf("%w: %q resolves to %s, which is outside %s; publish from a directory that contains it",
+		ErrOutsideProject, named, path, where)
 }
 
 // outside is the refusal of named, which resolves to path, as outside dir:
@@ -384,8 +412,7 @@ func (b Boundary) outside(dir, named, path string) error {
 
 	switch b {
 	case "":
-		where = fmt.Sprintf("both %q and the directory mark is running in; "+
-			"publish from a directory that contains it", dir)
+		return b.outsideDefault(dir, named, path)
 	case BoundaryDocument:
 		where = fmt.Sprintf("the document's directory %q: %s is %q", dir, boundarySetting, string(b))
 	default:

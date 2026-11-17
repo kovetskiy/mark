@@ -83,6 +83,32 @@ func TestAttachmentRootDefaultAllowsAnotherDocumentsFile(t *testing.T) {
 	}
 }
 
+// TestAttachmentRootAboveTheWorkingDirectoryAllowsNoMore: a directory root
+// narrows the default boundary and never widens it, so with the root above
+// the working directory a file outside the working directory still fails the
+// document, as it does with no root.
+func TestAttachmentRootAboveTheWorkingDirectoryAllowsNoMore(t *testing.T) {
+	for _, root := range []attachment.Boundary{"", "..", attachment.Boundary(string(filepath.Separator))} {
+		server, _ := attachmentRootProject(t)
+		repo, err := os.Getwd()
+		require.NoError(t, err)
+
+		outside := t.TempDir()
+		writeFile(t, outside, "outside.pdf", "outside")
+		name, err := filepath.Rel(filepath.Join(repo, "guide"), filepath.Join(outside, "outside.pdf"))
+		require.NoError(t, err)
+		require.NoError(t, os.WriteFile(filepath.Join("guide", "index.md"),
+			[]byte("<!-- Space: DOCS -->\n<!-- Title: Guide -->\n<!-- Attachment: "+name+" -->\n\nguide\n"), 0o600))
+
+		config := publishConfig(server.URL, "guide/*.md")
+		config.Rendering.AttachmentRoot = root
+
+		err = Run(context.Background(), config)
+		require.ErrorIs(t, err, attachment.ErrOutsideProject, "root %q", root)
+		assert.Empty(t, bodyOfPageTitled(t, server, "Guide"), "root %q", root)
+	}
+}
+
 // TestAttachmentRootValidation: a directory root that is not there is refused
 // before anything is published, naming the field and its flag, by Validate,
 // Run and NewPublisher alike.

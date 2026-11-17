@@ -135,7 +135,9 @@ If a legitimate attachment lives outside, publish from a directory that contains
 both it and the documents.
 
 `--attachment-root` (`attachment-root` in the configuration file,
-`MARK_ATTACHMENT_ROOT`) draws that boundary somewhere else:
+`MARK_ATTACHMENT_ROOT`) narrows that boundary. A file has to be inside both
+the boundary above and the root, so the root never lets a document reach a
+file the default refuses:
 
 * `document` holds each document to its own directory and what is below it.
   For a repository with one document per directory, it stops one document from
@@ -143,14 +145,14 @@ both it and the documents.
   refused, though the file is inside the directory Mark is running in.
 * A path holds every document to that directory, whichever directory the
   document is in. A relative path is taken from the directory Mark is running
-  in, and the directory has to exist. It takes the place of the default
-  boundary rather than being added to it: a document outside the directory
-  cannot publish the files beside it, and a directory above the one Mark is
-  running in lets a document reach files the default refuses. A directory
-  really called `document` is written `./document`.
+  in, and the directory has to exist. A document outside the directory cannot
+  publish the files beside it, and a directory above the one Mark is running
+  in, such as `..` or `/`, allows no more than the default. A directory really
+  called `document` is written `./document`.
 
 Symlinks are followed either way, and a file outside the root fails the
-document with `outside the project`, as above. The root covers every file a
+document with `outside the project`, as above; the message says whether the
+default boundary or the root refused it. The root covers every file a
 document names: `<!-- Attachment: -->` headers and patterns, images, files
 links point at with `--attach-referenced`, files macros name, and a d2
 diagram's imports and images. A Markdown `--page-header` is compiled from

@@ -496,7 +496,8 @@ type RenderingConfig struct {
 	// document's directory or the working directory, or a Document's FS;
 	// attachment.BoundaryDocument is the document's directory alone; anything
 	// else is a directory on disk, which must exist, and which a Document with
-	// an FS is refused under. Includes keep their own boundary, which
+	// an FS is refused under. Either narrows the default and never widens it:
+	// a file has to be inside both. Includes keep their own boundary, which
 	// IncludePath widens.
 	AttachmentRoot attachment.Boundary
 	IncludePath    string
