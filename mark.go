@@ -2244,9 +2244,9 @@ func (r *publishRun) processFile(ctx context.Context, in input) (*confluence.Pag
 // again under another title leaves the first to whichever document takes it.
 //
 // First is not only a matter of order. With --track-pages, a title whose page
-// is recorded for another document of the run that still declares it is that
-// document's: the error names it, and the run gives it its turn before this
-// one is asked again.
+// is recorded for another document of the run waits for that one, whether it
+// keeps the title or gives it up: the error names it, and the run gives it its
+// turn before this one is asked again.
 func (r *publishRun) claimTitle(ctx context.Context, doc *document) error {
 	meta := doc.meta
 	if meta == nil || meta.Title == "" {
@@ -2258,10 +2258,12 @@ func (r *publishRun) claimTitle(ctx context.Context, doc *document) error {
 		return titleTaken(previous, meta.Title, meta.Space)
 	}
 
-	if owner, err := r.titleOwner(ctx, doc.file, doc.key, meta); err != nil {
+	// A holder waiting on this document cannot go first: the two swapped
+	// titles, and each takes the page its title finds.
+	if held, err := r.titleHeld(ctx, doc.file, doc.key, meta); err != nil {
 		return err
-	} else if owner != nil {
-		return owner
+	} else if held != nil && (held.retitled == "" || !r.yielded[held.holder.file]) {
+		return held
 	}
 
 	r.pendingClaim = nil
@@ -2638,10 +2640,6 @@ func (r *publishRun) previewLocation(ctx context.Context, doc *document) (pagePr
 		return found, nil
 	}
 
-	if err := r.awaitTitleHolder(ctx, doc); err != nil {
-		return found, err
-	}
-
 	// As a real run does before resolving, or a parent renamed in
 	// Confluence is looked for under its old title and the page is
 	// reported moved on every preview while the real run leaves it be.
@@ -2953,11 +2951,6 @@ func (r *publishRun) resolveDestination(ctx context.Context, doc *document) (*de
 func (r *publishRun) resolveDocumentPage(ctx context.Context, doc *document) (*destination, error) {
 	api, meta := r.api, doc.meta
 	dest := &destination{}
-
-	// Before anything is moved or written.
-	if err := r.awaitTitleHolder(ctx, doc); err != nil {
-		return nil, err
-	}
 
 	// Parents are named by title, so a parent that has itself been renamed
 	// leaves this document pointing at a name nothing carries any more.
