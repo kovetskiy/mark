@@ -175,7 +175,7 @@ func (s *confluenceTagParser) parseLiteralContent(
 ) ast.Node {
 	unclosed, _ := pc.Get(unclosedLiteralsKey).(*unclosedLiterals)
 	if unclosed == nil || unclosed.block != parent {
-		unclosed = &unclosedLiterals{block: parent}
+		unclosed = &unclosedLiterals{block: parent, cdataFrom: -1, commentFrom: -1}
 		pc.Set(unclosedLiteralsKey, unclosed)
 	}
 	if slices.Contains(unclosed.names, name) {
@@ -190,10 +190,6 @@ func (s *confluenceTagParser) parseLiteralContent(
 	var (
 		nodes   []ast.Node
 		literal []byte
-
-		// A kind of section the block does not close from here, it closes
-		// nowhere further on either, and is not looked for again.
-		unclosedCDATA, unclosedComment bool
 	)
 	for {
 		line, _ := block.PeekLine()
@@ -217,15 +213,9 @@ func (s *confluenceTagParser) parseLiteralContent(
 
 		switch {
 		case bytes.HasPrefix(line, openCDATA):
-			if !unclosedCDATA {
-				node = s.parseUntil(block, closeCDATA, pc)
-				unclosedCDATA = node == nil
-			}
+			node = s.parseSection(block, closeCDATA, &unclosed.cdataFrom, pc)
 		case bytes.HasPrefix(line, openComment):
-			if !unclosedComment {
-				node = s.parseUntil(block, closeComment, pc)
-				unclosedComment = node == nil
-			}
+			node = s.parseSection(block, closeComment, &unclosed.commentFrom, pc)
 		case bytes.HasPrefix(line, []byte("</")):
 			node = s.parseMultiLineRegexp(closeTagRegexp, block, pc)
 			closes = node != nil && closesElement(node.(*ast.RawHTML).Value.Bytes(block.Source()), name)
@@ -264,12 +254,32 @@ func (s *confluenceTagParser) parseLiteralContent(
 
 var unclosedLiteralsKey = parser.NewContextKey()
 
-// unclosedLiterals are the literal elements that the rest of a block was
-// read for a closing tag of and has none, so that a block of many opening
-// tags is read once for each name and not once for each tag.
+// unclosedLiterals is what the rest of a block was read for and does not
+// have, so that the block is read for it once and not once from each place
+// it is opened: the literal elements with no closing tag, and the offsets
+// from which a CDATA section or a comment has no end (-1 while not known).
 type unclosedLiterals struct {
-	block ast.Node
-	names []string
+	block                  ast.Node
+	names                  []string
+	cdataFrom, commentFrom int
+}
+
+// parseSection reads a CDATA section or a comment up to closer, unless the
+// block is known to have no closer from where it opens.
+func (s *confluenceTagParser) parseSection(
+	block text.Reader, closer []byte, unclosedFrom *int, pc parser.Context,
+) ast.Node {
+	_, segment := block.Position()
+	if *unclosedFrom >= 0 && segment.Start >= *unclosedFrom {
+		return nil
+	}
+
+	node := s.parseUntil(block, closer, pc)
+	if node == nil {
+		*unclosedFrom = segment.Start
+	}
+
+	return node
 }
 
 // rawHTML is a node of markup that is not a range of the source.
