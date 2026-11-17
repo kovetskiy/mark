@@ -159,8 +159,11 @@ links point at with `--attach-referenced`, files macros name, and a d2
 diagram's imports and images. A Markdown `--page-header` is given by whoever
 runs Mark rather than written by a document's author, so its images are held
 to the default boundary around the header's own directory, whatever the root.
-Includes and macro templates keep their own rule, which `--include-path`
-widens, and the document itself is held to the boundary described in
+The root limits the files a page attaches, not the text a document includes
+or the macro templates it uses: those keep the default boundary, which
+`--include-path` widens, so under `document` an
+`<!-- Include: ../other-doc/x -->` can still read another document's
+directory. The document itself is held to the boundary described in
 [publishing](publishing.md), whatever the root.
 
 In the Go library this is `RenderingConfig.AttachmentRoot`, an
