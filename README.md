@@ -243,7 +243,7 @@ OPTIONS:
    --help, -h                                     show help
 
 GLOBAL OPTIONS:
-   --config string, -c string    use the specified configuration file. (default: "C:\\Users\\flojon\\AppData\\Roaming\\mark.toml") [$MARK_CONFIG]
+   --config string, -c string    use the specified configuration file. (default: "${HOME}/.config/mark.toml") [$MARK_CONFIG]
    --username string, -u string  use specified username to authenticate with Confluence. [$MARK_USERNAME]
    --password string, -p string  use specified token to authenticate with Confluence. Specify - as password to read password from stdin, or your Personal access token. Username is not mandatory if personal access token is provided. For more info please see: https://developer.atlassian.com/server/confluence/confluence-server-rest-api/#authentication. [$MARK_PASSWORD]
    --password-command string     run the specified command and use the first line of its stdout as the token to authenticate with Confluence. Runs without a shell. Mutually exclusive with password. [$MARK_PASSWORD_COMMAND]
