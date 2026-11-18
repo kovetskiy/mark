@@ -10,8 +10,7 @@ ARG VERSION
 ARG COMMIT
 # .dockerignore leaves tracked files out of the context, which git and go
 # build would otherwise count as changes.
-RUN make get \
-&& GOFLAGS=-buildvcs=false make build DIRTY= \
+RUN GOFLAGS=-buildvcs=false make build DIRTY= \
    ${VERSION:+VERSION=$VERSION} ${COMMIT:+COMMIT=$COMMIT}
 
 FROM chromedp/headless-shell:latest
