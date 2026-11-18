@@ -35,13 +35,14 @@ var (
 	// /display/KEY/Title and /display/KEY/2024/01/31/Title
 	displayPath = regexp.MustCompile(`^/display/([^/]+)/(?:[0-9]{4}/[0-9]{2}/[0-9]{2}/)?([^/]+)/?$`)
 	// /x/AbCd
-	tinyPath               = regexp.MustCompile(`^/x/([^/]+)/?$`)
-	attachmentDownloadPath = regexp.MustCompile(`^(.*)/download/attachments/([0-9]+)/([^/]+)/?$`)
-	customContentPath      = regexp.MustCompile(`^(.*)/display/[^/]+/customcontent/([0-9]+)/?$`)
+	tinyPath                  = regexp.MustCompile(`^/x/([^/]+)/?$`)
+	attachmentDownloadPath    = regexp.MustCompile(`^(.*)/download/attachments/([0-9]+)/([^/]+)/?$`)
+	attachmentAPIDownloadPath = regexp.MustCompile(`^(.*)/rest/api/content/[0-9]+/child/attachment/(?:att)?([0-9]+)/download/?$`)
+	customContentPath         = regexp.MustCompile(`^(.*)/display/[^/]+/customcontent/([0-9]+)/?$`)
 )
 
 // ParseContentURL reads a URL for a page, blog post, attachment, or custom-content collection.
-// Attachment downloads name a container and filename, which require an API lookup.
+// Filename-based attachment downloads require an API lookup within their container.
 func ParseContentURL(raw, collection string) (ContentRef, error) {
 	parsed, err := url.Parse(strings.TrimSpace(raw))
 	if err != nil {
@@ -59,6 +60,9 @@ func ParseContentURL(raw, collection string) (ContentRef, error) {
 			return ContentRef{BaseURL: parsed.Scheme + "://" + parsed.Host + match[1], ID: match[2]}, nil
 		}
 	case LabelCollectionAttachments:
+		if match := attachmentAPIDownloadPath.FindStringSubmatch(parsed.EscapedPath()); match != nil {
+			return ContentRef{BaseURL: parsed.Scheme + "://" + parsed.Host + match[1], ID: match[2]}, nil
+		}
 		if match := attachmentDownloadPath.FindStringSubmatch(parsed.EscapedPath()); match != nil {
 			filename, err := url.PathUnescape(match[3])
 			return ContentRef{BaseURL: parsed.Scheme + "://" + parsed.Host + match[1], ContainerID: match[2], Title: filename}, err
