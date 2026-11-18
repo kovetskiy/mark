@@ -619,8 +619,9 @@ type headReader interface {
 //
 // A title taken from the filename or the heading does not count, or every
 // script would be a page. Only the start of the file is read, and a file that
-// does not sniff as text is not one. The resolver and the renderer both ask
-// this, so that a link is never both a page link and an attachment.
+// does not sniff as text is not one. Only the resolver asks this, and only of a
+// file the run does not publish: one the run publishes is a page whatever its
+// headers say.
 func declaresPage(files LinkFiles, found string, opts metadata.ExtractOptions) (bool, error) {
 	var (
 		head []byte

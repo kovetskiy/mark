@@ -1973,9 +1973,9 @@ type document struct {
 	meta     *metadata.Meta
 	markdown []byte
 	resolver *page.LinkResolver
-	// declaresPage says whether a linked file that is not Markdown is a page
+	// publishes says whether a linked file that is not Markdown is a page
 	// the run publishes; nil says none is.
-	declaresPage func(name string) bool
+	publishes func(name string) bool
 	// restrictions are the document's declared restrictions, resolved to
 	// users and groups; nil when it declares none.
 	restrictions *confluence.ResolvedRestrictions
@@ -2045,7 +2045,7 @@ func (r *publishRun) processFile(ctx context.Context, in input) (*confluence.Pag
 	if err != nil {
 		return nil, nil, err
 	}
-	doc.declaresPage = r.publishes
+	doc.publishes = r.publishes
 
 	if err := r.resolveRestrictions(ctx, doc); err != nil {
 		return nil, nil, err
@@ -3284,7 +3284,7 @@ func (c RenderingConfig) documentConfig(ctx context.Context, res *resources, doc
 	cfg.DropH1 = c.DropH1
 	cfg.ImageAlign = imageAlign
 	cfg.ResolveLink = linksUnder(ctx, doc.resolver)
-	cfg.DeclaresPage = doc.declaresPage
+	cfg.Publishes = doc.publishes
 	cfg.Warnings = doc.warnings
 	cfg.Root = doc.root
 

@@ -40,7 +40,7 @@ func TestDeclaresPageIgnoresDerivedTitles(t *testing.T) {
 	assert.False(t, declared)
 }
 
-// readCounter counts the bytes DeclaresPage asks a file for.
+// readCounter counts the bytes declaresPage asks a file for.
 type readCounter struct {
 	attachment.Root
 	read int

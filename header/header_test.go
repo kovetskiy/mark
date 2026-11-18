@@ -274,7 +274,7 @@ func TestMarkdownHeaderAttachesWhatItLinksWhateverTheDocumentPublishes(t *testin
 	for _, file := range []string{"a.md", "b.md"} {
 		html, attachments, err := header.Render(t.Context(), file, "T", "SPACE", markdown.Options{
 			AttachReferenced: true,
-			DeclaresPage:     func(string) bool { return file != "" },
+			Publishes:        func(string) bool { return file != "" },
 		})
 		require.NoError(t, err)
 		assert.Contains(t, html, `<ri:attachment ri:filename="guide.rst"/>`)
