@@ -15,6 +15,8 @@ func TestParseContentURL(t *testing.T) {
 		{"custom content", LabelCollectionCustomContent, "/display/RD/customcontent/42", "42", "", ""},
 		{"preview", LabelCollectionAttachments, "/pages/viewpageattachments.action?pageId=7&preview=%2F7%2F42%2Fa.pdf", "42", "", ""},
 		{"page preview", LabelCollectionAttachments, "/spaces/RD/pages/7/Title?preview=/7/42/a.pdf", "42", "", ""},
+		{"API download", LabelCollectionAttachments, "/rest/api/content/7/child/attachment/att42/download", "42", "", ""},
+		{"numeric API download", LabelCollectionAttachments, "/rest/api/content/7/child/attachment/42/download", "42", "", ""},
 		{"download", LabelCollectionAttachments, "/download/attachments/7/a%2Bb%20c.pdf?version=2", "", "7", "a+b c.pdf"},
 	} {
 		t.Run(test.name, func(t *testing.T) {

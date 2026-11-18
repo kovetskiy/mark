@@ -40,6 +40,7 @@ Short links and `/display/SPACE/Title` links are supported through the same sele
 Preview URLs carry `preview=/PAGE_ID/ATTACHMENT_ID/FILENAME`.
 Download URLs use `/wiki/download/attachments/PAGE_ID/FILENAME`.
 Download URLs are resolved by filename within the parent content's attachments.
+API download URLs ending in `/rest/api/content/PAGE_ID/child/attachment/ATTACHMENT_ID/download` are also accepted.
 `--custom-content` accepts an ID or a URL ending in `/display/SPACE/customcontent/ID`.
 
 The `PREFIX` column identifies the label namespace:
