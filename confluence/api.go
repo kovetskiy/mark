@@ -1638,7 +1638,9 @@ func (api *API) UpdatePage(ctx context.Context, page *PageInfo, content string, 
 	// it: the next caller is told the page does not exist and tries to create
 	// one, which Confluence rejects as a duplicate title. Dropping the entry
 	// costs one lookup and keeps the cache from asserting something untrue.
-	api.forgetMissesForTitle(page.Title, page.Type)
+	// And the other way round: a lookup of the title the page had found it,
+	// and the title is now free for another page.
+	api.forgetStaleTitles(page.ID, page.Title, page.Type)
 
 	// v2 keeps properties on an endpoint of their own, so they are written
 	// only once the content is. The version is bumped first: the new one
@@ -1896,26 +1898,39 @@ func (api *API) confirmVersion(ctx context.Context, page *PageInfo, version int6
 	return nil
 }
 
-// forgetMissesForTitle drops cached "no such page" answers for a title.
+// forgetStaleTitles drops what the cache says of a title page id has just
+// been given, and of the titles it no longer carries.
 //
 // The cache is keyed by title, and a lookup of a title before any page wore it
 // records a miss. An update that moves a page onto that title outlives the fact
 // the miss was recorded from: the next caller is told the page does not exist,
-// tries to create one, and Confluence rejects the duplicate title.
+// tries to create one, and Confluence rejects the duplicate title. A lookup
+// that found the page under the title it had would go on finding it there, and
+// a document taking that title would be published over it rather than to a
+// page of its own.
 //
-// Only misses are dropped. A cached page filed under a title it no longer
-// carries is a different and older question, and one this is not the place to
-// answer. The space is not part of the match because PageInfo does not carry
-// one; over-invalidating costs a lookup, and under-invalidating costs a failed
+// The space is not part of the match because PageInfo does not carry one;
+// over-invalidating costs a lookup, and under-invalidating costs a failed
 // publish.
-func (api *API) forgetMissesForTitle(title string, pageType ContentType) {
+func (api *API) forgetStaleTitles(id, title string, pageType ContentType) {
 	api.lazyInit()
 	api.pageCacheMutex.Lock()
 	defer api.pageCacheMutex.Unlock()
 
+	// A page kept under a title that differs only in case shares the new
+	// title's key, and would go on carrying the old spelling.
+	if entry, ok := api.pageCacheByID[id]; ok && entry != nil && entry.Title != title {
+		delete(api.pageCacheByID, id)
+	}
+
 	suffix := pageCacheKey("", title, pageType)
 	for key, entry := range api.pageCache {
-		if entry == nil && strings.HasSuffix(key, suffix) {
+		switch {
+		case entry == nil:
+			if strings.HasSuffix(key, suffix) {
+				delete(api.pageCache, key)
+			}
+		case entry.ID == id && entry.Title != title:
 			delete(api.pageCache, key)
 		}
 	}

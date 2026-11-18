@@ -1257,8 +1257,15 @@ func Run(ctx context.Context, config Config) (err error) {
 		return fileErr
 	}
 
-	for _, in := range inputs {
+	// turned holds the documents that have had their turn, in order or ahead
+	// of it.
+	turned := map[string]bool{}
+
+	// publish is one document's turn, returning what the run stops with.
+	var publish func(in input) error
+	publish = func(in input) error {
 		file := in.file
+		turned[file] = true
 
 		if err := ctx.Err(); err != nil {
 			return err
@@ -1267,15 +1274,40 @@ func Run(ctx context.Context, config Config) (err error) {
 		log.Info().Msgf("processing %s", file)
 
 		target, placement, err := pub.processFile(ctx, in)
+
+		// A title that still names the page of a document retitling it is
+		// free once that document has published, so it goes first. One that
+		// has had its turn and still holds the title leaves this one refused.
+		// So does the document the page is recorded for when it keeps the
+		// title: it goes first, and this one is then refused the title.
+		var held *titleHeldError
+		if errors.As(err, &held) && !turned[held.holder.file] {
+			if held.retitled == "" {
+				log.Info().Msgf(
+					"page %s, which the title %q finds, is recorded for %s; publishing it first",
+					held.page.ID, held.title, held.holder.file,
+				)
+			} else {
+				log.Info().Msgf("%s; publishing it first", held)
+			}
+
+			pub.yielded[file] = true
+			stop := publish(held.holder)
+			delete(pub.yielded, file)
+			if stop != nil {
+				return stop
+			}
+
+			log.Info().Msgf("processing %s", file)
+
+			target, placement, err = pub.processFile(ctx, in)
+		}
+
 		if placement != nil {
 			ordered = append(ordered, *placement)
 		}
 		if err != nil {
-			if stop := fail(file, err); stop != nil {
-				return stop
-			}
-
-			continue
+			return fail(file, err)
 		}
 
 		if target != nil {
@@ -1318,6 +1350,18 @@ func Run(ctx context.Context, config Config) (err error) {
 					}
 				}
 			}
+		}
+
+		return nil
+	}
+
+	for _, in := range inputs {
+		if turned[in.file] {
+			continue
+		}
+
+		if err := publish(in); err != nil {
+			return err
 		}
 	}
 
@@ -1521,6 +1565,12 @@ func stepPast(ctx context.Context, continueOnError bool, file string, err error)
 // A long-lived program makes a new one of each for each batch rather than
 // holding them open.
 //
+// A space holds one page of a title, so a Publisher refuses a file whose
+// space, type and title another file it published has, as Run does. A file
+// published again, under the same title or a new one, is not refused, and one
+// that fails before reaching a page keeps the title it held before; a file
+// renamed between two publishes is another file to it, and is.
+//
 // A Publisher sees one file at a time, never the run's whole list, so it does
 // none of what Run does across files, and PublishConfig has no setting for any
 // of it: a page's Position is not applied among its siblings, a document
@@ -1608,6 +1658,9 @@ func (p *Publisher) publish(ctx context.Context, in input) (*confluence.PageInfo
 
 	target, _, err := p.run.processFile(ctx, in)
 	if err != nil {
+		// A run publishes each file once, so only a Publisher, which may be
+		// handed the file again or another of its title, gives the claim up.
+		p.run.releaseClaim()
 		return target, err
 	}
 
@@ -1683,6 +1736,10 @@ func newPublishRun(
 		pageHeader:       pageHeader,
 		checker:          page.NewLinkChecker(checks),
 		globalProperties: globalProperties,
+		titleClaims:      map[string]string{},
+		claimedTitles:    map[string]string{},
+		yielded:          map[string]bool{},
+		previewTitles:    map[string]string{},
 	}, nil
 }
 
@@ -1930,6 +1987,24 @@ type publishRun struct {
 	// pageFile is the file published to Page.PageID, once there is one.
 	pageFile string
 
+	// titleClaims names the document publishing each title, by runTitleKey,
+	// and claimedTitles the title each document holds, by absPath.
+	titleClaims   map[string]string
+	claimedTitles map[string]string
+
+	// pendingClaim is the title claim of the document in hand until it
+	// reaches its page.
+	pendingClaim *titleClaim
+
+	// yielded holds the documents waiting for the one retitling the page
+	// their title finds, which the run publishes ahead of its turn.
+	yielded map[string]bool
+
+	// previewTitles holds, in a dry run, the title each page a previewed
+	// document retitles carries by then, by page id: what a real run's
+	// update has written by the time the next document looks the title up.
+	previewTitles map[string]string
+
 	// warnings holds each document's warnings for the run's report: a second
 	// pass keeps what only the first found, such as a comment it dropped, and
 	// a document that fails is reported with what was found before it did.
@@ -2041,6 +2116,10 @@ func (r *publishRun) processFile(ctx context.Context, in input) (*confluence.Pag
 		return nil, nil, err
 	}
 
+	if err := r.claimTitle(ctx, doc); err != nil {
+		return nil, nil, err
+	}
+
 	doc.resolver, err = r.linkResolver(doc)
 	if err != nil {
 		return nil, nil, err
@@ -2059,6 +2138,10 @@ func (r *publishRun) processFile(ctx context.Context, in input) (*confluence.Pag
 	// moves its page under them: a page that is left alone is left where it
 	// is as well.
 	if kept, err := r.leaveDriftedInPlace(ctx, doc); kept != nil || err != nil {
+		if kept != nil {
+			// Left alone, the page is still the document's.
+			r.claimPage(doc.file)
+		}
 		return kept, nil, err
 	}
 
@@ -2160,10 +2243,82 @@ func (r *publishRun) processFile(ctx context.Context, in input) (*confluence.Pag
 	return target, placement, nil
 }
 
+// claimTitle records that doc publishes its title in its space, and refuses
+// a title another document got to first: the two name one page, and the
+// second would overwrite the first and move it under its own parents. A
+// document that is not synchronized, or publishes to a page id, names none.
+// Titles are compared as Confluence compares them, without regard to case,
+// and a page and a blog post of one title are two pieces of content.
+//
+// A document holds the title it was last published under: one published
+// again under another title leaves the first to whichever document takes it.
+//
+// First is not only a matter of order. With --track-pages, a title whose page
+// is recorded for another document of the run waits for that one, whether it
+// keeps the title or gives it up: the error names it, and the run gives it its
+// turn before this one is asked again.
+func (r *publishRun) claimTitle(ctx context.Context, doc *document) error {
+	meta := doc.meta
+	if meta == nil || meta.Title == "" {
+		return nil
+	}
+
+	key, name := runTitleKey(meta.Space, meta.Type, meta.Title), absPath(doc.file)
+	if previous, taken := r.titleClaims[key]; taken && absPath(previous) != name {
+		return titleTaken(previous, meta.Title, meta.Space)
+	}
+
+	// A holder waiting on this document cannot go first: the two swapped
+	// titles, and each takes the page its title finds.
+	if held, err := r.titleHeld(ctx, doc.file, doc.key, meta); err != nil {
+		return err
+	} else if held != nil && (held.retitled == "" || !r.yielded[held.holder.file]) {
+		return held
+	}
+
+	r.pendingClaim = nil
+	if held, ok := r.claimedTitles[name]; !ok || held != key {
+		r.pendingClaim = &titleClaim{key: key, name: name, file: doc.file}
+		if ok {
+			r.pendingClaim.gaveUp = held
+			delete(r.titleClaims, held)
+		}
+	}
+	r.titleClaims[key], r.claimedTitles[name] = doc.file, key
+
+	return nil
+}
+
+// titleClaim is a title a document claimed and has not yet published under,
+// and the title it gave up for it.
+type titleClaim struct {
+	key, name, file, gaveUp string
+}
+
+// releaseClaim undoes the claim of a document that failed before it reached
+// a page: its page, if it has one, still carries the title it gave up, and
+// the title it claimed names nothing of it.
+func (r *publishRun) releaseClaim() {
+	c := r.pendingClaim
+	if c == nil {
+		return
+	}
+	r.pendingClaim = nil
+
+	delete(r.titleClaims, c.key)
+	if c.gaveUp == "" {
+		delete(r.claimedTitles, c.name)
+
+		return
+	}
+	r.titleClaims[c.gaveUp], r.claimedTitles[c.name] = c.file, c.gaveUp
+}
+
 // claimPage records file as the one publishing to Page.PageID, once it has
 // reached the page. A file that failed before then leaves the page to the next
 // one; a dry run claims at the same point a real run does.
 func (r *publishRun) claimPage(file string) {
+	r.pendingClaim = nil
 	if r.config.Page.PageID != "" && r.pageFile == "" {
 		r.pageFile = absPath(file)
 	}
@@ -2208,16 +2363,6 @@ func (r *publishRun) readDocument(in input) (*document, error) {
 	meta, markdown, err := documentMeta(r.config, file, markdown, r.hierarchy, warnings)
 	if err != nil {
 		return nil, err
-	}
-
-	if meta != nil {
-		if previous, taken := r.hierarchy.Claim(meta.Space, meta.Title, file); taken {
-			return nil, fmt.Errorf(
-				"%s already publishes %q in space %q, and a space holds one page of a title: "+
-					"rename one of them, or use --title-append-generated-hash",
-				previous, meta.Title, meta.Space,
-			)
-		}
 	}
 
 	if r.config.Page.PageID != "" && meta != nil {
@@ -2519,6 +2664,9 @@ func (r *publishRun) previewLocation(ctx context.Context, doc *document) (pagePr
 		return found, fmt.Errorf("unable to resolve page location: %w", err)
 	}
 
+	// A page a previewed document has retitled no longer carries the title.
+	pg = r.carrying(pg, meta.Title)
+
 	if pg == nil {
 		// The title found nothing, which is where a real run consults
 		// the manifest. Saying so is the whole point of a dry run:
@@ -2678,6 +2826,13 @@ func (r *publishRun) preview(ctx context.Context, doc *document) error {
 		Space: spaceOf(meta), Title: title,
 		PageID: target.ID, URL: url,
 	})
+
+	// The real run's update retitles the page, freeing its title for a
+	// document that waited on this one.
+	if config.Mode.DryRun && previewed != nil && meta != nil && status != report.StatusSkipped &&
+		!strings.EqualFold(previewed.Title, meta.Title) {
+		r.previewTitles[previewed.ID] = meta.Title
+	}
 
 	return nil
 }
@@ -2843,6 +2998,11 @@ func (r *publishRun) resolveDocumentPage(ctx context.Context, doc *document) (*d
 			pg.Title = meta.Title
 			dest.titleChanged = true
 		}
+	} else if pg.Title != meta.Title && strings.EqualFold(pg.Title, meta.Title) {
+		// The title lookup ignores case, so the page it found may carry
+		// another casing of the title than the document now writes.
+		pg.Title = meta.Title
+		dest.titleChanged = true
 	}
 
 	if pg == nil {
