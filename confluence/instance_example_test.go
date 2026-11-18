@@ -5,7 +5,6 @@ import (
 	"fmt"
 
 	"github.com/kovetskiy/mark/v17/confluence"
-	"github.com/kovetskiy/mark/v17/export"
 )
 
 // A caller given a page URL checks it is on the configured instance before
@@ -18,7 +17,7 @@ func ExampleSameInstance() {
 		"https://example.atlassian.net.evil.example/wiki/spaces/DOCS/pages/123/Title",
 		"http://example.atlassian.net/wiki/spaces/DOCS/pages/123/Title",
 	} {
-		ref, err := export.ParsePageURL(pageURL)
+		ref, err := confluence.ParsePageURL(pageURL)
 		if err != nil {
 			fmt.Println(err)
 			continue

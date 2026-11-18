@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/kovetskiy/mark/v17/confluence"
 	"github.com/kovetskiy/mark/v17/markdown"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -215,46 +216,6 @@ func TestConvertRecordsAttachments(t *testing.T) {
 	assert.Contains(t, doc.Markdown, "![](files/a.png)")
 	assert.Contains(t, doc.Markdown, `<ri:attachment ri:filename="files_b.pdf"/>`,
 		"storage format names the attachment the way publishing the file will")
-}
-
-func TestParsePageURL(t *testing.T) {
-	for _, test := range []struct {
-		url  string
-		want PageRef
-	}{
-		{"https://example.atlassian.net/wiki/spaces/DOCS/pages/123456/Some+Title",
-			PageRef{BaseURL: "https://example.atlassian.net/wiki", PageID: "123456", Space: "DOCS"}},
-		{"https://example.atlassian.net/wiki/spaces/DOCS/pages/edit-v2/123456",
-			PageRef{BaseURL: "https://example.atlassian.net/wiki", PageID: "123456", Space: "DOCS"}},
-		{"https://example.atlassian.net/wiki/spaces/~me/blog/2024/01/31/42/Notes",
-			PageRef{BaseURL: "https://example.atlassian.net/wiki", PageID: "42", Space: "~me"}},
-		{"https://confluence.example.com/pages/viewpage.action?pageId=77",
-			PageRef{BaseURL: "https://confluence.example.com", PageID: "77"}},
-		{"https://example.com/confluence/pages/viewpage.action?pageId=77",
-			PageRef{BaseURL: "https://example.com/confluence", PageID: "77"}},
-		{"https://confluence.example.com/display/DOCS/Some+Title%3F",
-			PageRef{BaseURL: "https://confluence.example.com", Space: "DOCS", Title: "Some Title?"}},
-		{"https://confluence.example.com/display/DOCS/2024/01/31/Notes",
-			PageRef{BaseURL: "https://confluence.example.com", Space: "DOCS", Title: "Notes"}},
-		// The context path is found as mark publish --url finds it, any *.action
-		// included.
-		{"https://example.com/confluence/plugins/viewsource/viewpagesrc.action?pageId=77",
-			PageRef{BaseURL: "https://example.com/confluence", PageID: "77"}},
-		// A short link carries the page id, encoded: see confluence.GenerateTinyLink.
-		{"https://example.atlassian.net/wiki/x/AfIFKgE",
-			PageRef{BaseURL: "https://example.atlassian.net/wiki", PageID: "5000000001"}},
-		{"https://confluence.example.com/x/D4AB/",
-			PageRef{BaseURL: "https://confluence.example.com", PageID: "98319"}},
-	} {
-		got, err := ParsePageURL(test.url)
-		require.NoError(t, err, test.url)
-		assert.Equal(t, test.want, got, test.url)
-	}
-
-	for _, bad := range []string{"not a url", "/wiki/spaces/DOCS/pages/1", "https://example.atlassian.net/wiki/x/A", "https://example.atlassian.net/wiki/x/a.b", "https://example.com/"} {
-		_, err := ParsePageURL(bad)
-		assert.Error(t, err, bad)
-	}
 }
 
 // republish exports storage and publishes the Markdown that comes out,
@@ -521,17 +482,17 @@ func TestPageOnInstance(t *testing.T) {
 
 	for _, test := range []struct {
 		name, href, base string
-		want             PageRef
+		want             confluence.PageRef
 	}{
-		{"page", base + "/spaces/DOCS/pages/123/Title", base, PageRef{BaseURL: base, PageID: "123", Space: "DOCS"}},
-		{"viewpage.action", base + "/pages/viewpage.action?pageId=123", base, PageRef{BaseURL: base, PageID: "123"}},
-		{"short link", base + "/x/ew", base, PageRef{BaseURL: base, PageID: "123"}},
+		{"page", base + "/spaces/DOCS/pages/123/Title", base, confluence.PageRef{BaseURL: base, PageID: "123", Space: "DOCS"}},
+		{"viewpage.action", base + "/pages/viewpage.action?pageId=123", base, confluence.PageRef{BaseURL: base, PageID: "123"}},
+		{"short link", base + "/x/ew", base, confluence.PageRef{BaseURL: base, PageID: "123"}},
 		{"host in another case", "https://Example.atlassian.net/wiki/display/DOCS/Title", base,
-			PageRef{BaseURL: "https://Example.atlassian.net/wiki", Space: "DOCS", Title: "Title"}},
+			confluence.PageRef{BaseURL: "https://Example.atlassian.net/wiki", Space: "DOCS", Title: "Title"}},
 		{"base without /wiki", base + "/spaces/DOCS/pages/123/Title", "https://example.atlassian.net",
-			PageRef{BaseURL: base, PageID: "123", Space: "DOCS"}},
+			confluence.PageRef{BaseURL: base, PageID: "123", Space: "DOCS"}},
 		{"default port", "https://example.atlassian.net:443/wiki/x/ew", base,
-			PageRef{BaseURL: "https://example.atlassian.net:443/wiki", PageID: "123"}},
+			confluence.PageRef{BaseURL: "https://example.atlassian.net:443/wiki", PageID: "123"}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			got, ok := pageOnInstance(test.href, test.base)
