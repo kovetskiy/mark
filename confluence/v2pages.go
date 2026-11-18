@@ -204,11 +204,12 @@ func listV1[T any](
 	}
 }
 
-// listV2 collects every result of a cursor-paged v2 listing; see eachV2.
-func listV2[T any](ctx context.Context, api *API, path []string, query url.Values, describe string) ([]T, error) {
+// listV2 collects every result of a cursor-paged v2 listing.
+// With notFoundEmpty, a 404 on the first page is read as an empty listing.
+func listV2[T any](ctx context.Context, api *API, path []string, query url.Values, describe string, notFoundEmpty bool) ([]T, error) {
 	var all []T
 
-	err := eachV2(ctx, api, path, query, describe, func(result T) bool {
+	err := eachV2WithNotFound(ctx, api, path, query, describe, notFoundEmpty, func(result T) bool {
 		all = append(all, result)
 
 		return false
@@ -235,6 +236,11 @@ func eachV2[T any](
 	describe string,
 	visit func(result T) (stop bool),
 ) error {
+	return eachV2WithNotFound(ctx, api, path, query, describe, true, visit)
+}
+
+// eachV2WithNotFound applies the caller's missing-collection policy while following cursors.
+func eachV2WithNotFound[T any](ctx context.Context, api *API, path []string, query url.Values, describe string, notFoundEmpty bool, visit func(T) bool) error {
 	var cursor string
 
 	for {
@@ -247,7 +253,7 @@ func eachV2[T any](
 		}
 
 		result, err := get[listing[T]](ctx, api.v2, path, page)
-		if errors.Is(err, ErrNotFound) && cursor == "" {
+		if notFoundEmpty && errors.Is(err, ErrNotFound) && cursor == "" {
 			return nil
 		}
 		if err != nil {
@@ -696,7 +702,7 @@ func (api *API) getAttachmentsV2(ctx context.Context, pageID string) ([]Attachme
 
 	found, err := listV2[attachmentV2](
 		ctx, api, []string{collection, pageID, "attachments"}, url.Values{"limit": {"250"}},
-		"list attachments of page "+pageID,
+		"list attachments of page "+pageID, true,
 	)
 	if err != nil {
 		return nil, err
@@ -721,22 +727,26 @@ func (api *API) getAttachmentsV2(ctx context.Context, pageID string) ([]Attachme
 	return attachments, nil
 }
 
+// labelV2 is a v2 label whose id can be encoded as a JSON number or string.
+type labelV2 struct {
+	ID     json.Number `json:"id"`
+	Name   string      `json:"name"`
+	Prefix string      `json:"prefix"`
+}
+
+// labelPageSize controls the requested number of labels per v2 response.
+const labelPageSize = 250
+
 // getPageLabelsV2 is GetPageLabels against v2, which hands the label id over as
 // a number where v1 makes it a string.
 func (api *API) getPageLabelsV2(ctx context.Context, page *PageInfo, prefix string) (*LabelInfo, error) {
-	type labelV2 struct {
-		ID     json.Number `json:"id"`
-		Name   string      `json:"name"`
-		Prefix string      `json:"prefix"`
-	}
-
-	query := url.Values{"limit": {"250"}}
+	query := url.Values{"limit": {strconv.Itoa(labelPageSize)}}
 	if prefix != "" {
 		query.Set("prefix", prefix)
 	}
 
 	found, err := listV2[labelV2](
-		ctx, api, []string{v2Collection(page.Type), page.ID, "labels"}, query, "read labels of page "+page.ID,
+		ctx, api, []string{v2Collection(page.Type), page.ID, "labels"}, query, "read labels of page "+page.ID, true,
 	)
 	if err != nil {
 		return nil, err
