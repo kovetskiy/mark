@@ -1,5 +1,6 @@
+# Source files are LF on every platform, so gofmt and golangci-lint agree with CI on Windows.
+# The last matching line wins, so more specific rules belong below this one.
+* text=auto eol=lf
+
 # Golden files are compared byte for byte, so they must stay LF on Windows.
 testdata/** text=auto eol=lf
-
-# Source files are LF on every platform, so gofmt and golangci-lint agree with CI on Windows.
-* text=auto eol=lf
