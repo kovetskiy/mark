@@ -15,14 +15,14 @@ import (
 
 // Metadata flag names are shared by flag declarations and command handling.
 const (
-	metadataSpaceFlag           = "space"
-	metadataSpaceIDFlag         = "space-id"
-	metadataPageIDFlag          = "page-id"
-	metadataBlogpostIDFlag      = "blogpost-id"
-	metadataAttachmentIDFlag    = "attachment-id"
-	metadataCustomContentIDFlag = "custom-content-id"
-	metadataPersonalFlag        = "personal"
-	metadataJSONFlag            = "json"
+	metadataSpaceFlag         = "space"
+	metadataInSpaceFlag       = "in-space"
+	metadataPageFlag          = "page"
+	metadataBlogpostFlag      = "blogpost"
+	metadataAttachmentFlag    = "attachment"
+	metadataCustomContentFlag = "custom-content"
+	metadataPersonalFlag      = "personal"
+	metadataJSONFlag          = "json"
 )
 
 // metadataCommand groups commands for working with Confluence metadata.
@@ -40,12 +40,12 @@ func (line *commandLine) metadataCommand() *cli.Command {
 						Name:  "list",
 						Usage: "list visible labels; without a selector, list site-wide labels",
 						Flags: []cli.Flag{
-							&cli.StringFlag{Name: metadataSpaceFlag, Aliases: []string{"s"}, Usage: "labels used by content in this space key."},
-							&cli.StringFlag{Name: metadataSpaceIDFlag, Usage: "labels attached to the space itself."},
-							&cli.StringFlag{Name: metadataPageIDFlag, Usage: "labels attached to this page."},
-							&cli.StringFlag{Name: metadataBlogpostIDFlag, Usage: "labels attached to this blog post."},
-							&cli.StringFlag{Name: metadataAttachmentIDFlag, Usage: "labels attached to this attachment."},
-							&cli.StringFlag{Name: metadataCustomContentIDFlag, Usage: "labels attached to this custom content item."},
+							&cli.StringFlag{Name: metadataInSpaceFlag, Usage: "labels used by content in this space key."},
+							&cli.StringFlag{Name: metadataSpaceFlag, Aliases: []string{"s"}, Usage: "labels attached to the space itself, by space key."},
+							&cli.StringFlag{Name: metadataPageFlag, Usage: "labels attached to this page, by ID or URL."},
+							&cli.StringFlag{Name: metadataBlogpostFlag, Usage: "labels attached to this blog post, by ID or URL."},
+							&cli.StringFlag{Name: metadataAttachmentFlag, Usage: "labels attached to this attachment, by ID or URL."},
+							&cli.StringFlag{Name: metadataCustomContentFlag, Usage: "labels attached to this custom content item, by ID or URL."},
 							line.metadataJSONFlag(),
 						},
 						Action: line.runMetadataLabels,
@@ -62,7 +62,7 @@ func (line *commandLine) metadataCommand() *cli.Command {
 						Flags: []cli.Flag{
 							&cli.StringFlag{Name: metadataSpaceFlag, Aliases: []string{"s"}, Usage: "suggested statuses configured for this space key."},
 							&cli.BoolFlag{Name: metadataPersonalFlag, Usage: "custom statuses created by the authenticated user."},
-							&cli.StringFlag{Name: metadataPageIDFlag, Usage: "status assigned to this page, if any."},
+							&cli.StringFlag{Name: metadataPageFlag, Usage: "status assigned to this page, by ID or URL, if any."},
 							line.metadataJSONFlag(),
 						},
 						Action: line.runMetadataStatuses,
@@ -93,8 +93,8 @@ func metadataSelector(cmd *cli.Command) (string, error) {
 	for _, flag := range cmd.Flags {
 		name := flag.Names()[0]
 		switch name {
-		case metadataSpaceFlag, metadataSpaceIDFlag, metadataPageIDFlag, metadataBlogpostIDFlag,
-			metadataAttachmentIDFlag, metadataCustomContentIDFlag, metadataPersonalFlag:
+		case metadataSpaceFlag, metadataInSpaceFlag, metadataPageFlag, metadataBlogpostFlag,
+			metadataAttachmentFlag, metadataCustomContentFlag, metadataPersonalFlag:
 		default:
 			continue
 		}
@@ -121,13 +121,57 @@ func metadataSelector(cmd *cli.Command) (string, error) {
 	return selected, nil
 }
 
+// metadataCollection maps object selectors to the Confluence label collections.
+func metadataCollection(selector string) string {
+	switch selector {
+	case metadataSpaceFlag:
+		return confluence.LabelCollectionSpaces
+	case metadataPageFlag:
+		return confluence.LabelCollectionPages
+	case metadataBlogpostFlag:
+		return confluence.LabelCollectionBlogposts
+	case metadataAttachmentFlag:
+		return confluence.LabelCollectionAttachments
+	case metadataCustomContentFlag:
+		return confluence.LabelCollectionCustomContent
+	}
+	return ""
+}
+
+// metadataReference reads content selectors before authentication.
+func metadataReference(cmd *cli.Command, selector string) (confluence.ContentRef, error) {
+	collection := metadataCollection(selector)
+	if collection == "" || collection == confluence.LabelCollectionSpaces {
+		return confluence.ContentRef{}, nil
+	}
+	value := cmd.String(selector)
+	if strings.Contains(value, "://") {
+		return confluence.ParseContentURL(value, collection)
+	}
+	if selector == metadataAttachmentFlag {
+		value = strings.TrimPrefix(value, "att")
+	}
+	if value == "" || strings.Trim(value, "0123456789") != "" {
+		return confluence.ContentRef{}, fmt.Errorf("--%s expects an ID or Confluence URL", selector)
+	}
+	return confluence.ContentRef{ID: value}, nil
+}
+
 // metadataAPI resolves the shared connection settings and authentication.
-func (line *commandLine) metadataAPI(ctx context.Context, cmd *cli.Command) (*confluence.API, error) {
+func (line *commandLine) metadataAPI(ctx context.Context, cmd *cli.Command, contentBase string) (*confluence.API, error) {
 	if err := line.prepare(cmd); err != nil {
 		return nil, err
 	}
 
-	creds, err := GetCredentials(ctx, cmd.String("username"), cmd.String("password"), cmd.String("password-command"), "", cmd.String("base-url"), false)
+	baseURL := cmd.String("base-url")
+	if baseURL == "" {
+		baseURL = contentBase
+	} else if contentBase != "" {
+		if err := confluence.SameInstance(baseURL, contentBase); err != nil {
+			return nil, err
+		}
+	}
+	creds, err := GetCredentials(ctx, cmd.String("username"), cmd.String("password"), cmd.String("password-command"), "", baseURL, false)
 	if err != nil {
 		return nil, err
 	}
@@ -142,30 +186,30 @@ func (line *commandLine) runMetadataLabels(ctx context.Context, cmd *cli.Command
 		return err
 	}
 
-	api, err := line.metadataAPI(ctx, cmd)
+	ref, err := metadataReference(cmd, selector)
+	if err != nil {
+		return err
+	}
+	api, err := line.metadataAPI(ctx, cmd, ref.BaseURL)
 	if err != nil {
 		return err
 	}
 
-	query := confluence.LabelQuery{}
-
-	switch selector {
-	case metadataSpaceFlag:
+	query := confluence.LabelQuery{Collection: metadataCollection(selector), ID: cmd.String(selector)}
+	if selector == metadataInSpaceFlag {
 		query.Space = cmd.String(selector)
-	case metadataSpaceIDFlag:
-		query.Collection = confluence.LabelCollectionSpaces
-	case metadataPageIDFlag:
-		query.Collection = confluence.LabelCollectionPages
-	case metadataBlogpostIDFlag:
-		query.Collection = confluence.LabelCollectionBlogposts
-	case metadataAttachmentIDFlag:
-		query.Collection = confluence.LabelCollectionAttachments
-	case metadataCustomContentIDFlag:
-		query.Collection = confluence.LabelCollectionCustomContent
 	}
-
-	if query.Collection != "" {
-		query.ID = cmd.String(selector)
+	if query.Collection == confluence.LabelCollectionSpaces {
+		query.ID, err = api.GetSpaceID(ctx, cmd.String(selector))
+	} else if query.Collection != "" {
+		contentType := confluence.ContentPage
+		if selector == metadataBlogpostFlag {
+			contentType = confluence.ContentBlogPost
+		}
+		query.ID, err = api.ResolveContentID(ctx, ref, contentType)
+	}
+	if err != nil {
+		return err
 	}
 
 	labels, err := api.ListLabels(ctx, query)
@@ -191,7 +235,11 @@ func (line *commandLine) runMetadataStatuses(ctx context.Context, cmd *cli.Comma
 		return cli.ShowSubcommandHelp(cmd)
 	}
 
-	api, err := line.metadataAPI(ctx, cmd)
+	ref, err := metadataReference(cmd, selector)
+	if err != nil {
+		return err
+	}
+	api, err := line.metadataAPI(ctx, cmd, ref.BaseURL)
 	if err != nil {
 		return err
 	}
@@ -203,8 +251,12 @@ func (line *commandLine) runMetadataStatuses(ctx context.Context, cmd *cli.Comma
 		statuses, err = api.GetSpaceContentStatuses(ctx, cmd.String(selector))
 	case metadataPersonalFlag:
 		statuses, err = api.GetPersonalContentStatuses(ctx)
-	case metadataPageIDFlag:
-		statuses, err = api.GetPageContentStatus(ctx, cmd.String(selector))
+	case metadataPageFlag:
+		var id string
+		id, err = api.ResolveContentID(ctx, ref, confluence.ContentPage)
+		if err == nil {
+			statuses, err = api.GetPageContentStatus(ctx, id)
+		}
 	}
 
 	if err != nil {

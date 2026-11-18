@@ -283,7 +283,7 @@ func preparePage(ctx context.Context, api *confluence.API, cfg Config, beside []
 			instances = append(instances, page.Links.Base)
 		}
 		pageURLPath = func(href string) (string, string, bool) {
-			var ref PageRef
+			var ref confluence.PageRef
 			ok := false
 			for _, instance := range instances {
 				if ref, ok = pageOnInstance(href, instance); ok {

@@ -26,8 +26,8 @@ func TestMetadataFailuresExit(t *testing.T) {
 		path   string
 		status int
 	}{
-		{"missing label target with JSON", []string{"labels", "list", "--page-id", "42", "--json"}, "/wiki/api/v2/pages/42/labels", http.StatusNotFound},
-		{"forbidden status target with table", []string{"statuses", "list", "--page-id", "42"}, "/wiki/rest/api/content/42/state", http.StatusForbidden},
+		{"missing label target with JSON", []string{"labels", "list", "--page", "42", "--json"}, "/wiki/api/v2/pages/42/labels", http.StatusNotFound},
+		{"forbidden status target with table", []string{"statuses", "list", "--page", "42"}, "/wiki/rest/api/content/42/state", http.StatusForbidden},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

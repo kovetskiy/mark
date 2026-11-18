@@ -40,7 +40,7 @@ func (e *InstanceMismatchError) Error() string {
 func (e *InstanceMismatchError) Is(target error) bool { return target == ErrOtherInstance }
 
 // SameInstance reports whether other, the base URL of a page -- as
-// export.ParsePageURL gives it in PageRef.BaseURL -- is on the Confluence
+// ParsePageURL gives it in PageRef.BaseURL -- is on the Confluence
 // instance at configured, the base URL credentials are meant for. It answers
 // nil only when it is; any error means the credentials for configured must not
 // be sent to other.
@@ -48,7 +48,7 @@ func (e *InstanceMismatchError) Is(target error) bool { return target == ErrOthe
 // other must be a base URL, not a page's own URL: the path of
 // https://example.atlassian.net/wiki/spaces/DOCS/pages/1 is not /wiki, so it
 // fails against a configured base of https://example.atlassian.net/wiki. Take
-// the base from the page URL first, with export.ParsePageURL.
+// the base from the page URL first, with ParsePageURL.
 //
 // An error that is an *InstanceMismatchError (errors.Is matches
 // ErrOtherInstance) says what differs. Any other error says one of the URLs is
