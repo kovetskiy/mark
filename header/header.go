@@ -189,7 +189,7 @@ func (h *Header) compile(ctx context.Context, rendered string, cfg markdown.Opti
 func compileConfig(cfg markdown.Options) markdown.Options {
 	cfg.DropH1 = false
 	cfg.ResolveLink = nil
-	cfg.DeclaresPage = nil
+	cfg.Publishes = nil
 	cfg.ResolveAttachment = nil
 	cfg.Warnings = nil
 	cfg.Root = attachment.Root{}

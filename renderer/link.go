@@ -38,10 +38,10 @@ type ConfluenceLinkRenderer struct {
 	// Root is where a linked file is read from; the zero Root is the disk.
 	Root attachment.Root
 
-	// DeclaresPage says whether a file is published as a page, whose link is
+	// Publishes says whether the run publishes a file as a page, whose link is
 	// never an attachment, whether or not the page exists yet. Nil says no
 	// file is.
-	DeclaresPage func(name string) bool
+	Publishes func(name string) bool
 }
 
 // NewConfluenceLinkRenderer creates a new instance of the ConfluenceLinkRenderer.
@@ -202,7 +202,7 @@ func (r *ConfluenceLinkRenderer) renderLink(writer util.BufWriter, source []byte
 // element is written, so it has to give the same answer each time. Existence is
 // part of the question -- a path to nothing is left as the document wrote it,
 // which is what happens without the flag at all -- but the file is not read
-// here, beyond what DeclaresPage asks of it, and whether it may be read is
+// here, beyond what Publishes asks of it, and whether it may be read is
 // decided where it is.
 func (r *ConfluenceLinkRenderer) attachable(link *ast.Link, source []byte) bool {
 	_, ok := r.localFile(link, source)
@@ -239,7 +239,7 @@ func (r *ConfluenceLinkRenderer) localFile(link *ast.Link, source []byte) (strin
 
 		info, err := r.Root.Stat(file)
 		if err == nil && !info.IsDir() {
-			if r.DeclaresPage != nil && r.DeclaresPage(file) {
+			if r.Publishes != nil && r.Publishes(file) {
 				return "", false
 			}
 

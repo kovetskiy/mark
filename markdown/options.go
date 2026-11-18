@@ -60,10 +60,10 @@ type Options struct {
 	// Images are attached whether this is set or not, since an image left as a
 	// path is visibly broken where a link merely leads nowhere.
 	AttachReferenced bool
-	// DeclaresPage says whether a linked file that is not Markdown is
-	// published as a page, which a link to it points at and never attaches.
+	// Publishes says whether a linked file that is not Markdown is one the
+	// run publishes as a page, which a link to it points at and never attaches.
 	// Nil says none is.
-	DeclaresPage func(name string) bool
+	Publishes func(name string) bool
 	// IncludePath is where includes and macros not found beside the
 	// document are looked for.
 	IncludePath string
