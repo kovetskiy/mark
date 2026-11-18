@@ -430,7 +430,9 @@ all. The log names them.
 
 With `--on-orphan archive` or `delete`, a partial run takes only exact paths:
 `--files-from`, or a `--files` that names one file (a glob character escaped
-with `\` counts as written). A wildcard is refused before anything is
+with `\` counts as written; on Windows, where `\` separates directories, a
+file whose name holds `[` or `{` is named through `--files-from`).
+A wildcard is refused before anything is
 published, since it reaches every tracked file it matches in the manifest,
 another job's included, and would remove the pages of those missing from the
 checkout. A `files` set in the configuration file or `MARK_FILES` counts too:

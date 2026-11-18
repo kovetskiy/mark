@@ -189,27 +189,32 @@ func TestPartialRunRemovingRefusesAPattern(t *testing.T) {
 }
 
 // TestPartialRunRemovingTakesOneFile: Files spelling one file, an escaped glob
-// character included, names exactly that file, as Paths would.
+// character included, names exactly that file, as Paths would. On Windows a
+// backslash separates path elements, so nothing escapes "[": Files holding one
+// is refused, and Paths names the file instead.
 func TestPartialRunRemovingTakesOneFile(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip(`a backslash separates path elements on Windows, so a pattern cannot escape "[" there`)
-	}
-
 	server, full, dir := partialFixture(t)
 	bID := pageIDTitled(t, server, "Page b")
 	require.NoError(t, os.Remove(filepath.Join(dir, "b.md")))
 	writeFile(t, dir, "[x].md", markdownWithTitle("Page x"))
 
-	for _, files := range []string{"b.md", `\[x\].md`} {
-		partial := partialOf(full, dir, files)
+	partial := partialOf(full, dir, "b.md")
+	partial.Tracking.OnOrphan = report.OnOrphanDelete
+	// Nothing to publish: the change only deleted b.md.
+	require.ErrorContains(t, Run(context.Background(), partial), "no files matched")
+
+	if runtime.GOOS == "windows" {
+		partial = partialOf(full, dir, "[x].md")
 		partial.Tracking.OnOrphan = report.OnOrphanDelete
 		err := Run(context.Background(), partial)
-		if files == "b.md" {
-			// Nothing to publish: the change only deleted b.md.
-			require.ErrorContains(t, err, "no files matched")
-			continue
-		}
-		require.NoError(t, err)
+		require.ErrorIs(t, err, ErrPartialPattern)
+		assert.ErrorContains(t, err, "--files-from")
+
+		require.NoError(t, Run(context.Background(), pathsOf(full, dir, "[x].md")))
+	} else {
+		partial = partialOf(full, dir, `\[x\].md`)
+		partial.Tracking.OnOrphan = report.OnOrphanDelete
+		require.NoError(t, Run(context.Background(), partial))
 	}
 	assert.Equal(t, 1, countPagesTitled(t, server, "Page x"))
 
