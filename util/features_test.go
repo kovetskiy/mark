@@ -55,6 +55,7 @@ func TestFeaturesSubprocess(t *testing.T) {
 // features they settled on, or their error.
 func checkFeatures(t *testing.T, environment map[string]string, args ...string) ([]string, string) {
 	t.Helper()
+	noDefaultConfig(t)
 
 	encodedArgs, err := json.Marshal(args)
 	require.NoError(t, err)
