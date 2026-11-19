@@ -152,6 +152,12 @@ func publishFlags(config *configFile) []cli.Flag {
 			Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_DROP_H1"), config.value("drop-h1")),
 		},
 		&cli.BoolFlag{
+			Name:    "disable-heading-ids",
+			Value:   false,
+			Usage:   "don't generate an id for a heading the author didn't name with {#custom-id}. Confluence Cloud's importer can leak a generated id into a heading's visible text on some pages; a run that turns this on loses mark's automatic same-page anchor links, which a heading without an id cannot resolve.",
+			Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_DISABLE_HEADING_IDS"), config.value("disable-heading-ids")),
+		},
+		&cli.BoolFlag{
 			Name:    "strip-linebreaks",
 			Value:   false,
 			Aliases: []string{"L"},

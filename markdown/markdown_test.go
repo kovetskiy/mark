@@ -2,7 +2,9 @@ package markdown_test
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path"
 	"path/filepath"
@@ -29,6 +31,13 @@ func loadData(t *testing.T, filename, variant string) ([]byte, string, []byte) {
 		panic(err)
 	}
 	html, err := os.ReadFile(htmlname)
+	if errors.Is(err, fs.ErrNotExist) && variant != "" {
+		// The variant's golden has not been written yet. A variant that
+		// changes nothing is the plain golden, written under the variant's
+		// name so a later change is caught: drop it once created.
+		plain := filepath.Join(filepath.Dir(filename), testname+".html")
+		html, err = os.ReadFile(plain)
+	}
 	if err != nil {
 		panic(err)
 	}
@@ -136,6 +145,61 @@ func TestCompileMarkdownDropH1(t *testing.T) {
 		actual, _, _ := markdown.CompileMarkdown(t.Context(), body, lib, filename, cfg)
 		test.EqualValues(strings.TrimSuffix(string(html), "\n"), strings.TrimSuffix(actual, "\n"), filename+" vs "+htmlname)
 
+	}
+}
+
+func TestCompileMarkdownDisableHeadingIDs(t *testing.T) {
+	_, filename, _, _ := runtime.Caller(0)
+	dir := path.Join(path.Dir(filename), "..")
+	err := os.Chdir(dir)
+	if err != nil {
+		panic(err)
+	}
+
+	test := assert.New(t)
+
+	testcases, err := filepath.Glob("testdata/*.md")
+	if err != nil {
+		panic(err)
+	}
+
+	for _, filename := range testcases {
+		filename := filepath.ToSlash(filename) // the cases below compare slash paths
+		lib, err := stdlib.New(context.Background(), nil)
+		if err != nil {
+			panic(err)
+		}
+		var variant string
+		switch filename {
+		case "testdata/admonition-markers.md", "testdata/admonitions.md", "testdata/codeblock-comments.md", "testdata/frontmatter.md", "testdata/header.md", "testdata/heading-anchor-custom-ids.md", "testdata/heading-anchor-links.md", "testdata/links.md", "testdata/plantuml.md", "testdata/quotes.md":
+			variant = "-disableheadingids"
+		default:
+			variant = ""
+		}
+		source, htmlname, html := loadData(t, filename, variant)
+
+		var body []byte
+		if filename == "testdata/frontmatter.md" {
+			var err error
+			_, body, err = metadata.ExtractMeta(source, metadata.ExtractOptions{FrontMatter: true})
+			if err != nil {
+				panic(err)
+			}
+		} else {
+			body = source
+		}
+
+		cfg := markdown.Options{
+			MermaidScale:      1.0,
+			D2Scale:           1.0,
+			DropH1:            false,
+			DisableHeadingIDs: true,
+			StripLinebreaks:   false,
+			Features:          []string{"mkdocsadmonitions", "mention", "plantuml", "frontmatter"},
+		}
+
+		actual, _, _ := markdown.CompileMarkdown(t.Context(), body, lib, filename, cfg)
+		test.EqualValues(strings.TrimSuffix(string(html), "\n"), strings.TrimSuffix(actual, "\n"), filename+" vs "+htmlname)
 	}
 }
 

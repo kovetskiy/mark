@@ -50,7 +50,9 @@ type markdownExtension interface {
 // compileMarkdownWithExtension builds the goldmark converter around ext and
 // renders markdown with it, returning the page and the tree it was rendered
 // from.
-func compileMarkdownWithExtension(markdown []byte, ext markdownExtension, logMessage string) (string, ast.Node, error) {
+func compileMarkdownWithExtension(markdown []byte, ext markdownExtension, logMessage string, opts ...Options) (string, ast.Node, error) {
+	disableHeadingIDs := len(opts) > 0 && opts[0].DisableHeadingIDs
+
 	log.Trace().Msgf(logMessage, string(markdown))
 
 	p := parser.New(append(
@@ -70,8 +72,12 @@ func compileMarkdownWithExtension(markdown []byte, ext markdownExtension, logMes
 		// {#custom-id} syntax every other Markdown tool understands, and
 		// generates the rest. page.headingIDs parses with the same options,
 		// so that a link from another document finds the id given here.
-		syntax.HeadingOptions()...,
+		syntax.HeadingOptionsWithIDs(!disableHeadingIDs)...,
 	)...)
+
+	if disableHeadingIDs {
+		log.Debug().Msg("heading ids are off: a heading has an id only when the author named one")
+	}
 
 	r := html.New(
 		html.WithUnsafe(),
@@ -426,7 +432,7 @@ func CompileMarkdown(ctx context.Context, markdown []byte, stdlib *stdlib.Lib, p
 	}
 
 	ghAlertsExtension := newConfluenceExtension(ctx, stdlib, path, opts, tmpl)
-	htmlOutput, doc, err := compileMarkdownWithExtension(markdown, ghAlertsExtension, "rendering markdown with GitHub Alerts support:\n%s")
+	htmlOutput, doc, err := compileMarkdownWithExtension(markdown, ghAlertsExtension, "rendering markdown with GitHub Alerts support:\n%s", opts)
 	// A transformer cannot return an error from Transform, so each one that can
 	// fail keeps its failure for collection here.
 	if err == nil && ghAlertsExtension.Pipeline != nil && ghAlertsExtension.Pipeline.GetError() != nil {
