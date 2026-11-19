@@ -25,6 +25,8 @@ import (
 // required value went with them -- which is how an unquoted list produces
 // "confluence password should be specified".
 func TestConfigFileCheck(t *testing.T) {
+	noDefaultConfig(t)
+
 	write := func(t *testing.T, content string) string {
 		t.Helper()
 		path := filepath.Join(t.TempDir(), "mark.toml")
