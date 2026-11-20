@@ -1761,6 +1761,53 @@ func (s *Store) RenameSources(ctx context.Context, spaceKey, path string) (map[s
 	return sources, nil
 }
 
+// ResolveUniqueRenamedFor reports the sole unclaimed page in path's scope
+// that this run no longer publishes, and that a child was published under by
+// its title. It is for callers with a separate reason to consider a rename when
+// the source content has changed; more than one candidate is deliberately not
+// resolved.
+//
+// The parent-chain record is what tells a renamed parent from any other page
+// left behind in the same run. A deleted document's page that no child ever
+// used as a parent is not a candidate, so a brand-new parent does not adopt it.
+func (s *Store) ResolveUniqueRenamedFor(ctx context.Context, spaceKey, path string) (string, Entry, bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	path = Key(path)
+	state, err := s.load(ctx, spaceKey)
+	if err != nil {
+		return "", Entry{}, false, err
+	}
+
+	// A page is a parent candidate when a chain recorded it under the title
+	// it was published with, the last title of the chain.
+	parentOf := map[string]bool{}
+	for chain, pageID := range state.parents {
+		titles := strings.Split(chain, "\x00")
+		parentOf[pageID+"\x00"+titles[len(titles)-1]] = true
+	}
+
+	var foundPath string
+	var found Entry
+	count := 0
+	for i := range state.shards {
+		for candidate, entry := range state.shards[i].pages {
+			if !s.sameScope(path, entry) || !s.covers(path, entry) || !s.absent(state, candidate) || state.claimed[entry.PageID] {
+				continue
+			}
+			if !parentOf[entry.PageID+"\x00"+entry.Title] {
+				continue
+			}
+			foundPath, found, count = candidate, entry, count+1
+		}
+	}
+	if count != 1 {
+		return "", Entry{}, false, nil
+	}
+	return foundPath, found, true, nil
+}
+
 // Recorded is Lookup without marking path as seen, for asking about a
 // document before its turn: seen counts what the run published.
 func (s *Store) Recorded(ctx context.Context, spaceKey, path string) (Entry, bool, error) {

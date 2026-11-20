@@ -242,6 +242,19 @@ func refreshStaleParents(
 
 			continue
 		}
+		if publisher != "" {
+			// Parent repair runs before the document itself, so carry its
+			// resolved page mapping to its new path now. Its own lookup then
+			// reuses that page without broadening rename heuristics for other
+			// documents or bypassing similarity settings.
+			in, ok := titles.declaredBy(meta.Space, "page", title)
+			if ok {
+				ahead := titles.readAhead(in)
+				if err := tracker.Record(ctx, meta.Space, in.key, pageID, ahead.meta.Title, ahead.sourceHash); err != nil {
+					return fmt.Errorf("unable to record renamed parent %q: %w", title, err)
+				}
+			}
+		}
 		if renamed.Title == title {
 			continue
 		}
@@ -345,7 +358,23 @@ func trackedPageOfDeclaredTitle(
 		// Indexed, so read ahead already.
 		_, entry, found, err = tracker.ResolveRenamedFor(ctx, space, in.key, titles.readAhead(in).sourceHash)
 		if err != nil || !found {
-			return "", "", err
+			if err != nil {
+				return "", "", err
+			}
+
+			// A parent can be renamed and edited before this run, so its
+			// content hash no longer identifies the old path. Follow it only
+			// when exactly one unclaimed old page in this document's scope was
+			// once a parent under its own title, which a brand-new parent
+			// never has; with more than one candidate there is no safe answer.
+			_, unique, found, err := tracker.ResolveUniqueRenamedFor(ctx, space, in.key)
+			if err != nil {
+				return "", "", err
+			}
+			if !found {
+				return "", "", nil
+			}
+			entry = unique
 		}
 	}
 	if entry.PageID == "" {
