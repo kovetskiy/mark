@@ -491,3 +491,85 @@ func TestRootFolderLookupIgnoresASameTitledNestedFolder(t *testing.T) {
 	require.NotNil(t, parent)
 	assert.Equal(t, atRoot.ID, parent.ID)
 }
+
+// TestFolderTitleAppendGeneratedHash: Confluence holds folder titles unique
+// across a space, so a "Guides" declared under a second parent is refused for
+// the one under the first. With the hash, each folder created carries where it
+// sits in its title, and the next run finds it there.
+func TestFolderTitleAppendGeneratedHash(t *testing.T) {
+	ctx := t.Context()
+	api, server := newAPI(t)
+	root := server.AddPage("DOCS", "Root", "page", "")
+	manuals := server.AddFolder("DOCS", "Manuals", root.ID, "page")
+	server.AddFolder("DOCS", "Guides", manuals.ID, "folder")
+
+	declared := []string{"Handbook", "Guides"}
+
+	_, err := page.EnsureFolderAncestry(ctx, api, "DOCS", declared, &root.ID, page.AncestryOptions{FolderCache: page.NewFolderCache()})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "--folder-title-append-generated-hash")
+
+	preview, err := page.EnsureFolderAncestry(ctx, api, "DOCS", declared, &root.ID,
+		page.AncestryOptions{DryRun: true, FolderCache: page.NewFolderCache(), FolderTitleAppendGeneratedHash: true})
+	require.NoError(t, err)
+	require.NotNil(t, preview)
+
+	hashed := page.AncestryOptions{FolderCache: page.NewFolderCache(), FolderTitleAppendGeneratedHash: true}
+	first, err := page.EnsureFolderAncestry(ctx, api, "DOCS", declared, &root.ID, hashed)
+	require.NoError(t, err)
+	require.NotNil(t, first)
+	assert.Regexp(t, `^Guides - [0-9a-f]{8}$`, first.Title)
+	assert.Equal(t, first.Title, preview.Title, "a dry run should name the folder the real run creates")
+
+	before := len(server.Folders())
+
+	hashed.FolderCache = page.NewFolderCache()
+	again, err := page.EnsureFolderAncestry(ctx, api, "DOCS", declared, &root.ID, hashed)
+	require.NoError(t, err)
+	require.NotNil(t, again)
+	assert.Equal(t, first.ID, again.ID)
+	assert.Len(t, server.Folders(), before, "the second run should create nothing")
+}
+
+// TestFolderTitleAppendGeneratedHashKeepsExistingFolders: turning the hash on
+// must not build a second tree beside the one already there, even with no
+// record of it, as when another repository's run created it.
+func TestFolderTitleAppendGeneratedHashKeepsExistingFolders(t *testing.T) {
+	ctx := t.Context()
+	api, server := newAPI(t)
+	root := server.AddPage("DOCS", "Root", "page", "")
+	manuals := server.AddFolder("DOCS", "Manuals", root.ID, "page")
+	guides := server.AddFolder("DOCS", "Guides", manuals.ID, "folder")
+
+	parent, err := page.EnsureFolderAncestry(
+		ctx, api, "DOCS", []string{"Manuals", "Guides"}, &root.ID,
+		page.AncestryOptions{FolderCache: page.NewFolderCache(), FolderTitleAppendGeneratedHash: true},
+	)
+	require.NoError(t, err)
+	require.NotNil(t, parent)
+	assert.Equal(t, guides.ID, parent.ID)
+	assert.Len(t, server.Folders(), 2, "nothing should have been created")
+}
+
+// TestFolderTitleAppendGeneratedHashPreviewUnderAMissingParent: a dry run whose
+// Parent chain is not there yet stops before the folders, and still has to name
+// the folder a real run creates once it has made the missing page.
+func TestFolderTitleAppendGeneratedHashPreviewUnderAMissingParent(t *testing.T) {
+	ctx := t.Context()
+	api, server := newAPI(t)
+	server.AddPage("DOCS", "Root", "page", "")
+
+	folders, parents := []string{"Guides"}, []string{"Root", "Missing"}
+
+	preview, err := page.EnsureMixedAncestry(ctx, api, "DOCS", folders, parents,
+		page.AncestryOptions{DryRun: true, FolderCache: page.NewFolderCache(), FolderTitleAppendGeneratedHash: true})
+	require.NoError(t, err)
+	require.NotNil(t, preview)
+
+	created, err := page.EnsureMixedAncestry(ctx, api, "DOCS", folders, parents,
+		page.AncestryOptions{FolderCache: page.NewFolderCache(), FolderTitleAppendGeneratedHash: true})
+	require.NoError(t, err)
+	require.NotNil(t, created)
+	assert.Regexp(t, `^Guides - [0-9a-f]{8}$`, created.Title)
+	assert.Equal(t, created.Title, preview.Title)
+}
