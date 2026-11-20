@@ -200,7 +200,7 @@ func TestConfigFromTheEnvironmentAppliesToEveryFlag(t *testing.T) {
 	assert.Equal(t, "CFG", resolved["space"])
 
 	// Declared before it, and silently dropped.
-	assert.Equal(t, "from-config.md", resolved["files"])
+	assert.Equal(t, "[from-config.md]", resolved["files"])
 	assert.Equal(t, "cfguser", resolved["username"])
 	assert.Equal(t, "cfgpass", resolved["password"])
 }

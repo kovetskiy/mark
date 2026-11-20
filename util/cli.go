@@ -123,7 +123,7 @@ func (line *commandLine) runPublish(ctx context.Context, cmd *cli.Command) error
 	// An unquoted --files glob the shell expanded would publish only its
 	// first match.
 	if cmd.NArg() > 0 {
-		return fmt.Errorf("unexpected argument %q: --files takes one pattern, so quote a glob", cmd.Args().First())
+		return fmt.Errorf("unexpected argument %q: --files takes one pattern each time, so quote a glob", cmd.Args().First())
 	}
 	if _, err := checkPublishFlags(ctx, cmd); err != nil {
 		return err
@@ -347,6 +347,11 @@ func RunPublish(ctx context.Context, cmd *cli.Command) (err error) {
 		return err
 	}
 
+	files, err := joinPatterns(cmd.StringSlice("files"))
+	if err != nil {
+		return err
+	}
+
 	titleFromH1, titleFromFilename := titleFrom(cmd)
 	parents := splitParents(cmd.String("parents"), cmd.String("parents-delimiter"))
 
@@ -408,7 +413,7 @@ func RunPublish(ctx context.Context, cmd *cli.Command) (err error) {
 			},
 			Output: os.Stdout,
 		},
-		Files: cmd.String("files"),
+		Files: files,
 		Paths: paths,
 		Connection: mark.ConnectionConfig{
 			BaseURL:               creds.BaseURL,

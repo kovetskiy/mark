@@ -36,7 +36,7 @@ func dispatch(t *testing.T, args ...string) (*string, string, error) {
 
 	var got *string
 	cmd := buildCommand("test", func(_ context.Context, c *cli.Command) error {
-		files := c.String("files")
+		files, _ := joinPatterns(c.StringSlice("files"))
 		got = &files
 		return nil
 	}, nil)
@@ -128,7 +128,7 @@ func TestPublishResolvesFlags(t *testing.T) {
 		"insecure-skip-tls-verify": "true",
 		"log-level":                "error",
 		"space":                    "CFG",
-		"files":                    "from-config.md",
+		"files":                    "[from-config.md]",
 	}
 
 	for _, test := range []struct {
