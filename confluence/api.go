@@ -103,6 +103,12 @@ type API struct {
 	// moveByAction.
 	moveActionMissing atomic.Pointer[error]
 
+	// contentListingRefused is set once a lookup through /content was
+	// answered 403 and /content/search then found the page, which some
+	// instances make necessary for every listing (CONFSERVER-57639), so that
+	// later lookups go straight to /content/search; see listContent.
+	contentListingRefused atomic.Bool
+
 	// reparented maps a page id to the versions either side of a move this
 	// API made by update; see ReparentedFrom.
 	reparented      map[string]reparentedVersions
@@ -1029,7 +1035,7 @@ func (api *API) findPageV1(ctx context.Context, space, title string, pageType Co
 		query.Set("title", title)
 	}
 
-	result, err := get[listing[PageInfo]](ctx, api.v1, []string{"content", ""}, query)
+	result, err := api.listContent(ctx, query, space, title, pageType)
 	// allow 404 because it's fine if page is not found,
 	// the function will return nil, nil
 	if errors.Is(err, ErrNotFound) {
@@ -1052,6 +1058,59 @@ func (api *API) findPageV1(ctx context.Context, space, title string, pageType Co
 	}
 
 	return &page, nil
+}
+
+// listContent lists live content through /content, or through /content/search
+// where the instance refuses the listing.
+//
+// Some instances disable /content for listings while still serving a single
+// page by id; /content/scan is no way round it, since it ignores the title.
+// A 403 is also what a space the user may not see answers, so it is the
+// search's answer that decides: only a search that finds something switches
+// the run over. One that fails, or finds nothing, leaves the listing to be
+// asked again and reports the listing's 403, since an empty result cannot tell
+// a missing page from one that may not be seen, and the caller would create it.
+func (api *API) listContent(
+	ctx context.Context, query url.Values, space, title string, pageType ContentType,
+) (listing[PageInfo], error) {
+	if api.contentListingRefused.Load() {
+		return api.searchContentCQL(ctx, query, space, title, pageType)
+	}
+
+	result, err := get[listing[PageInfo]](ctx, api.v1, []string{"content", ""}, query)
+	if !errors.Is(err, ErrForbidden) {
+		return result, err
+	}
+
+	searched, searchErr := api.searchContentCQL(ctx, query, space, title, pageType)
+	if searchErr != nil {
+		return listing[PageInfo]{}, fmt.Errorf(
+			"%w (the search fallback through /content/search was tried and failed: %w)", err, searchErr,
+		)
+	}
+	if len(searched.Results) == 0 {
+		return listing[PageInfo]{}, fmt.Errorf(
+			"%w (the search fallback through /content/search found nothing, "+
+				"which cannot tell a missing page from a space that may not be seen)", err,
+		)
+	}
+
+	api.contentListingRefused.Store(true)
+	return searched, nil
+}
+
+func (api *API) searchContentCQL(
+	ctx context.Context, query url.Values, space, title string, pageType ContentType,
+) (listing[PageInfo], error) {
+	cql := "type=" + QuoteCQL(string(pageType)) + " AND space=" + QuoteCQL(space)
+	if title != "" {
+		cql += " AND title=" + QuoteCQL(title)
+	}
+
+	return get[listing[PageInfo]](ctx, api.v1, []string{"content", "search"}, url.Values{
+		"cql":    {cql},
+		"expand": query["expand"],
+	})
 }
 
 // statusesHoldingTitle are the states in which a page is invisible to an

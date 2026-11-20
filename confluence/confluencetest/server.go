@@ -20,6 +20,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"path"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -1012,6 +1013,9 @@ func (s *Server) handleV1(w http.ResponseWriter, r *http.Request, path string) {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		}
 
+	case path == "/content/search" && r.Method == http.MethodGet:
+		s.searchContentCQL(w, r)
+
 	case path == "/user/current":
 		s.mu.Lock()
 		u := s.currentUser
@@ -1768,6 +1772,30 @@ func (s *Server) spaceProperties(w http.ResponseWriter, r *http.Request, collect
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
+}
+
+// cqlClause matches the type, space and title equalities of a CQL search, the
+// only ones this fake understands.
+var cqlClause = regexp.MustCompile(`(type|space|title)\s*=\s*"((?:[^"\\]|\\.)*)"`)
+
+// searchContentCQL answers /content/search for the equalities cqlClause reads,
+// as the listing does for the matching query parameters.
+func (s *Server) searchContentCQL(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	for _, m := range cqlClause.FindAllStringSubmatch(q.Get("cql"), -1) {
+		value := strings.NewReplacer(`\"`, `"`, `\\`, `\`).Replace(m[2])
+		switch m[1] {
+		case "type":
+			q.Set("type", value)
+		case "space":
+			q.Set("spaceKey", value)
+		case "title":
+			q.Set("title", value)
+		}
+	}
+	q.Del("cql")
+	r.URL.RawQuery = q.Encode()
+	s.searchContent(w, r)
 }
 
 func (s *Server) searchContent(w http.ResponseWriter, r *http.Request) {
