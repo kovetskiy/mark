@@ -2824,10 +2824,10 @@ func (s *Server) createFolder(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Confluence rejects a second folder with the same title under one parent,
-	// which is what makes a stranded reference visible rather than silent.
+	// Confluence rejects a second folder with the same title anywhere in the
+	// space, not only under the same parent.
 	for _, f := range s.folders {
-		if strings.EqualFold(f.Title, payload.Title) && f.ParentID == payload.ParentID && f.SpaceID == payload.SpaceID {
+		if strings.EqualFold(f.Title, payload.Title) && f.SpaceID == payload.SpaceID {
 			writeJSON(w, http.StatusBadRequest,
 				map[string]any{"message": "A folder exists with the same title"})
 			return
