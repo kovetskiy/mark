@@ -567,6 +567,47 @@ run report. Indent the lines to put them in the box, or end them with a line of
 `!!!`. After a blank line they are taken for what follows an admonition that
 has no body, and nothing is said.
 
+Collapsible admonitions are supported too. Confluence's `expand` macro cannot
+start open, so the two spellings render differently:
+
+* `??? note "Title"` renders as an `expand` macro titled with the admonition
+  title (or the capitalised type, such as "Note", when there is none), around
+  the same panel `!!!` produces.
+* `???+ note "Title"` starts open in MkDocs and renders exactly like `!!!`.
+
+```markdown
+??? tip "Click to expand"
+    Hidden until the reader opens it.
+
+???+ warning "Always visible"
+    Rendered as an ordinary warning panel.
+```
+
+A closing run has to be made of the character that opened the block, so `???`
+closes a `???` or `???+` admonition and `!!!` closes a `!!!` one; `???+` is not
+a closing run. Classes without a Confluence macro (such as `question` or
+`example`) stay blockquotes, and a collapsed one is a blockquote inside an
+`expand` macro with the same title. The collapsed form of a macro panel shows
+the title twice: on the expand macro, and in bold at the top of the panel inside
+it. A collapsed blockquote shows it once, on the expand macro.
+A title is literal text: a backslash in it is kept as written, and only `\"` and
+`\\` are escapes.
+
+Prose often starts with `???`, so a line that does is only an admonition when
+the type is a single word followed by a title in double quotes, attributes in
+braces that end the line, or nothing. A sentence such as `??? what is this`, an
+unquoted title as in `??? note Title`, a title with no type as in
+`??? "Title"`, extra words as in `??? note inline end`, or attributes followed
+by prose all stay text. MkDocs' attr_list spelling `??? note {: .foo }` stays
+text too, while `??? note {.foo}` is accepted and its attributes are dropped. The
+next non-blank
+line must also be indented under the opening line, or be the closing run, so
+`??? note` or `??? note "Title"` above an ordinary paragraph stays text rather
+than hiding it in an empty expand. Inside a list, a blockquote or another
+admonition the next line cannot be judged, so there the opening line has to
+carry a quoted title or name a MkDocs type such as `note` or `question`.
+`!!!` keeps its looser rule.
+
 ## HTML Details/Summary Macro
 
 Standard HTML `<details>` and `<summary>` tags are converted to native
