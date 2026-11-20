@@ -18,9 +18,11 @@ FROM chromedp/headless-shell:latest
 
 ARG TARGETARCH
 
+# fonts-noto-color-emoji: the base image has no emoji font for PNG diagrams.
 RUN apt-get update \
 && apt-get upgrade -qq \
 && apt-get install --no-install-recommends -qq ca-certificates bash sed git curl dumb-init xz-utils \
+   fonts-noto-color-emoji \
 && apt-get clean \
 && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
