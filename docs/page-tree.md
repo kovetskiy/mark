@@ -16,6 +16,13 @@ mixed in the same document to create complex hierarchies.
 > [!NOTE]
 > Folder support is currently only available on Confluence Cloud and is not supported in Confluence Server / Data Center.
 
+A space holds one folder of a title, wherever it sits, so a `Guides` folder under
+one parent keeps Mark from creating a `Guides` folder under any other.
+`--folder-title-append-generated-hash` creates every folder under its title with
+a short hash of where it sits, as `--title-append-generated-hash` does for pages:
+`Guides - 3f9a1c2e`. A folder already there under its plain title is still used
+and keeps its title, so turning the flag on leaves an existing tree as it is.
+
 `--parents` puts every page of the run under the pages it names, ahead of the
 parents a document declares itself: with `--parents "Engineering/Handbook"`, a
 document whose `Parent` is `Setup` ends up under Engineering > Handbook >

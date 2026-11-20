@@ -4,11 +4,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"sync"
 
 	"github.com/kovetskiy/mark/v17/confluence"
 	"github.com/kovetskiy/mark/v17/internal/logctx"
+	"github.com/kovetskiy/mark/v17/metadata"
 	"github.com/kovetskiy/mark/v17/report"
 )
 
@@ -189,6 +191,15 @@ type AncestryOptions struct {
 	// Warnings collects what is worth saying about where the document's page
 	// was found; nil only logs it.
 	Warnings *report.Warnings
+	// FolderTitleAppendGeneratedHash creates each folder under its title with
+	// a short hash of where it sits, since Confluence holds folder titles
+	// unique across a space. A folder already there under its plain title is
+	// still used, and kept as it is.
+	FolderTitleAppendGeneratedHash bool
+
+	// parents are the titles of the pages the folders hang from, which the
+	// hash covers as a page's hash covers its parents.
+	parents []string
 }
 
 // ParentPathKey names a parent by the chain of titles leading to it.
@@ -211,6 +222,22 @@ func folderPathKey(anchorPageID *string, folders []string, upto int) string {
 		anchor = *anchorPageID
 	}
 	return anchor + "\x00" + strings.Join(folders[:upto+1], "\x00")
+}
+
+// hashedFolderTitle is the folder at folders[upto] titled the way
+// --title-append-generated-hash titles a page: with a short hash of the pages
+// and folders above it, the space and its title.
+func (o AncestryOptions) hashedFolderTitle(space string, folders []string, upto int) string {
+	return metadata.GeneratedHashTitle(slices.Concat(o.parents, folders[:upto]), space, folders[upto])
+}
+
+// createdFolderTitle is the title the folder at folders[upto] is created under.
+func (o AncestryOptions) createdFolderTitle(space string, folders []string, upto int) string {
+	if !o.FolderTitleAppendGeneratedHash {
+		return folders[upto]
+	}
+
+	return o.hashedFolderTitle(space, folders, upto)
 }
 
 // EnsureFolderAncestry creates the folder hierarchy and returns the final parent for page creation.
@@ -253,7 +280,13 @@ func EnsureFolderAncestry(
 		if id, ok := options.FolderCache.lookup(space, underID, title); ok {
 			folder, err = api.GetFolderByID(ctx, id)
 		} else {
-			folder, err = resolveFolder(ctx, api, options.DryRun, space, title, underID, anchorPageID)
+			if options.FolderTitleAppendGeneratedHash {
+				hashed := options.hashedFolderTitle(space, folders, i)
+				folder, err = resolveFolder(ctx, api, options.DryRun, space, hashed, underID, anchorPageID)
+			}
+			if err == nil && folder == nil {
+				folder, err = resolveFolder(ctx, api, options.DryRun, space, title, underID, anchorPageID)
+			}
 		}
 		if err != nil {
 			return nil, fmt.Errorf("error finding folder with title %q: %w", title, err)
@@ -353,6 +386,8 @@ func EnsureFolderAncestry(
 			var folder *confluence.FolderInfo
 			var err error
 
+			created := options.createdFolderTitle(space, folders, firstNew+offset)
+
 			if parent == nil {
 				if anchorPageID == nil {
 					return nil, fmt.Errorf(
@@ -360,10 +395,10 @@ func EnsureFolderAncestry(
 						title,
 					)
 				}
-				folder, err = api.CreateFolder(ctx, spaceID, title, anchorPageID, confluence.ContentPage)
+				folder, err = api.CreateFolder(ctx, spaceID, created, anchorPageID, confluence.ContentPage)
 			} else {
 				pid := parent.ID
-				folder, err = api.CreateFolder(ctx, spaceID, title, &pid, confluence.ContentFolder)
+				folder, err = api.CreateFolder(ctx, spaceID, created, &pid, confluence.ContentFolder)
 			}
 			if err != nil {
 				createErr := err
@@ -386,19 +421,24 @@ func EnsureFolderAncestry(
 				if id, ok := options.FolderCache.lookup(space, underID, title); ok {
 					folder, err = api.GetFolderByID(ctx, id)
 				} else {
-					folder, err = resolveFolder(ctx, api, options.DryRun, space, title, underID, anchorPageID)
+					folder, err = resolveFolder(ctx, api, options.DryRun, space, created, underID, anchorPageID)
 				}
 				if err != nil || folder == nil {
+					hint := ""
+					if !options.FolderTitleAppendGeneratedHash {
+						hint = " (if another folder in the space has this title, rename one of them, or use --folder-title-append-generated-hash)"
+					}
+
 					return nil, fmt.Errorf(
-						"error creating folder with title %q: %w",
-						title,
+						"error creating folder with title %q%s: %w",
+						created, hint,
 						createErr,
 					)
 				}
 
 				logctx.From(ctx).Info().Msgf(
 					"folder %q already exists as %s; using it rather than creating another",
-					title, folder.ID,
+					created, folder.ID,
 				)
 			}
 
@@ -431,7 +471,7 @@ func EnsureFolderAncestry(
 		)
 		// For dry-run, simulate the final parent
 		if len(rest) > 0 {
-			finalTitle := rest[len(rest)-1]
+			finalTitle := options.createdFolderTitle(space, folders, len(folders)-1)
 			parent = &ParentInfo{
 				ID:    dryRunFolderID,
 				Title: finalTitle,
@@ -453,6 +493,8 @@ func EnsureMixedAncestry(
 	pages []string,
 	options AncestryOptions,
 ) (*confluence.PageInfo, error) {
+	options.parents = pages
+
 	var anchorPageID *string
 
 	if len(pages) > 0 {
@@ -479,7 +521,7 @@ func EnsureMixedAncestry(
 			return &confluence.PageInfo{
 				ID:    dryRunFolderID,
 				Type:  "folder-parent",
-				Title: folders[len(folders)-1],
+				Title: options.createdFolderTitle(space, folders, len(folders)-1),
 			}, nil
 		}
 	}

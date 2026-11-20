@@ -358,13 +358,14 @@ func RunPublish(ctx context.Context, cmd *cli.Command) (err error) {
 	config := mark.Config{
 		PublishConfig: mark.PublishConfig{
 			Page: mark.PageConfig{
-				PageID:                   creds.PageID,
-				Space:                    cmd.String("space"),
-				Parents:                  parents,
-				TitleFromH1:              titleFromH1,
-				TitleFromFilename:        titleFromFilename,
-				TitleAppendGeneratedHash: cmd.Bool("title-append-generated-hash"),
-				ContentAppearance:        metadata.Appearance(cmd.String("content-appearance")),
+				PageID:                         creds.PageID,
+				Space:                          cmd.String("space"),
+				Parents:                        parents,
+				TitleFromH1:                    titleFromH1,
+				TitleFromFilename:              titleFromFilename,
+				TitleAppendGeneratedHash:       cmd.Bool("title-append-generated-hash"),
+				FolderTitleAppendGeneratedHash: cmd.Bool("folder-title-append-generated-hash"),
+				ContentAppearance:              metadata.Appearance(cmd.String("content-appearance")),
 			},
 			Mode: mark.ModeConfig{
 				CompileOnly: cmd.Bool("compile-only"),

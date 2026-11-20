@@ -211,7 +211,10 @@ type PageConfig struct {
 	TitleFromH1              bool
 	TitleFromFilename        bool
 	TitleAppendGeneratedHash bool
-	ContentAppearance        metadata.Appearance
+	// FolderTitleAppendGeneratedHash is TitleAppendGeneratedHash for the
+	// folders a run creates; see page.AncestryOptions.
+	FolderTitleAppendGeneratedHash bool
+	ContentAppearance              metadata.Appearance
 }
 
 // UpdateConfig is how a page is written once it is found.
@@ -2660,6 +2663,8 @@ func (r *publishRun) ancestryOptions(doc *document) page.AncestryOptions {
 		Folders:     r.ancestryTracker,
 		Created:     func(created *confluence.PageInfo) { r.createdParents[created.ID] = true },
 		Warnings:    doc.warnings,
+
+		FolderTitleAppendGeneratedHash: r.config.Page.FolderTitleAppendGeneratedHash,
 	}
 }
 
