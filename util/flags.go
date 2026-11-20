@@ -189,6 +189,12 @@ func publishFlags(config *configFile) []cli.Flag {
 			Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_TITLE_APPEND_GENERATED_HASH"), config.value("title-append-generated-hash")),
 		},
 		&cli.BoolFlag{
+			Name:    "folder-title-append-generated-hash",
+			Value:   false,
+			Usage:   "appends a short hash generated from the path of the folder (space, parents, and title) to the title of every folder mark creates. A folder that already exists under its plain title is still used.",
+			Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_FOLDER_TITLE_APPEND_GENERATED_HASH"), config.value("folder-title-append-generated-hash")),
+		},
+		&cli.BoolFlag{
 			Name:    "minor-edit",
 			Value:   false,
 			Usage:   "don't send notifications while updating Confluence page.",
