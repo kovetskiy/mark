@@ -19,20 +19,40 @@ import (
 // attributes. A block that is text in one release and attributes in another
 // changes the heading's id and breaks every link to it.
 func HeadingOptions() []parser.Option {
-	return []parser.Option{
-		parser.WithAutoHeadingID(),
+	return HeadingOptionsWithIDs(true)
+}
+
+// HeadingOptionsWithIDs is HeadingOptions with the automatically generated
+// ids switched on or off. With them off a heading has an id only when the
+// author named one, with the {#custom-id} syntax; mark's own derived ids --
+// the ones a Confluence importer can leak into a heading's visible text on
+// a page -- are never written. Whatever derives a heading's id ahead of the
+// publish has to parse with the same setting the publish uses, or it derives
+// another id than the page gets.
+func HeadingOptionsWithIDs(generate bool) []parser.Option {
+	auto := []parser.Option{}
+	if generate {
+		auto = append(auto, parser.WithAutoHeadingID())
+	}
+
+	// Tried ahead of goldmark's own heading parsers, which then see only
+	// what these turned down: none of it a heading.
+	var headingParserOptions []parser.HeadingOption
+	if generate {
+		headingParserOptions = []parser.HeadingOption{parser.WithAutoHeadingID()}
+	}
+
+	return append(auto,
 		parser.WithIDGenerator(confluenceIDGenerator{}),
-		// Tried ahead of goldmark's own heading parsers, which then see only
-		// what these turned down: none of it a heading.
 		parser.WithBlockParsers(
 			util.Prioritized[parser.BlockParser](&setextHeadingParser{
-				BlockParser: parser.NewSetextHeadingParser(parser.WithAutoHeadingID()),
+				BlockParser: parser.NewSetextHeadingParser(headingParserOptions...),
 			}, 99),
 			util.Prioritized[parser.BlockParser](&atxHeadingParser{
-				BlockParser: parser.NewATXHeadingParser(parser.WithAutoHeadingID()),
+				BlockParser: parser.NewATXHeadingParser(headingParserOptions...),
 			}, 599),
 		),
-	}
+	)
 }
 
 // atxHeadingParser is goldmark's ATX heading parser, with attributes off,

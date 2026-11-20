@@ -1,0 +1,25 @@
+<h1>Anchor Links</h1>
+<p>Headings become ids that keep their capitals and punctuation, while the links
+authors write use the lowercase-and-hyphens slug every other Markdown tool
+produces. Both ends have to end up naming the same thing.</p>
+<h2>My Heading</h2>
+<p><ac:link ac:anchor="my-heading"><ac:link-body>slug style</ac:link-body></ac:link> and <ac:link ac:anchor="My-Heading"><ac:link-body>exact style</ac:link-body></ac:link>.</p>
+<h2>API/v2 Guide</h2>
+<p>The conventions disagree about which characters survive at all, so matching is
+on the letters and digits: <ac:link ac:anchor="apiv2-guide"><ac:link-body>dropped punctuation</ac:link-body></ac:link>.</p>
+<h2>Release Notes</h2>
+<h2>Release.Notes</h2>
+<p>Two headings whose ids differ only in punctuation that matching drops are one
+key, so <ac:link ac:anchor="release-notes"><ac:link-body>this</ac:link-body></ac:link> is left exactly as written rather than guessed
+at.</p>
+<p><a href="https://example.com/#fragment">not an anchor</a> is untouched, and so is
+<ac:link ac:anchor="nothing-here"><ac:link-body>an unknown target</ac:link-body></ac:link>.</p>
+<h2>概要</h2>
+<p>A heading with no ASCII in it at all still has to become an id made of its own
+characters rather than the literal word &quot;heading&quot;: <ac:link ac:anchor="概要"><ac:link-body>the summary</ac:link-body></ac:link>.</p>
+<h2>詳細</h2>
+<p>A second such heading is a heading of its own, not the numbered fallback that
+one emptied id forces on the next.</p>
+<h2>Heading with <a href="https://example.com">link</a> and code</h2>
+<p>An id is built from what a reader sees, so the link's label counts and its URL
+does not: <ac:link ac:anchor="heading-with-link-and-code"><ac:link-body>jump</ac:link-body></ac:link>.</p>

@@ -191,6 +191,7 @@ OPTIONS:
    --dry-run, -n                                  resolve page and ancestry, show resulting HTML and exit. With --changes-only, say which pages would change and show the HTML of only those. With --output-format json or github, the HTML is shown only when --report-file is set, so that the report on standard output stands alone. [$MARK_DRY_RUN]
    --edit-lock, -k                                lock page editing to current user only to prevent accidental manual edits over Confluence Web UI. [$MARK_EDIT_LOCK]
    --drop-h1                                      don't include the first H1 heading in Confluence output. [$MARK_DROP_H1]
+   --disable-heading-ids                          don't generate an id for a heading the author didn't name with {#custom-id}. Confluence Cloud's importer can leak a generated id into a heading's visible text on some pages; a run that turns this on loses mark's automatic same-page anchor links, which a heading without an id cannot resolve. [$MARK_DISABLE_HEADING_IDS]
    --strip-linebreaks, -L                         remove linebreaks inside of tags, to accommodate non-standard Confluence behavior [$MARK_STRIP_LINEBREAKS]
    --title-from-h1                                extract page title from a leading H1 heading. If no H1 heading on a page exists, then title must be set in the page metadata. Mutually exclusive with --title-from-filename. [$MARK_TITLE_FROM_H1]
    --title-from-filename                          use the filename (without extension) as the Confluence page title if no explicit page title is set in the metadata. Mutually exclusive with --title-from-h1. [$MARK_TITLE_FROM_FILENAME]
@@ -336,6 +337,28 @@ the file. Where two settings exclude each other -- `--title-from-h1` and
 the command line sets aside the other when that came from the environment or
 the file. Two from the command line, or two from the environment and the
 file, are still an error, which names where each came from.
+
+### Disabling Generated Heading IDs
+
+Confluence Cloud's storage-format importer does not always tolerate the id
+attribute `mark` writes on every heading. On a heading that shares a line with
+certain macros -- a badge or status macro placed right after the heading text,
+for instance -- the importer can leak the id into the heading's own visible
+content instead of dropping it, corrupting the page. There is no way to repair
+that before it happens, only after, with a second write -- which is itself a
+second page version and a second notification to anyone watching the page.
+
+`--disable-heading-ids` (or `$MARK_DISABLE_HEADING_IDS`, or
+`disable-heading-ids = true` in the configuration file) leaves the ids `mark`
+derives for headings out entirely. A heading then has an id only when the
+author named one, with the `{#custom-id}` syntax -- an id an author asked for
+is kept regardless, since the attribute syntax is unaffected by the flag.
+
+The trade-off: a heading with no id cannot be the target of mark's automatic
+same-page anchor linking. A link written to such a heading still renders, it
+just will not resolve in Confluence. Sites that don't use in-page anchor links
+lose nothing; to check, search your documents for links of the form
+`[label](#heading-anchor)`.
 
 **NOTE**: `password-command` keeps the token out of both the configuration file and the environment.
 A password manager or keychain helper supplies it per run.

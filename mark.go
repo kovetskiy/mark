@@ -465,10 +465,11 @@ type TrackingConfig struct {
 // RenderingConfig is how a document becomes storage format: diagrams,
 // formulas, features, images and the page header.
 type RenderingConfig struct {
-	DropH1          bool
-	StripLinebreaks bool
-	MermaidEngine   mermaid.EngineKind
-	MermaidScale    float64
+	DropH1            bool
+	DisableHeadingIDs bool
+	StripLinebreaks   bool
+	MermaidEngine     mermaid.EngineKind
+	MermaidScale      float64
 	// MermaidOutput, D2Output and MathOutput are the image each kind of
 	// picture is published as; the zero value is PNG.
 	MermaidOutput  imageformat.Format
@@ -3282,6 +3283,7 @@ func (c RenderingConfig) documentConfig(ctx context.Context, res *resources, doc
 
 	cfg := c.markdownOptions(res)
 	cfg.DropH1 = c.DropH1
+	cfg.DisableHeadingIDs = c.DisableHeadingIDs
 	cfg.ImageAlign = imageAlign
 	cfg.ResolveLink = linksUnder(ctx, doc.resolver)
 	cfg.Publishes = doc.publishes
@@ -3299,20 +3301,21 @@ func (c RenderingConfig) markdownOptions(res *resources) markdown.Options {
 	imageAlign, _ := getImageAlign(c.ImageAlign, nil)
 
 	return markdown.Options{
-		Browser:          res.browser,
-		Mermaid:          res.mermaid,
-		ImageAlign:       imageAlign,
-		MermaidScale:     c.MermaidScale,
-		MermaidOutput:    c.MermaidOutput,
-		MermaidBundle:    c.MermaidBundle,
-		D2Output:         c.D2Output,
-		D2Scale:          c.D2Scale,
-		D2BundleRemote:   c.D2BundleRemote,
-		MathOutput:       c.MathOutput,
-		MathScale:        c.MathScale,
-		StripLinebreaks:  c.StripLinebreaks,
-		Features:         c.Features,
-		AttachReferenced: c.AttachReferenced,
-		IncludePath:      c.IncludePath,
+		Browser:           res.browser,
+		Mermaid:           res.mermaid,
+		ImageAlign:        imageAlign,
+		MermaidScale:      c.MermaidScale,
+		MermaidOutput:     c.MermaidOutput,
+		MermaidBundle:     c.MermaidBundle,
+		D2Output:          c.D2Output,
+		D2Scale:           c.D2Scale,
+		D2BundleRemote:    c.D2BundleRemote,
+		MathOutput:        c.MathOutput,
+		MathScale:         c.MathScale,
+		StripLinebreaks:   c.StripLinebreaks,
+		DisableHeadingIDs: c.DisableHeadingIDs,
+		Features:          c.Features,
+		AttachReferenced:  c.AttachReferenced,
+		IncludePath:       c.IncludePath,
 	}
 }
