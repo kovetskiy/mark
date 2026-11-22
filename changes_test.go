@@ -557,15 +557,15 @@ func TestDryRunChangesOnlyReportsAFolderMoveUnderAParentToBeCreated(t *testing.T
 			"<!-- Folder: Manuals -->\n<!-- Title: Doc -->\n\nBody.\n")
 	before := len(nonGET(server))
 
+	// The new Manuals needs the hash, as the old one holds the title in the space.
+	config.Page.FolderTitleAppendGeneratedHash = true
 	out := previewOf(t, config, "json")
 
 	assert.Equal(t, report.StatusWouldUpdate, decodeReport(t, []byte(out)).Pages[0].Status)
 	assert.Len(t, nonGET(server), before, "a dry run must not write")
 
-	// And the real run does move it, which is what the report promised. The
-	// new Manuals needs the hash, as the old one holds the title in the space.
+	// And the real run does move it, which is what the report promised.
 	config.Mode.DryRun = false
-	config.Page.FolderTitleAppendGeneratedHash = true
 	config.Report.OutputFormat = ""
 	config.Output = &bytes.Buffer{}
 	require.NoError(t, Run(context.Background(), config))

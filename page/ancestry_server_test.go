@@ -492,6 +492,12 @@ func TestRootFolderLookupIgnoresASameTitledNestedFolder(t *testing.T) {
 	assert.Equal(t, atRoot.ID, parent.ID)
 }
 
+// hashedOptions are the options of a run with --folder-title-append-generated-hash,
+// each with a cache of its own.
+func hashedOptions(dryRun bool) page.AncestryOptions {
+	return page.AncestryOptions{DryRun: dryRun, FolderCache: page.NewFolderCache(), FolderTitleAppendGeneratedHash: true}
+}
+
 // TestFolderTitleAppendGeneratedHash: Confluence holds folder titles unique
 // across a space, so a "Guides" declared under a second parent is refused for
 // the one under the first. With the hash, each folder created carries where it
@@ -509,13 +515,11 @@ func TestFolderTitleAppendGeneratedHash(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "--folder-title-append-generated-hash")
 
-	preview, err := page.EnsureFolderAncestry(ctx, api, "DOCS", declared, &root.ID,
-		page.AncestryOptions{DryRun: true, FolderCache: page.NewFolderCache(), FolderTitleAppendGeneratedHash: true})
+	preview, err := page.EnsureFolderAncestry(ctx, api, "DOCS", declared, &root.ID, hashedOptions(true))
 	require.NoError(t, err)
 	require.NotNil(t, preview)
 
-	hashed := page.AncestryOptions{FolderCache: page.NewFolderCache(), FolderTitleAppendGeneratedHash: true}
-	first, err := page.EnsureFolderAncestry(ctx, api, "DOCS", declared, &root.ID, hashed)
+	first, err := page.EnsureFolderAncestry(ctx, api, "DOCS", declared, &root.ID, hashedOptions(false))
 	require.NoError(t, err)
 	require.NotNil(t, first)
 	assert.Regexp(t, `^Guides - [0-9a-f]{8}$`, first.Title)
@@ -523,8 +527,7 @@ func TestFolderTitleAppendGeneratedHash(t *testing.T) {
 
 	before := len(server.Folders())
 
-	hashed.FolderCache = page.NewFolderCache()
-	again, err := page.EnsureFolderAncestry(ctx, api, "DOCS", declared, &root.ID, hashed)
+	again, err := page.EnsureFolderAncestry(ctx, api, "DOCS", declared, &root.ID, hashedOptions(false))
 	require.NoError(t, err)
 	require.NotNil(t, again)
 	assert.Equal(t, first.ID, again.ID)
@@ -541,10 +544,7 @@ func TestFolderTitleAppendGeneratedHashKeepsExistingFolders(t *testing.T) {
 	manuals := server.AddFolder("DOCS", "Manuals", root.ID, "page")
 	guides := server.AddFolder("DOCS", "Guides", manuals.ID, "folder")
 
-	parent, err := page.EnsureFolderAncestry(
-		ctx, api, "DOCS", []string{"Manuals", "Guides"}, &root.ID,
-		page.AncestryOptions{FolderCache: page.NewFolderCache(), FolderTitleAppendGeneratedHash: true},
-	)
+	parent, err := page.EnsureFolderAncestry(ctx, api, "DOCS", []string{"Manuals", "Guides"}, &root.ID, hashedOptions(false))
 	require.NoError(t, err)
 	require.NotNil(t, parent)
 	assert.Equal(t, guides.ID, parent.ID)
@@ -561,13 +561,11 @@ func TestFolderTitleAppendGeneratedHashPreviewUnderAMissingParent(t *testing.T) 
 
 	folders, parents := []string{"Guides"}, []string{"Root", "Missing"}
 
-	preview, err := page.EnsureMixedAncestry(ctx, api, "DOCS", folders, parents,
-		page.AncestryOptions{DryRun: true, FolderCache: page.NewFolderCache(), FolderTitleAppendGeneratedHash: true})
+	preview, err := page.EnsureMixedAncestry(ctx, api, "DOCS", folders, parents, hashedOptions(true))
 	require.NoError(t, err)
 	require.NotNil(t, preview)
 
-	created, err := page.EnsureMixedAncestry(ctx, api, "DOCS", folders, parents,
-		page.AncestryOptions{FolderCache: page.NewFolderCache(), FolderTitleAppendGeneratedHash: true})
+	created, err := page.EnsureMixedAncestry(ctx, api, "DOCS", folders, parents, hashedOptions(false))
 	require.NoError(t, err)
 	require.NotNil(t, created)
 	assert.Regexp(t, `^Guides - [0-9a-f]{8}$`, created.Title)
