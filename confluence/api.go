@@ -2751,7 +2751,23 @@ func (api *API) CreatePageWithFolderParent(
 // Position is not requested explicitly: it exists as an extension field but is
 // absent whenever a branch has never been ordered by hand, and the sequence is
 // the part that matters here.
+//
+// Through the gateway this is the v2 direct-children listing, pages only, as a
+// scoped token is refused v1's.
 func (api *API) GetChildPages(ctx context.Context, parentID string) ([]PageInfo, error) {
+	if api.gateway {
+		var pages []PageInfo
+		err := api.eachDirectChild(ctx, parentID, ContentPage, "list child pages of "+parentID,
+			func(id string, typ ContentType, title string) bool {
+				if typ == ContentPage {
+					pages = append(pages, PageInfo{ID: id, Type: ContentPage, Title: title})
+				}
+				return false
+			},
+		)
+		return pages, err
+	}
+
 	return listV1[PageInfo](
 		ctx, api, []string{"content", parentID, "child", "page"},
 		nil, 100, "list child pages of "+parentID, false, nil,
@@ -2793,6 +2809,10 @@ func (api *API) HasChildFolders(ctx context.Context, parentID string) (bool, err
 // make. A tool that removes pages because a file left a repository should leave
 // the last word to a person.
 func (api *API) DeletePage(ctx context.Context, contentID string) error {
+	if api.gateway {
+		return api.deletePageV2(ctx, contentID)
+	}
+
 	_, err := api.v1.do(ctx, nil, http.MethodDelete, []string{"content", contentID}, nil, nil, &struct{}{})
 	// 204 is the documented answer, though some versions send 200, and a page
 	// already gone is the outcome that was wanted anyway.

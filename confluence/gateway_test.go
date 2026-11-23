@@ -509,3 +509,53 @@ func TestAnArchivedPageIsRead(t *testing.T) {
 		})
 	}
 }
+
+// A scoped token is refused v1's DELETE /content, so through the gateway a
+// page is trashed through v2.
+func TestGatewayDeletePage(t *testing.T) {
+	api, server := newGatewayAPI(t)
+	page := server.AddPage("DOCS", "Gone", "page", "")
+
+	require.NoError(t, api.DeletePage(context.Background(), page.ID))
+
+	got := server.Page(page.ID)
+	require.NotNil(t, got, "the page must be trashed, not purged")
+	assert.True(t, got.Trashed)
+	assert.Equal(t, 0, server.CountRequests("DELETE", "/rest/api/content"),
+		"through the gateway v1 is not asked at all")
+}
+
+func TestGatewayDeleteBlogpost(t *testing.T) {
+	api, server := newGatewayAPI(t)
+	post := server.AddPage("DOCS", "Gone", "blogpost", "")
+
+	require.NoError(t, api.DeletePage(context.Background(), post.ID))
+
+	got := server.Page(post.ID)
+	require.NotNil(t, got)
+	assert.True(t, got.Trashed)
+}
+
+// A page already gone, purged or in the trash, is the outcome that was wanted.
+func TestGatewayDeleteAPageAlreadyGone(t *testing.T) {
+	api, server := newGatewayAPI(t)
+	trashed := server.AddPage("DOCS", "Trashed", "page", "")
+	server.TrashPage(trashed.ID)
+
+	require.NoError(t, api.DeletePage(context.Background(), trashed.ID))
+	require.NoError(t, api.DeletePage(context.Background(), "424242"))
+}
+
+func TestGatewayGetChildPages(t *testing.T) {
+	api, server := newGatewayAPI(t)
+	parent := server.AddPage("DOCS", "Parent", "page", "")
+	child := server.AddPage("DOCS", "Child", "page", parent.ID)
+	server.AddFolder("DOCS", "Folder", parent.ID, "page")
+
+	children, err := api.GetChildPages(context.Background(), parent.ID)
+	require.NoError(t, err)
+	require.Len(t, children, 1, "folders are not pages")
+	assert.Equal(t, child.ID, children[0].ID)
+	assert.Equal(t, "Child", children[0].Title)
+	assert.Equal(t, 0, server.CountRequests("GET", "/rest/api/content"))
+}

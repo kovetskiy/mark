@@ -392,9 +392,10 @@ pages with the v2 API, which needs:
 | `read:content.property:confluence`, `write:content.property:confluence` | the content appearance and emoji title of a page |
 | `read:page:confluence`, `write:page:confluence` | `--track-pages` with `--manifest-page`; without it the mapping is a space property, whose creation a scoped token is refused |
 | `read:folder:confluence`, `write:folder:confluence`, `read:hierarchical-content:confluence` | `Folder` headers: reading and creating folders, and finding one among its parent's direct children |
+| `delete:page:confluence`, `delete:blogpost:confluence` | `--on-orphan delete`: moving a page whose file is gone to the trash; with `read:hierarchical-content:confluence` to check it has no children first |
 
 Uploading attachments, applying `Label` headers, `--preserve-comments`,
-`--on-orphan`, `--watch=false`, page restrictions, mentions, moving a page among its siblings and
+`--on-orphan archive`, `--watch=false`, page restrictions, mentions, moving a page among its siblings and
 finding a folder left at the space root have no v2 endpoint and stay on v1. To use those with a scoped token, grant the
 classic scopes (`read:confluence-content.all`, `write:confluence-content`,
 `read:confluence-user`) alongside the granular ones.
