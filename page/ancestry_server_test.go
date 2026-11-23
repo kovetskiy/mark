@@ -571,3 +571,25 @@ func TestFolderTitleAppendGeneratedHashPreviewUnderAMissingParent(t *testing.T) 
 	assert.Regexp(t, `^Guides - [0-9a-f]{8}$`, created.Title)
 	assert.Equal(t, created.Title, preview.Title)
 }
+
+// TestFolderTitleAppendGeneratedHashIgnoresCase: Confluence takes "Guides" and
+// "guides" for one folder, so two documents spelling it differently share it
+// rather than the second creating another.
+func TestFolderTitleAppendGeneratedHashIgnoresCase(t *testing.T) {
+	ctx := t.Context()
+	api, server := newAPI(t)
+	root := server.AddPage("DOCS", "Root", "page", "")
+
+	options := hashedOptions(false)
+	first, err := page.EnsureMixedAncestry(ctx, api, "DOCS", []string{"Guides"}, []string{"Root"}, options)
+	require.NoError(t, err)
+	require.NotNil(t, first)
+
+	second, err := page.EnsureMixedAncestry(ctx, api, "docs", []string{"guides"}, []string{"root"}, options)
+	require.NoError(t, err)
+	require.NotNil(t, second)
+
+	assert.Equal(t, first.ID, second.ID)
+	assert.Len(t, server.Folders(), 1)
+	assert.Equal(t, root.ID, server.Folders()[0].ParentID)
+}
