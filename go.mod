@@ -6,7 +6,7 @@ require (
 	github.com/BurntSushi/toml v1.6.0
 	github.com/bmatcuk/doublestar/v4 v4.10.4
 	github.com/chromedp/cdproto v0.160.1
-	github.com/chromedp/chromedp v0.23.0
+	github.com/chromedp/chromedp v0.24.0
 	github.com/d2lang/d2 v0.9.0
 	github.com/d2lang/mathjax-go v0.1.0
 	github.com/d2lang/util-go v0.2.0
