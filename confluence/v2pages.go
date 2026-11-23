@@ -401,6 +401,22 @@ func (api *API) collectionOfV2(ctx context.Context, id string) (string, error) {
 	return v2Collection(pageType), nil
 }
 
+// deletePageV2 is DeletePage against v2, which a token minted with
+// delete:page:confluence is allowed where v1's DELETE /content is not. Like
+// v1 without status=trashed, it moves the page to the trash.
+func (api *API) deletePageV2(ctx context.Context, contentID string) error {
+	collection, err := api.collectionOfV2(ctx, contentID)
+	if err == nil {
+		_, err = api.v2.do(ctx, nil, http.MethodDelete, []string{collection, contentID}, nil, nil, &struct{}{})
+	}
+	if err != nil && !errors.Is(err, ErrNotFound) {
+		return requestError("delete content "+contentID, err)
+	}
+	api.forgetPage(contentID)
+
+	return nil
+}
+
 // getPageByIDV2 is GetPageByIDExpanded against v2.
 //
 // The expand list is honoured: v2 charges for both of the things it names, the

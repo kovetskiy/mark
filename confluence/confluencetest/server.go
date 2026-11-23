@@ -3047,6 +3047,20 @@ func (s *Server) contentV2ByID(w http.ResponseWriter, r *http.Request, id, pageT
 	case http.MethodGet:
 		writeJSON(w, http.StatusOK, s.contentJSONV2(p, r.URL.Query().Get("body-format") != ""))
 
+	case http.MethodDelete:
+		// v2 trashes a current page and purges a trashed one only with
+		// purge=true, which mark never asks for.
+		switch {
+		case r.URL.Query().Get("purge") == "true":
+			delete(s.pages, id)
+		case p.Trashed:
+			writeJSON(w, http.StatusNotFound, map[string]any{"message": "no content with id " + id})
+			return
+		default:
+			p.Trashed = true
+		}
+		w.WriteHeader(http.StatusNoContent)
+
 	case http.MethodPut:
 		// The trash is read with its status, and is not written to.
 		if p.Trashed {

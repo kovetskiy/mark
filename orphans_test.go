@@ -1011,3 +1011,46 @@ func TestOnOrphanRemovesThePageADocumentLeftInItsOldSpace(t *testing.T) {
 	assert.Empty(t, pageIDTitled(t, server, "Doc"), "the page left in DOCS is removed")
 	assert.NotEmpty(t, pageIDTitled(t, server, "Keep"))
 }
+
+// TestOnOrphanDeleteThroughTheGateway: a scoped token is refused every v1
+// endpoint, so the orphan is trashed through v2.
+func TestOnOrphanDeleteThroughTheGateway(t *testing.T) {
+	server := confluencetest.New(t)
+	home := server.AddPage("DOCS", "Home", "page", "")
+	server.SetHomepage("DOCS", home.ID)
+	server.SetFail(func(r *http.Request) (int, string, bool) {
+		if strings.Contains(r.URL.Path, "/rest/api/") {
+			return http.StatusUnauthorized, `{"code":401,"message":"Unauthorized; scope does not match"}`, true
+		}
+		return 0, "", false
+	})
+
+	dir := t.TempDir()
+	writeFile(t, dir, "keep.md", "<!-- Space: DOCS -->\n<!-- Title: Keep -->\n\nKeep.\n")
+	writeFile(t, dir, "gone.md", "<!-- Space: DOCS -->\n<!-- Title: Gone -->\n\nGone.\n")
+	config := Config{
+		PublishConfig: PublishConfig{
+			Rendering: RenderingConfig{Features: []string{"mention"}},
+			Output:    io.Discard,
+		},
+		Files: filepath.Join(dir, "*.md"),
+		Connection: ConnectionConfig{
+			BaseURL: server.URL + "/ex/confluence/cloud-id", Username: "user", Password: "token",
+		},
+		Tracking: TrackingConfig{TrackPages: true, ManifestPage: "Home", OnOrphan: report.OnOrphanDelete},
+	}
+	require.NoError(t, Run(context.Background(), config))
+
+	api := confluence.NewAPI(config.Connection.BaseURL, confluence.Options{Username: "user", Password: "token"})
+	gone, err := api.FindPage(context.Background(), "DOCS", "Gone", "page")
+	require.NoError(t, err)
+	require.NotNil(t, gone)
+
+	require.NoError(t, os.Remove(filepath.Join(dir, "gone.md")))
+	require.NoError(t, Run(context.Background(), config))
+
+	page := server.Page(gone.ID)
+	require.NotNil(t, page, "the page must be trashed, not purged")
+	assert.True(t, page.Trashed)
+	assert.Equal(t, 0, server.CountRequests("DELETE", "/rest/api/content"))
+}
