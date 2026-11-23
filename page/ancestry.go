@@ -223,13 +223,15 @@ func folderPathKey(anchorPageID *string, folders []string, upto int) string {
 // folderTitles are the titles the folder at folders[upto] is looked for under,
 // in order; it is created under the first. With FolderTitleAppendGeneratedHash
 // that is its title with a short hash of the parent pages and folders above
-// it and the space, as --title-append-generated-hash titles a page.
+// it and the space, as --title-append-generated-hash titles a page but
+// without regard to case: Confluence takes "Guides" and "guides" for one
+// folder, so they must hash alike or the second spelling makes another.
 func (o AncestryOptions) folderTitles(parents []string, space string, folders []string, upto int) []string {
 	if !o.FolderTitleAppendGeneratedHash {
 		return folders[upto : upto+1]
 	}
 
-	hashed := metadata.GeneratedHashTitle(slices.Concat(parents, folders[:upto]), space, folders[upto])
+	hashed := metadata.CaseFoldedHashTitle(slices.Concat(parents, folders[:upto]), space, folders[upto])
 
 	return []string{hashed, folders[upto]}
 }
