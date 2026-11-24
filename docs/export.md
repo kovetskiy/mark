@@ -178,6 +178,18 @@ in a code block for instance, which a comment header cannot: under
 `--metadata comments`, the default, writes the comment headers. `--format okf`
 writes front matter of its own and ignores `--metadata`.
 
+## Including content status
+
+Use `--include-content-status` to include the assigned status of a Confluence Cloud page.
+Mark writes its display name as a `Content-Status` comment or a `content-status` YAML key.
+A page with no assigned status has no status field in the export.
+The flag requires Mark format with comment headers or YAML front matter.
+It also applies to pages in a recursive export.
+
+Publishing the exported field asks Mark to apply that status.
+Remove the field if the status will be managed in Confluence.
+See [content status metadata](metadata.md#content-status).
+
 ## The body alone
 
 `--metadata none` writes the body without any metadata, for a program that

@@ -49,6 +49,9 @@ type ExportConfig struct {
 	// export.ErrTreeWithoutMetadata.
 	Metadata export.Metadata
 
+	// IncludeContentStatus exports assigned Confluence Cloud page statuses.
+	IncludeContentStatus bool
+
 	// Generator is who an OKF concept says generated it, as
 	// <producer>/<version>; empty is "mark/unknown".
 	Generator string
@@ -98,16 +101,17 @@ func ExportTree(ctx context.Context, config ExportConfig, options export.TreeOpt
 
 func exportConfig(config ExportConfig, stdout io.Writer) export.Config {
 	return export.Config{
-		PageID:         config.PageID,
-		Space:          config.Space,
-		Title:          config.Title,
-		Output:         config.Output,
-		AttachmentsDir: config.AttachmentsDir,
-		Overwrite:      config.Overwrite,
-		NoAttachments:  config.NoAttachments,
-		Format:         config.Format,
-		Metadata:       config.Metadata,
-		Generator:      config.Generator,
-		Stdout:         stdout,
+		PageID:               config.PageID,
+		Space:                config.Space,
+		Title:                config.Title,
+		Output:               config.Output,
+		AttachmentsDir:       config.AttachmentsDir,
+		Overwrite:            config.Overwrite,
+		NoAttachments:        config.NoAttachments,
+		Format:               config.Format,
+		Metadata:             config.Metadata,
+		IncludeContentStatus: config.IncludeContentStatus,
+		Generator:            config.Generator,
+		Stdout:               stdout,
 	}
 }

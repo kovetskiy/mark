@@ -529,13 +529,14 @@ func RunExport(ctx context.Context, cmd *cli.Command) error {
 		Space:  space,
 		Title:  title,
 
-		Output:         cmd.String("output"),
-		AttachmentsDir: cmd.String("attachments-dir"),
-		Overwrite:      cmd.Bool("overwrite"),
-		NoAttachments:  cmd.Bool("no-attachments"),
-		Format:         export.Format(cmd.String("format")),
-		Metadata:       export.Metadata(cmd.String("metadata")),
-		Generator:      generator(cmd.Root().Version),
+		Output:               cmd.String("output"),
+		AttachmentsDir:       cmd.String("attachments-dir"),
+		Overwrite:            cmd.Bool("overwrite"),
+		NoAttachments:        cmd.Bool("no-attachments"),
+		Format:               export.Format(cmd.String("format")),
+		Metadata:             export.Metadata(cmd.String("metadata")),
+		IncludeContentStatus: cmd.Bool("include-content-status"),
+		Generator:            generator(cmd.Root().Version),
 
 		Stdout: os.Stdout,
 	}

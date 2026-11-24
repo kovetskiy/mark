@@ -57,6 +57,9 @@ func parseOptions(cfg Config) (format Format, spelling Metadata, err error) {
 	if err != nil {
 		return "", "", err
 	}
+	if cfg.IncludeContentStatus && (format != FormatMark || spelling == MetadataNone) {
+		return "", "", errors.New("including content status requires mark format with comment or front matter metadata")
+	}
 	return format, spelling, nil
 }
 
@@ -71,6 +74,7 @@ type pageHeaders struct {
 	Sidebar           string
 	Layout            string
 	ContentAppearance metadata.Appearance
+	ContentStatus     string
 	Emoji             string
 	Attachments       []string
 }
@@ -102,6 +106,7 @@ func (h *pageHeaders) fields() []headerField {
 		one(metadata.HeaderSidebar, "sidebar", h.Sidebar),
 		one(metadata.HeaderLayout, "layout", h.Layout),
 		one(metadata.ContentAppearance, "content-appearance", string(h.ContentAppearance)),
+		one(metadata.HeaderContentStatus, "content-status", h.ContentStatus),
 		one(metadata.HeaderEmoji, "emoji", h.Emoji),
 		many(metadata.HeaderAttachment, "attachments", h.Attachments),
 	}
@@ -124,6 +129,9 @@ func (h *pageHeaders) comments() (string, error) {
 	var lines []string
 	for _, field := range h.fields() {
 		for _, value := range field.present() {
+			if field.header == metadata.HeaderContentStatus && value == "~" {
+				return "", errors.New("a content status named ~ requires --metadata frontmatter")
+			}
 			line, err := headerLine(field.header, value)
 			if err != nil {
 				return "", err

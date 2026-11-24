@@ -3,6 +3,7 @@ package util
 import (
 	"bytes"
 	"context"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -133,6 +134,19 @@ func TestExportCommand(t *testing.T) {
 		assert.Contains(t, stdout, "tags:\n  - exported\n")
 		assert.Contains(t, stdout, "generated:\n  by: mark/test\n", "mark and its version generated it")
 		assert.True(t, strings.HasSuffix(stdout, "---\n\n# Hello\n\nFrom **Confluence**.\n"), stdout)
+	})
+
+	t.Run("with the assigned content status", func(t *testing.T) {
+		server.SetFail(func(r *http.Request) (int, string, bool) {
+			if r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/content/"+page.ID+"/state") {
+				return http.StatusOK, `{"contentState":{"id":0,"name":"Ready for review"}}`, true
+			}
+			return 0, "", false
+		})
+		t.Cleanup(func() { server.SetFail(nil) })
+		stdout, _, err := runMark(t, append(credentials, "export", "-b", server.URL, "--page-id", page.ID, "--include-content-status")...)
+		require.NoError(t, err)
+		assert.Contains(t, stdout, "<!-- Content-Status: Ready for review -->")
 	})
 
 	t.Run("the body alone", func(t *testing.T) {

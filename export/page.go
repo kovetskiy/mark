@@ -66,6 +66,9 @@ type Config struct {
 	// FormatOKF writes front matter of its own and ignores it.
 	Metadata Metadata
 
+	// IncludeContentStatus writes the assigned Cloud page status as metadata.
+	IncludeContentStatus bool
+
 	// Generator is who an OKF concept says generated it, as
 	// <producer>/<version>; empty is "mark/unknown".
 	Generator string
@@ -361,7 +364,14 @@ func preparePage(ctx context.Context, api *confluence.API, cfg Config, beside []
 				declared = append(declared, name)
 			}
 		}
-		header, err = headers(ctx, api, page, space, doc, labels, declared, spelling)
+		var status string
+		if cfg.IncludeContentStatus {
+			status, err = exportedContentStatus(ctx, api, page)
+			if err != nil {
+				return nil, err
+			}
+		}
+		header, err = headers(ctx, api, page, space, doc, labels, declared, spelling, status)
 	}
 	if err != nil {
 		return nil, err
@@ -468,12 +478,13 @@ func headers(
 	doc *Document,
 	labels, declared []string,
 	spelling Metadata,
+	status string,
 ) (string, error) {
 	if spelling == MetadataNone {
 		return "", nil
 	}
 
-	h := pageHeaders{Space: space, Title: page.Title, Labels: labels, Attachments: declared}
+	h := pageHeaders{Space: space, Title: page.Title, Labels: labels, Attachments: declared, ContentStatus: status}
 
 	var err error
 	if page.Type == confluence.ContentBlogPost {
@@ -498,6 +509,25 @@ func headers(
 		return h.frontMatter()
 	}
 	return h.comments()
+}
+
+// exportedContentStatus reads the assigned Cloud page status by display name.
+func exportedContentStatus(ctx context.Context, api *confluence.API, page *confluence.PageInfo) (string, error) {
+	if page.Type == confluence.ContentBlogPost {
+		return "", errors.New("content status export is supported only for Confluence Cloud pages")
+	}
+	cloud, err := api.Cloud(ctx)
+	if err != nil {
+		return "", err
+	}
+	if !cloud {
+		return "", errors.New("content status export is supported only for Confluence Cloud pages")
+	}
+	status, err := api.ReadPageContentStatus(ctx, page.ID)
+	if err != nil || status == nil {
+		return "", err
+	}
+	return status.Name, nil
 }
 
 // conceptHeader is the OKF front matter of the concept page is exported as.

@@ -303,6 +303,7 @@ If a token cannot read that API, publishing with the field omitted leaves status
 
 Setting or clearing the status creates a page version when the assignment changes.
 `--dry-run --changes-only` reports when the status would change.
+See [exporting content status](export.md#including-content-status) to bring an assigned status into Markdown.
 
 ## Restrictions
 
