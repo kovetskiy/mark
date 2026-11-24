@@ -13,7 +13,7 @@ import (
 
 // statusChange plans what to do with the status after page settings are written.
 type statusChange struct {
-	current, desired *confluence.PageContentStatus
+	current, desired *confluence.ContentStatus
 	declared         bool
 }
 

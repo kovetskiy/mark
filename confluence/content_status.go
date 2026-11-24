@@ -8,16 +8,10 @@ import (
 	"strings"
 )
 
-// PageContentStatus is the named status assigned to a Cloud page or blog post.
-type PageContentStatus struct {
-	ID   int64  `json:"id"`
-	Name string `json:"name"`
-}
-
 // ReadPageContentStatus reads the status assigned to a published page or blog post.
-func (api *API) ReadPageContentStatus(ctx context.Context, pageID string) (*PageContentStatus, error) {
+func (api *API) ReadPageContentStatus(ctx context.Context, pageID string) (*ContentStatus, error) {
 	var result struct {
-		ContentState *PageContentStatus `json:"contentState"`
+		ContentState *ContentStatus `json:"contentState"`
 	}
 	_, err := api.v1.do(ctx, nil, http.MethodGet, []string{"content", pageID, "state"},
 		url.Values{"status": {"current"}}, nil, &result)
@@ -26,17 +20,17 @@ func (api *API) ReadPageContentStatus(ctx context.Context, pageID string) (*Page
 
 // ResolvePageContentStatus finds a unique name among the destination page's
 // available statuses. The ID it returns is what SetPageContentStatus uses.
-func (api *API) ResolvePageContentStatus(ctx context.Context, pageID, name string) (*PageContentStatus, error) {
+func (api *API) ResolvePageContentStatus(ctx context.Context, pageID, name string) (*ContentStatus, error) {
 	type available struct {
-		Space  []PageContentStatus `json:"spaceContentStates"`
-		Custom []PageContentStatus `json:"customContentStates"`
+		Space  []ContentStatus `json:"spaceContentStates"`
+		Custom []ContentStatus `json:"customContentStates"`
 	}
 	states, err := get[available](ctx, api.v1, []string{"content", pageID, "state", "available"}, nil)
 	if err != nil {
 		return nil, requestError("read available content statuses of page "+pageID, err)
 	}
 
-	var matched *PageContentStatus
+	var matched *ContentStatus
 	for _, state := range append(states.Space, states.Custom...) {
 		if !strings.EqualFold(name, state.Name) {
 			continue
@@ -54,7 +48,7 @@ func (api *API) ResolvePageContentStatus(ctx context.Context, pageID, name strin
 
 // SetPageContentStatus assigns an existing status, or clears it when status
 // is nil. It updates page.Version after confirming the new Confluence version.
-func (api *API) SetPageContentStatus(ctx context.Context, page *PageInfo, status *PageContentStatus) error {
+func (api *API) SetPageContentStatus(ctx context.Context, page *PageInfo, status *ContentStatus) error {
 	method := http.MethodDelete
 	var payload any
 	if status != nil {
