@@ -49,7 +49,7 @@ func handleOrphans(
 		// there: they are left, still tracked, for a run given that space.
 		own := runSpace == "" || strings.EqualFold(runSpace, space)
 
-		orphans := tracker.OrphanEntries(space)
+		orphans := tracker.OrphanEntriesContext(ctx, space)
 		if len(orphans) == 0 {
 			continue
 		}

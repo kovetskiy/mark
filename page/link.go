@@ -391,6 +391,7 @@ func resolveLink(
 		// The headers say whether the file is a document mark publishes,
 		// and as which page.
 		opts.Filename = found
+		opts.Context = ctx
 		linkMeta, linkBody, err := readMeta(linkContents, opts)
 		if err != nil {
 			logctx.From(ctx).Error().

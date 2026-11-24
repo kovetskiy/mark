@@ -69,7 +69,7 @@ func (r *runTitles) readAhead(in input) *readAhead {
 	if source, markdown, _, err := in.read(); err == nil {
 		ahead.sourceHash = fingerprint.SHA1(string(source))
 
-		meta, _, err := documentMeta(r.config, in.file, markdown, r.hierarchy, nil)
+		meta, _, err := documentMeta(r.context(), r.config, in.file, markdown, r.hierarchy, nil)
 		if err == nil && meta != nil {
 			ahead.meta = meta
 		}
@@ -94,7 +94,7 @@ func (r *runTitles) textOf(in input) similar.Text {
 	ahead.textRead = true
 
 	if _, markdown, _, err := in.read(); err == nil {
-		if _, markdown, err := documentMeta(r.config, in.file, markdown, r.hierarchy, nil); err == nil {
+		if _, markdown, err := documentMeta(r.context(), r.config, in.file, markdown, r.hierarchy, nil); err == nil {
 			ahead.text = similar.Shingles(similar.MarkdownWords(string(markdown)))
 		}
 	}
@@ -116,11 +116,7 @@ func (r *runTitles) index() {
 		r.documents[key] = append(r.documents[key], in)
 	}
 
-	l := r.log
-	if l == nil {
-		l = logctx.From(context.Background())
-	}
-	l.Debug().Msgf("indexed %d title(s) declared by the run's documents", len(r.documents))
+	logctx.From(r.context()).Debug().Msgf("indexed %d title(s) declared by the run's documents", len(r.documents))
 }
 
 // declaredBy returns the one document of the run that publishes content of
@@ -194,4 +190,14 @@ func (r *runTitles) warnAmbiguous(space, title string, warnings *report.Warnings
 			title, len(documents), declarers,
 		)
 	}
+}
+
+// context carries the run's logger, for what runTitles reads; with none it is
+// context.Background.
+func (r *runTitles) context() context.Context {
+	if r.log == nil {
+		return context.Background()
+	}
+
+	return r.log.WithContext(context.Background())
 }

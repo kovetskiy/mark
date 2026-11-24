@@ -23,7 +23,6 @@ import (
 	"github.com/kovetskiy/mark/v17/imageformat"
 	"github.com/kovetskiy/mark/v17/internal/lazy"
 	"github.com/kovetskiy/mark/v17/internal/logctx"
-	"github.com/rs/zerolog/log"
 	"golang.org/x/mod/semver"
 	"golang.org/x/net/html"
 )
@@ -70,6 +69,12 @@ var ErrNoEngine = errors.New("no mermaid engine to render with")
 // NewEngine returns an Engine of the kind named, EngineChrome when empty,
 // without starting it.
 func NewEngine(kind EngineKind) (*Engine, error) {
+	return NewEngineContext(context.Background(), kind)
+}
+
+// NewEngineContext is NewEngine logging to the zerolog logger ctx carries;
+// NewEngine logs to the global one.
+func NewEngineContext(ctx context.Context, kind EngineKind) (*Engine, error) {
 	if err := CheckEngine(kind); err != nil {
 		return nil, err
 	}
@@ -79,7 +84,7 @@ func NewEngine(kind EngineKind) (*Engine, error) {
 		kind = EngineChrome
 
 	case EngineMerman:
-		log.Warn().Msg(
+		logctx.From(ctx).Warn().Msg(
 			"the merman render engine is experimental: it is not mermaid.js, " +
 				"so a diagram may be drawn differently or not at all",
 		)

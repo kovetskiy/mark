@@ -2,6 +2,7 @@ package includes
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"path"
 	"path/filepath"
@@ -9,9 +10,9 @@ import (
 	"text/template"
 
 	"github.com/kovetskiy/mark/v17/attachment"
+	"github.com/kovetskiy/mark/v17/internal/logctx"
 	"github.com/kovetskiy/mark/v17/internal/mdsource"
 	"github.com/kovetskiy/mark/v17/report"
-	"github.com/rs/zerolog/log"
 	"go.yaml.in/yaml/v3"
 )
 
@@ -219,7 +220,7 @@ func resolveTemplatePath(base place, path string) place {
 // should have to rewrite, so that is still tried when nothing is beside the
 // fragment. A name that matches nothing resolves beside the fragment, so the
 // failure to read it names the place the author would look first.
-func resolveNestedTemplatePath(base, from place, path string, warnings *report.Warnings) place {
+func resolveNestedTemplatePath(ctx context.Context, base, from place, path string, warnings *report.Warnings) place {
 	candidate := from.join(path).key()
 	rootRelative := resolveTemplatePath(base, path)
 
@@ -240,7 +241,7 @@ func resolveNestedTemplatePath(base, from place, path string, warnings *report.W
 	}
 
 	if rootFound {
-		log.Debug().Msgf(
+		logctx.From(ctx).Debug().Msgf(
 			"include %q is not beside the fragment in %s, using %s found relative to the document",
 			path, from, rootRelative,
 		)
@@ -550,6 +551,21 @@ func ProcessIncludesIn(
 	stack []string,
 	warnings *report.Warnings,
 ) (*template.Template, []byte, bool, error) {
+	return ProcessIncludesInContext(context.Background(), root, base, includePath, contents, templates, stack, warnings)
+}
+
+// ProcessIncludesInContext is ProcessIncludesIn logging to the zerolog logger
+// ctx carries; ProcessIncludesIn logs to the global one.
+func ProcessIncludesInContext(
+	ctx context.Context,
+	root attachment.Root,
+	base string,
+	includePath string,
+	contents []byte,
+	templates *template.Template,
+	stack []string,
+	warnings *report.Warnings,
+) (*template.Template, []byte, bool, error) {
 	from := includeFrom(root, base, includePath)
 
 	frames := make([]includeFrame, 0, len(stack))
@@ -560,7 +576,7 @@ func ProcessIncludesIn(
 		})
 	}
 
-	return processIncludes(from, from, includePath, contents, templates, frames, warnings)
+	return processIncludes(ctx, from, from, includePath, contents, templates, frames, warnings)
 }
 
 // includeFrame is one include being expanded: the name the directive wrote,
@@ -577,6 +593,7 @@ type includeFrame struct {
 // check is held to however deep the nesting, so a fragment cannot widen what a
 // document may read by including something from further out.
 func processIncludes(
+	ctx context.Context,
 	base place,
 	from place,
 	includePath string,
@@ -645,7 +662,7 @@ func processIncludes(
 		// fragment's, with the document's still tried after it.
 		resolved := resolveTemplatePath(base, dir.Template)
 		if fromFragment {
-			resolved = resolveNestedTemplatePath(base, from, dir.Template, warnings)
+			resolved = resolveNestedTemplatePath(ctx, base, from, dir.Template, warnings)
 		}
 		resolvedKey := resolved.cacheKey()
 
@@ -656,7 +673,7 @@ func processIncludes(
 			}
 		}
 
-		log.Trace().Interface("vardump", dir.Data).Msgf("including template %q", dir.Template)
+		logctx.From(ctx).Trace().Interface("vardump", dir.Data).Msgf("including template %q", dir.Template)
 
 		// loadTemplate returns the specific template it loaded, whose name encodes the
 		// delimiters. Execute it directly rather than looking it up by path again,
@@ -692,7 +709,7 @@ func processIncludes(
 		newStack = append(newStack, stack...)
 		newStack = append(newStack, includeFrame{name: dir.Template, file: resolvedKey})
 
-		subTemplates, subBytes, _, subErr := processIncludes(base, nested, includePath, expanded, templates, newStack, warnings)
+		subTemplates, subBytes, _, subErr := processIncludes(ctx, base, nested, includePath, expanded, templates, newStack, warnings)
 		if subErr != nil {
 			return templates, contents, false, subErr
 		}

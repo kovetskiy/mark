@@ -572,8 +572,8 @@ type resources struct {
 
 // newResources creates them for the mermaid engine kind names, starting
 // nothing yet.
-func newResources(kind mermaid.EngineKind) (*resources, error) {
-	engine, err := mermaid.NewEngine(kind)
+func newResources(ctx context.Context, kind mermaid.EngineKind) (*resources, error) {
+	engine, err := mermaid.NewEngineContext(ctx, kind)
 	if err != nil {
 		return nil, err
 	}
@@ -1566,7 +1566,7 @@ func newPublisher(
 	// it once.
 	config.Rendering.warnAttachmentRoot(ctx)
 
-	res, err := newResources(config.Rendering.MermaidEngine)
+	res, err := newResources(ctx, config.Rendering.MermaidEngine)
 	if err != nil {
 		return nil, err
 	}
@@ -1819,9 +1819,10 @@ func declaredRestrictions(r *metadata.Restrictions) []confluence.PageRestriction
 //
 // What the metadata ignored is added to warnings; nil only logs it.
 func documentMeta(
-	config PublishConfig, file string, markdown []byte, hierarchy *page.Hierarchy, warnings *report.Warnings,
+	ctx context.Context, config PublishConfig, file string, markdown []byte, hierarchy *page.Hierarchy, warnings *report.Warnings,
 ) (*metadata.Meta, []byte, error) {
 	return readDocumentMeta(hierarchy, markdown, metadata.ExtractOptions{
+		Context:                  ctx,
 		Filename:                 file,
 		Warnings:                 warnings,
 		Space:                    config.Page.Space,
@@ -1885,7 +1886,7 @@ func readDocumentMeta(hierarchy *page.Hierarchy, markdown []byte, opts metadata.
 			// Only now, with the parents final: hashed before they were, two
 			// documents of one title in different directories hashed the same,
 			// and the hash was the very thing meant to tell them apart.
-			metadata.AppendGeneratedHash(meta)
+			metadata.AppendGeneratedHashContext(opts.Context, meta)
 		}
 	}
 
@@ -2022,7 +2023,7 @@ func (r *publishRun) processFile(ctx context.Context, in input) (*confluence.Pag
 
 	r.users.ctx = ctx
 
-	doc, err := r.readDocument(in)
+	doc, err := r.readDocument(ctx, in)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -2182,7 +2183,7 @@ func absPath(file string) string {
 }
 
 // readDocument reads a file and settles the metadata it publishes under.
-func (r *publishRun) readDocument(in input) (*document, error) {
+func (r *publishRun) readDocument(ctx context.Context, in input) (*document, error) {
 	file := in.file
 
 	// Every file the document names is read through its root, so the root
@@ -2206,7 +2207,7 @@ func (r *publishRun) readDocument(in input) (*document, error) {
 
 	read := markdown
 
-	meta, markdown, err := documentMeta(r.config, file, markdown, r.hierarchy, warnings)
+	meta, markdown, err := documentMeta(ctx, r.config, file, markdown, r.hierarchy, warnings)
 	if err != nil {
 		return nil, err
 	}
@@ -2705,7 +2706,8 @@ func (r *publishRun) previewBody(
 			return "", "", "", err
 		}
 		if attachments != nil {
-			cfg.ResolveAttachment = attachments.links.Resolve
+			links := attachments.links
+			cfg.ResolveAttachment = func(target string) string { return links.ResolveContext(ctx, target) }
 		}
 	}
 
@@ -2970,7 +2972,7 @@ func (r *publishRun) compile(ctx context.Context, doc *document, target *conflue
 
 	attachmentLinks := attachment.NewResolver(attaches)
 
-	cfg.ResolveAttachment = attachmentLinks.Resolve
+	cfg.ResolveAttachment = func(target string) string { return attachmentLinks.ResolveContext(ctx, target) }
 
 	html, inlineAttachments, err := markdown.CompileMarkdown(ctx, doc.markdown, r.std, file, cfg)
 	if err != nil {
@@ -3037,7 +3039,7 @@ func (r *publishRun) preserveComments(ctx context.Context, doc *document, dest *
 		return "", fmt.Errorf("unable to retrieve inline comments: %w", err)
 	}
 
-	html, err = comments.MergeWithWarnings(html, pg.Body.Storage.Value, inlineComments, doc.warnings)
+	html, err = comments.MergeWithWarningsContext(ctx, html, pg.Body.Storage.Value, inlineComments, doc.warnings)
 	if err != nil {
 		return "", fmt.Errorf("unable to merge inline comments: %w", err)
 	}

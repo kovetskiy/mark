@@ -3,6 +3,7 @@
 package comments
 
 import (
+	"context"
 	"encoding/xml"
 	"fmt"
 	stdhtml "html"
@@ -14,8 +15,8 @@ import (
 	"unicode/utf8"
 
 	"github.com/kovetskiy/mark/v17/confluence"
+	"github.com/kovetskiy/mark/v17/internal/logctx"
 	"github.com/kovetskiy/mark/v17/report"
-	"github.com/rs/zerolog/log"
 )
 
 var markerRegex = regexp.MustCompile(`(?s)<ac:inline-comment-marker ac:ref="([^"]+)">(.*?)</ac:inline-comment-marker>`)
@@ -434,6 +435,15 @@ func Merge(newBody string, oldBody string, comments *confluence.InlineComments) 
 func MergeWithWarnings(
 	newBody string, oldBody string, comments *confluence.InlineComments, warnings *report.Warnings,
 ) (string, error) {
+	return MergeWithWarningsContext(context.Background(), newBody, oldBody, comments, warnings)
+}
+
+// MergeWithWarningsContext is MergeWithWarnings logging to the zerolog logger
+// ctx carries; MergeWithWarnings logs to the global one.
+func MergeWithWarningsContext(
+	ctx context.Context,
+	newBody string, oldBody string, comments *confluence.InlineComments, warnings *report.Warnings,
+) (string, error) {
 	if comments == nil || len(comments.Results) == 0 {
 		return newBody, nil
 	}
@@ -464,7 +474,7 @@ func MergeWithWarnings(
 
 	for _, comment := range comments.Results {
 		if comment.Extensions.Location != "inline" {
-			log.Debug().
+			logctx.From(ctx).Debug().
 				Str("location", comment.Extensions.Location).
 				Str("ref", comment.Extensions.InlineProperties.MarkerRef).
 				Msg("comment ignored during inline marker merge: not an inline comment")

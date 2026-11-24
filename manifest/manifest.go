@@ -74,7 +74,6 @@ import (
 	"github.com/kovetskiy/mark/v17/internal/globpattern"
 	"github.com/kovetskiy/mark/v17/internal/logctx"
 	"github.com/kovetskiy/mark/v17/report"
-	"github.com/rs/zerolog/log"
 )
 
 // Key normalises a path or glob into the form the mapping is keyed by.
@@ -1950,6 +1949,12 @@ type Orphan struct {
 // another document published this run or another path still records. See
 // Orphans.
 func (s *Store) OrphanEntries(spaceKey string) []Orphan {
+	return s.OrphanEntriesContext(context.Background(), spaceKey)
+}
+
+// OrphanEntriesContext is OrphanEntries logging to the zerolog logger ctx
+// carries; OrphanEntries logs to the global one.
+func (s *Store) OrphanEntriesContext(ctx context.Context, spaceKey string) []Orphan {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -1960,7 +1965,7 @@ func (s *Store) OrphanEntries(spaceKey string) []Orphan {
 	}
 
 	var orphans []Orphan
-	for _, path := range s.orphans(spaceKey) {
+	for _, path := range s.orphans(ctx, spaceKey) {
 		orphans = append(orphans, Orphan{
 			Path:  path,
 			Entry: state.shards[shardFor(path)].pages[path],
@@ -2075,12 +2080,12 @@ func (s *Store) Orphans(spaceKey string) []string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	return s.orphans(s.loadedKey(spaceKey))
+	return s.orphans(context.Background(), s.loadedKey(spaceKey))
 }
 
 // orphans is Orphans without the lock, for callers that already hold it. It
 // forgets the same stale entries Orphans does.
-func (s *Store) orphans(spaceKey string) []string {
+func (s *Store) orphans(ctx context.Context, spaceKey string) []string {
 	state, ok := s.spaces[spaceKey]
 	// An untracked space has no earlier mapping for a page to be missing from.
 	if !ok || state.untracked {
@@ -2106,7 +2111,7 @@ func (s *Store) orphans(spaceKey string) []string {
 			// The page went to another space with its document, which records
 			// it there: nothing is left behind here to remove.
 			if other, ok := s.recordedElsewhere(spaceKey, path, entry.PageID); ok {
-				log.Info().Msgf(
+				logctx.From(ctx).Info().Msgf(
 					"%s now publishes to space %q, where its page %s is; space %q no longer tracks it",
 					path, other, entry.PageID, spaceKey,
 				)
@@ -2134,12 +2139,12 @@ func (s *Store) orphans(spaceKey string) []string {
 			if holder, ok := held[entry.PageID]; claimed || ok {
 				if !s.runFiles[path] {
 					if claimed {
-						log.Info().Msgf(
+						logctx.From(ctx).Info().Msgf(
 							"%s is gone and its page %s is now published by %s; forgetting it",
 							path, entry.PageID, state.byPage[entry.PageID],
 						)
 					} else {
-						log.Info().Msgf(
+						logctx.From(ctx).Info().Msgf(
 							"%s is gone and its page %s is still tracked under %s; forgetting it",
 							path, entry.PageID, holder,
 						)
@@ -2155,7 +2160,7 @@ func (s *Store) orphans(spaceKey string) []string {
 
 	if len(left) > 0 {
 		sort.Strings(left)
-		log.Info().Msgf(
+		logctx.From(ctx).Info().Msgf(
 			"space %q: %d tracked page(s) recorded under %q, the pattern given to --partial, "+
 				"are left to the run publishing them all, since on a partial checkout "+
 				"their files' absence says nothing; name the paths a change touched with --files-from: %s",
