@@ -19,14 +19,12 @@ type statusChange struct {
 
 // validateContentStatusPlatform rejects declarations for unsupported targets
 // before resolving a destination can create a page.
-func (r *publishRun) validateContentStatusPlatform(ctx context.Context, pageType confluence.ContentType) error {
-	if pageType != confluence.ContentBlogPost {
-		cloud, err := r.api.Cloud(ctx)
-		if err != nil || cloud {
-			return err
-		}
+func (r *publishRun) validateContentStatusPlatform(ctx context.Context) error {
+	cloud, err := r.api.Cloud(ctx)
+	if err != nil || cloud {
+		return err
 	}
-	return errors.New("content status is supported only for Confluence Cloud pages")
+	return errors.New("content status requires Confluence Cloud")
 }
 
 // contentStatusPlan reads the status to preserve or resolves the one requested.
@@ -39,12 +37,6 @@ func (r *publishRun) contentStatusPlan(ctx context.Context, doc *document, targe
 	if name == nil && !preserve {
 		return statusChange{}, nil
 	}
-	if target.Type == confluence.ContentBlogPost {
-		if name != nil {
-			return statusChange{}, errors.New("content status is supported only for Confluence Cloud pages")
-		}
-		return statusChange{}, nil
-	}
 	cloud, err := r.api.Cloud(ctx)
 	if err != nil {
 		if name == nil && !confluence.IsCancellation(err) {
@@ -54,7 +46,7 @@ func (r *publishRun) contentStatusPlan(ctx context.Context, doc *document, targe
 	}
 	if !cloud {
 		if name != nil {
-			return statusChange{}, errors.New("content status is supported only for Confluence Cloud pages")
+			return statusChange{}, errors.New("content status requires Confluence Cloud")
 		}
 		return statusChange{}, nil
 	}
@@ -169,7 +161,7 @@ func (r *publishRun) previousContentHash(ctx context.Context, target *confluence
 		return "", nil
 	}
 	hash := fingerprint.FromVersionMessage(target.Version.Message)
-	if target.Version.Message != "" || target.Version.Number < 2 || target.Type == confluence.ContentBlogPost {
+	if target.Version.Message != "" || target.Version.Number < 2 {
 		return hash, nil
 	}
 	cloud, err := r.api.Cloud(ctx)

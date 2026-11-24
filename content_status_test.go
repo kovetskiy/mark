@@ -65,6 +65,55 @@ func TestPublishContentStatus(t *testing.T) {
 	assert.Equal(t, cleared.Body, server.Page(id).Body)
 }
 
+func TestBlogPostContentStatus(t *testing.T) {
+	for _, gateway := range []bool{false, true} {
+		name := "site"
+		if gateway {
+			name = "gateway"
+		}
+		t.Run(name, func(t *testing.T) {
+			server, _ := docsSpace(t)
+			dir := t.TempDir()
+			write := func(status, body string) string {
+				header := ""
+				if status != "" {
+					header = "<!-- Content-Status: " + status + " -->\n"
+				}
+				return writeFile(t, dir, "post.md", "<!-- Space: DOCS -->\n<!-- Type: blogpost -->\n<!-- Title: News -->\n"+header+"\n"+body+"\n")
+			}
+			config := changesOnlyConfig(server, write("Ready for review", "One."))
+			if gateway {
+				config.Connection.BaseURL += "/ex/confluence/cloud-id"
+			}
+			require.NoError(t, Run(t.Context(), config))
+			api := confluence.NewAPI(server.URL, confluence.Options{Username: "user", Password: "token"})
+			post, err := api.FindPage(t.Context(), "DOCS", "News", confluence.ContentBlogPost)
+			require.NoError(t, err)
+			require.NotNil(t, post)
+			id := post.ID
+			assert.Equal(t, "Ready for review", server.Page(id).ContentStatus)
+			assert.Equal(t, report.StatusUnchanged, runReported(t, config).Status)
+
+			exported, err := Export(t.Context(), ExportConfig{Connection: config.Connection, PageID: id, IncludeContentStatus: true, NoAttachments: true})
+			require.NoError(t, err)
+			assert.Contains(t, exported.Markdown, "<!-- Content-Status: Ready for review -->")
+			assert.Contains(t, exported.Markdown, "<!-- Type: blogpost -->")
+
+			write("", "Two.")
+			require.NoError(t, Run(t.Context(), config))
+			assert.Equal(t, "Ready for review", server.Page(id).ContentStatus)
+			write("In progress", "Two.")
+			require.NoError(t, Run(t.Context(), config))
+			assert.Equal(t, "In progress", server.Page(id).ContentStatus)
+			assert.Equal(t, report.StatusUnchanged, runReported(t, config).Status)
+			write("~", "Two.")
+			require.NoError(t, Run(t.Context(), config))
+			assert.Empty(t, server.Page(id).ContentStatus)
+			assert.Equal(t, report.StatusUnchanged, runReported(t, config).Status)
+		})
+	}
+}
+
 func TestPublishContentStatusFailureKeepsTrackedBodyVersion(t *testing.T) {
 	ctx := context.Background()
 	server, _ := docsSpace(t)
@@ -149,7 +198,7 @@ func TestContentStatusIsCloudOnly(t *testing.T) {
 	server.SetCurrentUser(confluencetest.User{Username: "current", UserKey: "key-current"})
 	file := writeFile(t, t.TempDir(), "guide.md", "<!-- Space: DOCS -->\n<!-- Title: Guide -->\n<!-- Content-Status: ~ -->\n\nBody.\n")
 	config := changesOnlyConfig(server, file)
-	require.ErrorContains(t, Run(context.Background(), config), "only for Confluence Cloud pages")
+	require.ErrorContains(t, Run(context.Background(), config), "requires Confluence Cloud")
 }
 
 func TestContentStatusThroughGateway(t *testing.T) {

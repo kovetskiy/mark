@@ -155,6 +155,15 @@ func TestExportCommand(t *testing.T) {
 		require.ErrorContains(t, err, "requires mark format")
 	})
 
+	t.Run("with a blog post's assigned status", func(t *testing.T) {
+		post := server.AddPage("DOCS", "News", "blogpost", "")
+		post.ContentStatus = "In progress"
+		stdout, _, err := runMark(t, append(credentials, "export", "-b", server.URL, "--page-id", post.ID, "--include-content-status", "--metadata", "frontmatter")...)
+		require.NoError(t, err)
+		assert.Contains(t, stdout, "content-status: In progress")
+		assert.Contains(t, stdout, "type: blogpost")
+	})
+
 	t.Run("the body alone", func(t *testing.T) {
 		stdout, _, err := runMark(t, append(credentials, "export", "-b", server.URL, "--page-id", page.ID, "--metadata", "none")...)
 		require.NoError(t, err)

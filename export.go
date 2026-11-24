@@ -49,7 +49,7 @@ type ExportConfig struct {
 	// export.ErrTreeWithoutMetadata.
 	Metadata export.Metadata
 
-	// IncludeContentStatus exports assigned Confluence Cloud page statuses.
+	// IncludeContentStatus exports the assigned status of a Cloud page or blog post.
 	IncludeContentStatus bool
 
 	// Generator is who an OKF concept says generated it, as

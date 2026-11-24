@@ -2126,7 +2126,7 @@ func (r *publishRun) processFile(ctx context.Context, in input) (*confluence.Pag
 	}
 
 	if !r.config.Mode.CompileOnly && doc.meta != nil && doc.meta.ContentStatus != nil {
-		if err := r.validateContentStatusPlatform(ctx, confluence.ContentType(doc.meta.Type)); err != nil {
+		if err := r.validateContentStatusPlatform(ctx); err != nil {
 			return nil, nil, err
 		}
 	}

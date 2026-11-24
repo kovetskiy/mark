@@ -66,7 +66,7 @@ type Config struct {
 	// FormatOKF writes front matter of its own and ignores it.
 	Metadata Metadata
 
-	// IncludeContentStatus writes the assigned Cloud page status as metadata.
+	// IncludeContentStatus writes a Cloud page or blog post's assigned status as metadata.
 	IncludeContentStatus bool
 
 	// Generator is who an OKF concept says generated it, as
@@ -511,17 +511,14 @@ func headers(
 	return h.comments()
 }
 
-// exportedContentStatus reads the assigned Cloud page status by display name.
+// exportedContentStatus reads the assigned status of a Cloud page or blog post.
 func exportedContentStatus(ctx context.Context, api *confluence.API, page *confluence.PageInfo) (string, error) {
-	if page.Type == confluence.ContentBlogPost {
-		return "", errors.New("content status export is supported only for Confluence Cloud pages")
-	}
 	cloud, err := api.Cloud(ctx)
 	if err != nil {
 		return "", err
 	}
 	if !cloud {
-		return "", errors.New("content status export is supported only for Confluence Cloud pages")
+		return "", errors.New("content status export requires Confluence Cloud")
 	}
 	status, err := api.ReadPageContentStatus(ctx, page.ID)
 	if err != nil || status == nil {

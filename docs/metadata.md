@@ -284,9 +284,9 @@ You can set the alignment for all images in the page. Common values are `left`, 
 
 ## Content status
 
-For a Confluence Cloud page, give the display name of a status available on that page.
+For a Confluence Cloud page or blog post, give the display name of an available status.
 Mark matches the name without regard to case and requires a unique match.
-The available names can vary by page and by authenticated account.
+The available names can vary by content item and by authenticated account.
 
 ```markdown
 <!-- Content-Status: Ready for review -->

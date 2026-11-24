@@ -180,9 +180,9 @@ writes front matter of its own and ignores `--metadata`.
 
 ## Including content status
 
-Use `--include-content-status` to include the assigned status of a Confluence Cloud page.
+Use `--include-content-status` to include the assigned status of a Confluence Cloud page or blog post.
 Mark writes its display name as a `Content-Status` comment or a `content-status` YAML key.
-A page with no assigned status has no status field in the export.
+Content with no assigned status has no status field in the export.
 The flag requires Mark format with comment headers or YAML front matter.
 It also applies to pages in a recursive export.
 

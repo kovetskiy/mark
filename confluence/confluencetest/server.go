@@ -27,6 +27,12 @@ import (
 	"testing"
 )
 
+// contentState is a status returned by the test server.
+type contentState struct {
+	ID   int64  `json:"id"`
+	Name string `json:"name"`
+}
+
 // Page is a page, blogpost or folder held by the fake.
 type Page struct {
 	ID       string
@@ -1563,13 +1569,7 @@ func (s *Server) movePageAction(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// contentState is a status returned by the fake's content-status endpoints.
-type contentState struct {
-	ID   int64  `json:"id"`
-	Name string `json:"name"`
-}
-
-// contentStates returns the statuses available to pages in the test server.
+// contentStates returns the statuses available to pages and blog posts in the test server.
 func contentStates() []contentState {
 	return []contentState{{ID: 0, Name: "Ready for review"}, {ID: 1, Name: "In progress"}}
 }
@@ -1580,7 +1580,7 @@ func (s *Server) availableContentStatuses(w http.ResponseWriter, r *http.Request
 	defer s.mu.Unlock()
 
 	page := s.pages[id]
-	if s.dataCenter || page == nil || page.Trashed || page.Type != "page" {
+	if s.dataCenter || page == nil || page.Trashed || (page.Type != "page" && page.Type != "blogpost") {
 		http.NotFound(w, r)
 		return
 	}
@@ -1594,7 +1594,7 @@ func (s *Server) contentStatus(w http.ResponseWriter, r *http.Request, id string
 	defer s.mu.Unlock()
 
 	page := s.pages[id]
-	if s.dataCenter || page == nil || page.Trashed || page.Type != "page" {
+	if s.dataCenter || page == nil || page.Trashed || (page.Type != "page" && page.Type != "blogpost") {
 		http.NotFound(w, r)
 		return
 	}

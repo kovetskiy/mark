@@ -130,10 +130,10 @@ func frontMatterKeys() []string {
 // out: a string for space, title,
 // type, layout, sidebar, emoji and image-align; a string or a list of strings
 // for parents, folders, attachments and labels; a map with string keys for
-// properties. Content status takes a name or nil to clear it.
-// How mark then reads each key is as for any front matter:
-// strings are trimmed, empty list items left out, order has to be a whole
-// number and synchronized true or false.
+// properties. A content-status value is a nonempty name; nil requests removal.
+//
+// Values are read as front matter: strings are trimmed and empty list items left out.
+// Order must be a whole number and synchronized must be true or false.
 func FrontMatter(fields map[string]any) (string, error) {
 	known := frontMatterKeys()
 	seen := map[string]string{}

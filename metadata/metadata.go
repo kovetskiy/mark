@@ -179,8 +179,8 @@ type Meta struct {
 	ContentAppearance Appearance
 	Restrictions      *Restrictions
 
-	// ContentStatus is a status name, an empty string to clear it, or nil
-	// to preserve the page's assigned status.
+	// ContentStatus names the requested status.
+	// Nil leaves it unspecified; an empty string requests removal.
 	ContentStatus *string
 
 	// DeclaredParents records that the document named its own parents, as

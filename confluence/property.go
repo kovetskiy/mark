@@ -169,7 +169,11 @@ func (api *API) ListContentProperties(ctx context.Context, contentID string) ([]
 // GetPublishedPageProperty reads a named page property, or nil if absent.
 func (api *API) GetPublishedPageProperty(ctx context.Context, pageID, key string) (*Property, error) {
 	if api.gateway {
-		properties, err := api.ListPageProperties(ctx, pageID)
+		collection, err := api.collectionOfV2(ctx, pageID)
+		if err != nil {
+			return nil, err
+		}
+		properties, err := api.listPropertiesV2(ctx, collection, pageID)
 		if err != nil {
 			return nil, err
 		}
@@ -194,7 +198,11 @@ func (api *API) GetPublishedPageProperty(ctx context.Context, pageID, key string
 // SetPublishedPageProperty creates or updates a property on a published page.
 func (api *API) SetPublishedPageProperty(ctx context.Context, pageID, key string, value []byte, existing *Property) error {
 	if api.gateway {
-		return api.SetPageProperty(ctx, pageID, key, value, existing)
+		collection, err := api.collectionOfV2(ctx, pageID)
+		if err != nil {
+			return err
+		}
+		return api.setPropertyV2(ctx, collection, pageID, key, value, existing)
 	}
 	return api.SetContentProperty(ctx, pageID, key, value, existing)
 }

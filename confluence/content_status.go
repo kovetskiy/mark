@@ -8,13 +8,13 @@ import (
 	"strings"
 )
 
-// PageContentStatus is the named status shown beside a Cloud page's title.
+// PageContentStatus is the named status assigned to a Cloud page or blog post.
 type PageContentStatus struct {
 	ID   int64  `json:"id"`
 	Name string `json:"name"`
 }
 
-// ReadPageContentStatus reads the status assigned to the published page.
+// ReadPageContentStatus reads the status assigned to a published page or blog post.
 func (api *API) ReadPageContentStatus(ctx context.Context, pageID string) (*PageContentStatus, error) {
 	var result struct {
 		ContentState *PageContentStatus `json:"contentState"`
