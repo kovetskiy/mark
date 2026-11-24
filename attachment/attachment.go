@@ -2,6 +2,7 @@ package attachment
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
@@ -21,9 +22,9 @@ import (
 	"strings"
 
 	"github.com/kovetskiy/mark/v17/internal/fspath"
+	"github.com/kovetskiy/mark/v17/internal/logctx"
 
 	"github.com/bmatcuk/doublestar/v4"
-	"github.com/rs/zerolog/log"
 )
 
 // FlattenFilename returns the name an attachment called name is uploaded and
@@ -628,6 +629,12 @@ func NewResolver(attachments []Attachment) *Resolver {
 // Resolve reports the URL for a link or image destination, or "" to leave it
 // as the document wrote it.
 func (r *Resolver) Resolve(target string) string {
+	return r.ResolveContext(context.Background(), target)
+}
+
+// ResolveContext is Resolve logging to the zerolog logger ctx carries; Resolve
+// logs to the global one.
+func (r *Resolver) ResolveContext(ctx context.Context, target string) string {
 	if r == nil {
 		return ""
 	}
@@ -649,7 +656,7 @@ func (r *Resolver) Resolve(target string) string {
 	}
 
 	r.used[name] = true
-	log.Debug().Msgf("replacing link: %q -> %q", name, link)
+	logctx.From(ctx).Debug().Msgf("replacing link: %q -> %q", name, link)
 
 	return link
 }

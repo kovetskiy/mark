@@ -36,7 +36,7 @@ func TestSetLogLevelRefusesAnUnknownLevel(t *testing.T) {
 
 // TestRunLogsToTheLoggerInItsContext: a program gives a run its own logger by
 // putting it in the run's context, and nothing of the run then reaches the
-// global one.
+// global one, its includes and macros included.
 func TestRunLogsToTheLoggerInItsContext(t *testing.T) {
 	prevLevel, prevLogger := zerolog.GlobalLevel(), log.Logger
 	zerolog.SetGlobalLevel(zerolog.TraceLevel)
@@ -48,7 +48,12 @@ func TestRunLogsToTheLoggerInItsContext(t *testing.T) {
 	})
 
 	server, _ := docsSpace(t)
-	file := writeFile(t, t.TempDir(), "doc.md", dryRunDocBody("body"))
+	dir := t.TempDir()
+	writeFile(t, dir, "fragment.md", "Included text.\n")
+	writeFile(t, dir, "box.md", "Box {{ .Text }}\n")
+	file := writeFile(t, dir, "doc.md", dryRunDocBody(
+		"<!-- Include: fragment.md -->\n\n"+
+			"<!-- Macro: BOX-(\\w+)\n     Template: box.md\n     Text: ${1} -->\n\nBOX-hello\n"))
 
 	var own bytes.Buffer
 	ctx := zerolog.New(&own).Level(zerolog.TraceLevel).WithContext(context.Background())
@@ -56,5 +61,7 @@ func TestRunLogsToTheLoggerInItsContext(t *testing.T) {
 
 	assert.Contains(t, own.String(), "content hash")
 	assert.Contains(t, own.String(), "rest:", "the API's request dumps follow the run's logger")
+	assert.Contains(t, own.String(), "including template", "includes log to the run's logger")
+	assert.Contains(t, own.String(), "loaded macro", "macros log to the run's logger")
 	assert.Empty(t, global.String())
 }

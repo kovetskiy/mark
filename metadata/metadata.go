@@ -3,6 +3,7 @@ package metadata
 import (
 	"bytes"
 	"cmp"
+	"context"
 	"crypto/sha256"
 	"errors"
 	"fmt"
@@ -12,9 +13,9 @@ import (
 	"strings"
 
 	"github.com/kovetskiy/mark/v17/internal/htmlblock"
+	"github.com/kovetskiy/mark/v17/internal/logctx"
 	"github.com/kovetskiy/mark/v17/internal/mdsource"
 	"github.com/kovetskiy/mark/v17/report"
-	"github.com/rs/zerolog/log"
 	"github.com/yuin/goldmark/v2/ast"
 	"github.com/yuin/goldmark/v2/parser"
 	"github.com/yuin/goldmark/v2/text"
@@ -733,6 +734,19 @@ type ExtractOptions struct {
 	// Warnings collects what was ignored: a front matter key mark does not
 	// read, or a header written below the opening comments. Nil only logs.
 	Warnings *report.Warnings
+
+	// Context is the context the metadata is read in, whose zerolog logger
+	// ExtractMeta logs to; nil is context.Background.
+	Context context.Context
+}
+
+// context is o.Context, or context.Background for options given none.
+func (o ExtractOptions) context() context.Context {
+	if o.Context == nil {
+		return context.Background()
+	}
+
+	return o.Context
 }
 
 // ExtractMeta reads a document's metadata from its headers or front matter,
@@ -1133,7 +1147,7 @@ func ExtractMeta(data []byte, opts ExtractOptions) (*Meta, []byte, error) {
 	}
 
 	if opts.TitleAppendGeneratedHash {
-		AppendGeneratedHash(meta)
+		AppendGeneratedHashContext(opts.context(), meta)
 	}
 
 	// Remove trailing spaces from title
@@ -1229,12 +1243,18 @@ func setTitleFromFilename(meta *Meta, filename string) {
 // "- a159f529", which passes the check for a missing title; left empty, the
 // check fires and says what is wrong.
 func AppendGeneratedHash(meta *Meta) {
+	AppendGeneratedHashContext(context.Background(), meta)
+}
+
+// AppendGeneratedHashContext is AppendGeneratedHash logging to the zerolog
+// logger ctx carries; AppendGeneratedHash logs to the global one.
+func AppendGeneratedHashContext(ctx context.Context, meta *Meta) {
 	if strings.TrimSpace(meta.Title) == "" {
 		return
 	}
 
 	meta.Title = GeneratedHashTitle(meta.Parents, meta.Space, meta.Title)
-	log.Debug().Msgf("appended hash to page title: %s", meta.Title)
+	logctx.From(ctx).Debug().Msgf("appended hash to page title: %s", meta.Title)
 }
 
 // GeneratedHashTitle is title with the hash AppendGeneratedHash gives a page of
