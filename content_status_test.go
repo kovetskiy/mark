@@ -93,6 +93,31 @@ func TestPublishContentStatusFailureKeepsTrackedBodyVersion(t *testing.T) {
 	assert.Equal(t, "In progress", server.Page(id).ContentStatus)
 }
 
+func TestPublishUnavailableContentStatusDoesNotCreatePage(t *testing.T) {
+	ctx := t.Context()
+	server, api := docsSpace(t)
+	file := writeFile(t, t.TempDir(), "guide.md", "<!-- Space: DOCS -->\n<!-- Title: Guide -->\n<!-- Content-Status: Unknown -->\n\nBody.\n")
+	config := changesOnlyConfig(server, file)
+
+	config.Mode.DryRun = true
+	require.ErrorContains(t, Run(ctx, config), "is not available")
+	config.Mode.DryRun = false
+	require.ErrorContains(t, Run(ctx, config), "is not available")
+
+	page, err := api.FindPage(ctx, "DOCS", "Guide", confluence.ContentPage)
+	require.NoError(t, err)
+	require.Nil(t, page)
+}
+
+func TestPublishNewPageWithPersonalContentStatus(t *testing.T) {
+	server, _ := docsSpace(t)
+	file := writeFile(t, t.TempDir(), "guide.md", "<!-- Space: DOCS -->\n<!-- Title: Guide -->\n<!-- Content-Status: needs copy edit -->\n\nBody.\n")
+	config := changesOnlyConfig(server, file)
+
+	assert.Equal(t, report.StatusPublished, runReported(t, config).Status)
+	assert.Equal(t, "Needs copy edit", server.Page(mustFind(t, server, "Guide")).ContentStatus)
+}
+
 func TestContentStatusIsCloudOnly(t *testing.T) {
 	server, _ := docsSpace(t)
 	server.SetCurrentUser(confluencetest.User{Username: "current", UserKey: "key-current"})

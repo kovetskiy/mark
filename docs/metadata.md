@@ -299,6 +299,8 @@ YAML also accepts an explicit `null`.
 An empty field is an error.
 
 Status declarations require access to the Cloud content status API.
+For new pages with a named status, Mark checks the space's suggested statuses first.
+If the name is missing there, Mark checks the authenticated user's custom statuses before creating the page.
 If a token cannot read that API, publishing with the field omitted leaves status handling to Confluence.
 
 Setting or clearing the status creates a page version when the assignment changes.

@@ -2801,6 +2801,11 @@ func (r *publishRun) preview(ctx context.Context, doc *document) error {
 		if err != nil {
 			return err
 		}
+		if found.page == nil {
+			if err := r.validateNewPageContentStatus(ctx, meta); err != nil {
+				return err
+			}
+		}
 	}
 	previewed := found.page
 	r.claimPage(file)
@@ -3082,6 +3087,9 @@ func (r *publishRun) resolveDocumentPage(ctx context.Context, doc *document) (*d
 	}
 
 	if pg == nil {
+		if err := r.validateNewPageContentStatus(ctx, meta); err != nil {
+			return nil, err
+		}
 		if parent != nil && parent.Type == "folder-parent" {
 			pg, err = api.CreatePageWithFolderParent(ctx, meta.Space, confluence.ContentType(meta.Type), parent.ID, meta.Title, ``)
 		} else {

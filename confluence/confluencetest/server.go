@@ -991,7 +991,7 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 
 	switch {
 	case strings.HasPrefix(path, "/rest/api"):
-		s.handleV1(w, r, strings.TrimPrefix(path, "/rest/api"))
+		s.handleV1(w, r, strings.TrimPrefix(path, "/rest/api"), dataCenter)
 	case strings.HasPrefix(path, "/api/v2") && dataCenter:
 		writeJSON(w, http.StatusNotFound, map[string]any{"message": "no such endpoint"})
 	case strings.HasPrefix(path, "/api/v2"):
@@ -1003,7 +1003,7 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (s *Server) handleV1(w http.ResponseWriter, r *http.Request, path string) {
+func (s *Server) handleV1(w http.ResponseWriter, r *http.Request, path string, dataCenter bool) {
 	switch {
 	case path == "/content":
 		switch r.Method {
@@ -1042,6 +1042,12 @@ func (s *Server) handleV1(w http.ResponseWriter, r *http.Request, path string) {
 
 	case strings.HasPrefix(path, "/space/") && strings.HasSuffix(path, "/content/page"):
 		s.spacePages(w, r, strings.TrimSuffix(strings.TrimPrefix(path, "/space/"), "/content/page"))
+
+	case r.Method == http.MethodGet && !dataCenter && path == "/content-states":
+		writeJSON(w, http.StatusOK, personalContentStatuses)
+
+	case r.Method == http.MethodGet && !dataCenter && strings.HasPrefix(path, "/space/") && strings.HasSuffix(path, "/state"):
+		writeJSON(w, http.StatusOK, spaceContentStatuses)
 
 	case strings.HasPrefix(path, "/space/"):
 		s.getSpace(w, r, strings.TrimPrefix(path, "/space/"))
