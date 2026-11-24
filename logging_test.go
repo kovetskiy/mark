@@ -27,5 +27,6 @@ func TestSetLogLevelRefusesAnUnknownLevel(t *testing.T) {
 	zerolog.SetGlobalLevel(zerolog.InfoLevel)
 
 	assert.EqualError(t, SetLogLevel("loud"), "unknown log level: loud")
+	assert.EqualError(t, SetLogLevel(""), "unknown log level: ")
 	assert.Equal(t, zerolog.InfoLevel, zerolog.GlobalLevel(), "an unknown level changes nothing")
 }
