@@ -394,11 +394,24 @@ logger in its context, so the level reaches an API built before it was set.
 is silenced with `zerolog.New(io.Discard)` instead. What a run reports, such as
 page URLs, goes to `Output`, not to the log.
 
-A few messages still go to the global logger: those of exported functions that
-take no context, such as `includes.ProcessIncludesIn` and `macro.ExtractMacrosIn`,
-which a run's include and macro expansion goes through. d2 diagrams log through
-d2's own logger and headless Chrome's errors through the standard library's
-`log`, so neither follows zerolog at all.
+A program that calls mark's packages itself gives them the logger the same
+way. A function that logs and took no context has a `Context` form that takes
+one, and the form without logs to the global logger:
+
+* `includes.ProcessIncludesInContext`, for `ProcessIncludesIn`
+* `macro.ExtractMacrosInContext`, for `ExtractMacrosIn`
+* `metadata.AppendGeneratedHashContext`, for `AppendGeneratedHash`
+* `attachment.Resolver.ResolveContext`, for `Resolve`
+* `comments.MergeWithWarningsContext`, for `MergeWithWarnings`
+* `mermaid.NewEngineContext`, for `NewEngine`
+* `manifest.Store.OrphanEntriesContext`, for `OrphanEntries`
+
+`transformer.IncludeTransformer`, `transformer.MacroTransformer` and
+`metadata.ExtractOptions` take theirs in a `Context` field.
+
+A warning added to a nil `report.Warnings` still goes to the global logger.
+d2 diagrams log through d2's own logger and headless Chrome's errors through
+the standard library's `log`, so neither follows zerolog at all.
 
 ## Errors
 

@@ -299,7 +299,10 @@ the API is untestable.
 - Errors wrap with `%w` and read bottom-up: `fmt.Errorf("unable to compile markdown: %w", err)`.
 - Logging is `zerolog` through `logctx.From(ctx)` (`internal/logctx`): the logger a
   library caller put in the context, or the global `log` without one. Only `util/` and
-  `cmd/mark`, which set the global logger up, log through `log` directly. User-facing
+  `cmd/mark`, which set the global logger up, log through `log` directly. An exported
+  function that logs takes a `ctx`; one that did not gets a `FooContext` form beside it,
+  and `Foo` calls that with `context.Background()`, so v17 callers keep compiling. A
+  type configured through fields gets a `Context` field instead. User-facing
   results go to
   `PublishConfig.output()`, and the run report to `Config.reportOutput()`, never directly to `os.Stdout`.
 - Suppress a linter only with a reason attached: `//nolint:gosec // G401: ...`.
