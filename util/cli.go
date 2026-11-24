@@ -623,25 +623,7 @@ func ConfigFilePath() string {
 }
 
 func SetLogLevel(cmd *cli.Command) error {
-	logLevel := cmd.String("log-level")
-	switch strings.ToUpper(logLevel) {
-	case "TRACE":
-		zerolog.SetGlobalLevel(zerolog.TraceLevel)
-	case "DEBUG":
-		zerolog.SetGlobalLevel(zerolog.DebugLevel)
-	case "INFO":
-		zerolog.SetGlobalLevel(zerolog.InfoLevel)
-	case "WARNING":
-		zerolog.SetGlobalLevel(zerolog.WarnLevel)
-	case "ERROR":
-		zerolog.SetGlobalLevel(zerolog.ErrorLevel)
-	case "FATAL":
-		zerolog.SetGlobalLevel(zerolog.FatalLevel)
-	default:
-		return fmt.Errorf("unknown log level: %s", logLevel)
-	}
-
-	return nil
+	return mark.SetLogLevel(cmd.String("log-level"))
 }
 
 // splitParents reads the --parents value, dropping empty fields.

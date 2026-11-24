@@ -360,6 +360,21 @@ page included, for as long as it lives, and does not notice one that something
 else creates, retitles or removes in the meantime. A program that runs for long
 makes a new API and a new `Publisher` for each batch.
 
+## Logging
+
+mark logs through zerolog's global logger, and zerolog logs everything until a
+level is set: every request to Confluence, and every compiled page among it.
+The command line sets one from `--log-level`; a program sets one with
+`mark.SetLogLevel`, which takes the same names, before it runs:
+
+```go
+if err := mark.SetLogLevel("info"); err != nil {
+    return err
+}
+```
+
+The level is the process's, not a run's.
+
 ## Errors
 
 A run that fails on a document returns a `*mark.FileError` naming its `Path`
