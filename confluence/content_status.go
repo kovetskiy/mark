@@ -2,11 +2,9 @@ package confluence
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
-	"slices"
 	"strings"
 )
 
@@ -52,29 +50,6 @@ func (api *API) ResolvePageContentStatus(ctx context.Context, pageID, name strin
 		return nil, fmt.Errorf("content status %q is not available on page %s", name, pageID)
 	}
 	return matched, nil
-}
-
-// ValidateNewPageContentStatus checks the space and personal catalogs for the
-// name. The page-specific availability check follows once the page has an ID.
-func (api *API) ValidateNewPageContentStatus(ctx context.Context, space, name string) error {
-	matches := func(status PageContentStatus) bool {
-		return strings.EqualFold(name, status.Name)
-	}
-	spaceStatuses, spaceErr := get[[]PageContentStatus](ctx, api.v1, []string{"space", space, "state"}, nil)
-	if spaceErr == nil && slices.ContainsFunc(spaceStatuses, matches) {
-		return nil
-	}
-	if IsCancellation(spaceErr) {
-		return spaceErr
-	}
-	personalStatuses, personalErr := get[[]PageContentStatus](ctx, api.v1, []string{"content-states"}, nil)
-	if personalErr == nil && slices.ContainsFunc(personalStatuses, matches) {
-		return nil
-	}
-	if err := errors.Join(spaceErr, personalErr); err != nil {
-		return requestError(fmt.Sprintf("validate content status %q before creating a page in %s", name, space), err)
-	}
-	return fmt.Errorf("content status %q is not available for a new page in space %s", name, space)
 }
 
 // SetPageContentStatus assigns an existing status, or clears it when status

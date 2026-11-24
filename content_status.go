@@ -8,7 +8,6 @@ import (
 
 	"github.com/kovetskiy/mark/v17/confluence"
 	"github.com/kovetskiy/mark/v17/fingerprint"
-	"github.com/kovetskiy/mark/v17/metadata"
 )
 
 // statusChange plans what to do with the status after page settings are written.
@@ -27,14 +26,6 @@ func (r *publishRun) validateContentStatusPlatform(ctx context.Context, pageType
 		}
 	}
 	return errors.New("content status is supported only for Confluence Cloud pages")
-}
-
-// validateNewPageContentStatus preflights named declarations before creation.
-func (r *publishRun) validateNewPageContentStatus(ctx context.Context, meta *metadata.Meta) error {
-	if meta == nil || meta.ContentStatus == nil || *meta.ContentStatus == "" {
-		return nil
-	}
-	return r.api.ValidateNewPageContentStatus(ctx, meta.Space, *meta.ContentStatus)
 }
 
 // contentStatusPlan reads the status to preserve or resolves the one requested.
