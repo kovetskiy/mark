@@ -299,7 +299,7 @@ YAML also accepts an explicit `null`.
 An empty field is an error.
 
 Status declarations require access to the Cloud content status API.
-If a token cannot read that API, publishing with the field omitted leaves status handling to Confluence.
+With the field omitted, a publish can proceed if Mark cannot read or preserve the status.
 
 Setting or clearing the status creates a page version when the assignment changes.
 `--dry-run --changes-only` reports when the status would change.

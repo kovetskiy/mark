@@ -38,16 +38,3 @@ func TestContentStatusMetadata(t *testing.T) {
 		})
 	}
 }
-
-func TestFormatContentStatus(t *testing.T) {
-	markdown, err := FrontMatter(map[string]any{"content-status": nil})
-	require.NoError(t, err)
-
-	meta, _, err := ExtractMeta([]byte(markdown), ExtractOptions{FrontMatter: true})
-	require.NoError(t, err)
-	require.NotNil(t, meta)
-	assert.Equal(t, new(""), meta.ContentStatus)
-
-	_, err = FrontMatter(map[string]any{"content-status": ""})
-	require.ErrorIs(t, err, ErrUnrepresentable)
-}

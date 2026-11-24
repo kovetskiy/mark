@@ -334,6 +334,7 @@ func TestFrontMatterRefusesAKindItsKeyDropsSilently(t *testing.T) {
 		"properties int keys": {"properties": map[int]any{1: "x"}},
 		"properties any keys": {"properties": map[any]any{1: "x"}},
 		"properties list":     {"properties": []string{"a"}},
+		"empty status":        {"content-status": ""},
 	} {
 		_, err := FrontMatter(fields)
 		assert.ErrorIs(t, err, ErrUnrepresentable, name)
@@ -346,6 +347,8 @@ func TestFrontMatterRefusesAKindItsKeyDropsSilently(t *testing.T) {
 		"parents":    []any{"a", "b"},
 		"properties": map[any]any{"k": 1},
 		"space":      nil,
+
+		"content-status": nil,
 	})
 	require.NoError(t, err)
 	meta, _, err := readBack(t, document, true)
@@ -354,6 +357,7 @@ func TestFrontMatterRefusesAKindItsKeyDropsSilently(t *testing.T) {
 	assert.Equal(t, []string{"one"}, meta.Labels)
 	assert.Equal(t, []string{"a", "b"}, meta.Parents)
 	assert.Equal(t, map[string]any{"k": 1}, meta.Properties)
+	assert.Equal(t, new(""), meta.ContentStatus)
 }
 
 // A map with keys that are not strings, as yaml.v2 decodes one, is written

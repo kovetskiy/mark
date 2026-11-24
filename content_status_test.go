@@ -93,6 +93,57 @@ func TestPublishContentStatusFailureKeepsTrackedBodyVersion(t *testing.T) {
 	assert.Equal(t, "In progress", server.Page(id).ContentStatus)
 }
 
+func TestPublishWithoutContentStatusWhenOptionalLookupFails(t *testing.T) {
+	for _, tt := range []struct {
+		name        string
+		endpoint    string
+		changesOnly bool
+	}{
+		{name: "current status", endpoint: "/state"},
+		{name: "saved fingerprint", endpoint: "/property/mark.content-status-fingerprint", changesOnly: true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			server, _ := docsSpace(t)
+			guide := server.AddPage("DOCS", "Guide", "page", "")
+			server.WritePage(guide.ID, "<p>Old body.</p>")
+			server.SetFail(func(r *http.Request) (int, string, bool) {
+				if r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/content/"+guide.ID+tt.endpoint) {
+					return http.StatusInternalServerError, `{"message":"optional lookup failed"}`, true
+				}
+				return 0, "", false
+			})
+			file := writeFile(t, t.TempDir(), "guide.md", "<!-- Space: DOCS -->\n<!-- Title: Guide -->\n\nNew body.\n")
+			config := changesOnlyConfig(server, file)
+			config.Update.ChangesOnly = tt.changesOnly
+
+			require.NoError(t, Run(t.Context(), config))
+			assert.Contains(t, server.Page(guide.ID).Body, "New body.")
+		})
+	}
+}
+
+func TestPublishContentStatusWhenFingerprintCannotBeSaved(t *testing.T) {
+	server, _ := docsSpace(t)
+	dir := t.TempDir()
+	file := writeFile(t, dir, "guide.md", "<!-- Space: DOCS -->\n<!-- Title: Guide -->\n\nBody.\n")
+	config := changesOnlyConfig(server, file)
+	require.NoError(t, Run(t.Context(), config))
+	id := mustFind(t, server, "Guide")
+	start := server.Page(id)
+	server.SetFail(func(r *http.Request) (int, string, bool) {
+		if r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/content/"+id+"/property") {
+			return http.StatusForbidden, `{"message":"property write forbidden"}`, true
+		}
+		return 0, "", false
+	})
+	writeFile(t, dir, "guide.md", "<!-- Space: DOCS -->\n<!-- Title: Guide -->\n<!-- Content-Status: In progress -->\n\nBody.\n")
+
+	assert.Equal(t, report.StatusPublished, runReported(t, config).Status)
+	page := server.Page(id)
+	assert.Equal(t, "In progress", page.ContentStatus)
+	assert.Equal(t, start.Version+1, page.Version)
+}
+
 func TestContentStatusIsCloudOnly(t *testing.T) {
 	server, _ := docsSpace(t)
 	server.SetCurrentUser(confluencetest.User{Username: "current", UserKey: "key-current"})

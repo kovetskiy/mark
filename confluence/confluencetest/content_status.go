@@ -5,7 +5,7 @@ import (
 	"net/http"
 )
 
-// contentStatus serves the v1 Cloud endpoints for the fake's page statuses.
+// contentStatus handles v1 content-status requests in the test server.
 func (s *Server) contentStatus(w http.ResponseWriter, r *http.Request, id string, available bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

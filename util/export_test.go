@@ -107,6 +107,7 @@ func TestExportCommand(t *testing.T) {
 	home := server.AddPage("DOCS", "Home", "page", "")
 	server.SetHomepage("DOCS", home.ID)
 	page := server.AddPage("DOCS", "Exported page", "page", home.ID)
+	page.ContentStatus = "Ready for review"
 	server.EditPage(page.ID, `<h1>Hello</h1><p>From <strong>Confluence</strong>.</p>`)
 	server.AddLabel(page.ID, "exported")
 
@@ -125,6 +126,7 @@ func TestExportCommand(t *testing.T) {
 		written, err := os.ReadFile(out)
 		require.NoError(t, err)
 		assert.Equal(t, want, string(written))
+		assert.Zero(t, server.CountRequests(http.MethodGet, "/content/"+page.ID+"/state"))
 	})
 
 	t.Run("as an OKF concept", func(t *testing.T) {
@@ -137,16 +139,20 @@ func TestExportCommand(t *testing.T) {
 	})
 
 	t.Run("with the assigned content status", func(t *testing.T) {
-		server.SetFail(func(r *http.Request) (int, string, bool) {
-			if r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/content/"+page.ID+"/state") {
-				return http.StatusOK, `{"contentState":{"id":0,"name":"Ready for review"}}`, true
-			}
-			return 0, "", false
-		})
-		t.Cleanup(func() { server.SetFail(nil) })
-		stdout, _, err := runMark(t, append(credentials, "export", "-b", server.URL, "--page-id", page.ID, "--include-content-status")...)
+		args := append(credentials, "export", "-b", server.URL, "--page-id", page.ID, "--include-content-status")
+		stdout, _, err := runMark(t, args...)
 		require.NoError(t, err)
 		assert.Contains(t, stdout, "<!-- Content-Status: Ready for review -->")
+
+		out := filepath.Join(t.TempDir(), "tree")
+		_, _, err = runMark(t, append(args, "--metadata", "frontmatter", "--recursive", "--output", out)...)
+		require.NoError(t, err)
+		written, err := os.ReadFile(filepath.Join(out, "index.md"))
+		require.NoError(t, err)
+		assert.Contains(t, string(written), "content-status: Ready for review")
+
+		_, _, err = runMark(t, append(args, "--metadata", "none")...)
+		require.ErrorContains(t, err, "requires mark format")
 	})
 
 	t.Run("the body alone", func(t *testing.T) {

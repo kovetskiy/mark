@@ -2237,7 +2237,6 @@ func (r *publishRun) processFile(ctx context.Context, in input) (*confluence.Pag
 				if recordErr := r.recordPublished(ctx, doc, dest.page); recordErr != nil {
 					err = errors.Join(err, recordErr)
 				}
-				err = errors.Join(err, r.restoreContentStatus(ctx, doc, dest.page, contentStatus))
 			}
 
 			return nil, nil, err
@@ -2253,22 +2252,26 @@ func (r *publishRun) processFile(ctx context.Context, in input) (*confluence.Pag
 
 	if restrictionPlan != nil {
 		if err := r.api.ApplyFinal(ctx, restrictionPlan); err != nil {
-			return nil, nil, errors.Join(fmt.Errorf("unable to set page restrictions: %w", err),
-				r.restoreContentStatus(ctx, doc, dest.page, contentStatus))
+			return nil, nil, fmt.Errorf("unable to set page restrictions: %w", err)
 		}
 	}
 
-	placement, settingsErr := r.applySettings(ctx, doc, dest)
-	if settingsErr != nil {
-		return nil, nil, errors.Join(settingsErr, r.restoreContentStatus(ctx, doc, dest.page, contentStatus))
+	placement, err := r.applySettings(ctx, doc, dest)
+	if err != nil {
+		return nil, nil, err
 	}
 
 	statusChanged, statusErr := r.syncContentStatus(ctx, dest.page, contentStatus, settingsMayChangeStatus, statusHash)
-	if statusChanged {
-		statusErr = errors.Join(statusErr, r.recordPublished(ctx, doc, dest.page))
-	}
 	if statusErr != nil {
-		return nil, nil, statusErr
+		if contentStatus.declared || confluence.IsCancellation(statusErr) {
+			return nil, nil, statusErr
+		}
+		logctx.From(ctx).Warn().Err(statusErr).Msgf("unable to preserve content status on page %s", dest.page.ID)
+	}
+	if statusChanged {
+		if err := r.recordPublished(ctx, doc, dest.page); err != nil {
+			return nil, nil, err
+		}
 	}
 
 	// Recorded last, once everything asked of the page has been done, so that

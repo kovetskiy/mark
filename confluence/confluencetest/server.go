@@ -42,7 +42,7 @@ type Page struct {
 	Body   string
 	Labels []string
 
-	// ContentStatus is the assigned Cloud page status name, or empty.
+	// ContentStatus is the status name assigned to this test page, or empty.
 	ContentStatus string
 
 	// Trashed and Archived record what became of a page, so a test can tell
@@ -1981,6 +1981,7 @@ func (s *Server) contentByID(w http.ResponseWriter, r *http.Request, id string) 
 		p.Message = payload.Version.Message
 		s.wroteTo(p.ID)
 		p.Body = payload.Body.Storage.Value
+		// Exercise Mark's preservation path when a body update clears the status.
 		p.ContentStatus = ""
 		if payload.Title != "" {
 			p.Title = payload.Title
@@ -3112,7 +3113,6 @@ func (s *Server) contentV2ByID(w http.ResponseWriter, r *http.Request, id, pageT
 		p.Message = payload.Version.Message
 		s.wroteTo(p.ID)
 		p.Body = payload.Body.Value
-		p.ContentStatus = ""
 		if payload.Title != "" {
 			p.Title = payload.Title
 		}
