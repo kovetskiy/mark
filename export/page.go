@@ -17,9 +17,9 @@ import (
 	"unicode/utf8"
 
 	"github.com/kovetskiy/mark/v17/confluence"
+	"github.com/kovetskiy/mark/v17/internal/logctx"
 	"github.com/kovetskiy/mark/v17/internal/syntax"
 	"github.com/kovetskiy/mark/v17/metadata"
-	"github.com/rs/zerolog/log"
 	"golang.org/x/text/unicode/norm"
 )
 
@@ -416,7 +416,7 @@ func (e *pageExport) write(ctx context.Context, api *confluence.API) (*Result, e
 		return nil, fmt.Errorf("unable to write %s: %w", e.output, err)
 	}
 
-	log.Info().Msgf("page %q exported to %s", e.page.Title, e.output)
+	logctx.From(ctx).Info().Msgf("page %q exported to %s", e.page.Title, e.output)
 
 	return result, nil
 }
@@ -575,7 +575,7 @@ func parents(ctx context.Context, api *confluence.API, page *confluence.PageInfo
 	if belowHome {
 		chain = chain[1:]
 	} else if chain[0].Type != confluence.ContentFolder {
-		log.Warn().Msgf(
+		logctx.From(ctx).Warn().Msgf(
 			"page %q is not below the home page of space %s; publishing it back puts it there",
 			page.Title, space,
 		)
@@ -587,7 +587,7 @@ func parents(ctx context.Context, api *confluence.API, page *confluence.PageInfo
 			continue
 		}
 		if len(folders) > 0 {
-			log.Warn().Msgf(
+			logctx.From(ctx).Warn().Msgf(
 				"page %q is below folder %q, with page %q between them, and Folder headers can only name "+
 					"the folders directly above a page: the folder is left out of its headers",
 				page.Title, folders[len(folders)-1], ancestor.Title,
@@ -633,7 +633,7 @@ func ancestry(ctx context.Context, api *confluence.API, page *confluence.PageInf
 
 	chain, err := api.AncestryV2(ctx, page.ID)
 	if err != nil {
-		log.Warn().Msgf(
+		logctx.From(ctx).Warn().Msgf(
 			"unable to tell whether page %q is in a folder, so its headers name no folder: %s", page.Title, err,
 		)
 		return v1
@@ -649,7 +649,7 @@ func ancestry(ctx context.Context, api *confluence.API, page *confluence.PageInf
 func appearanceOf(ctx context.Context, api *confluence.API, page *confluence.PageInfo) (appearance metadata.Appearance, emoji string) {
 	properties, err := api.ContentProperties(ctx, page.ID)
 	if err != nil {
-		log.Warn().Msgf("unable to read the content appearance and emoji of page %s: %s", page.ID, err)
+		logctx.From(ctx).Warn().Msgf("unable to read the content appearance and emoji of page %s: %s", page.ID, err)
 		return "", ""
 	}
 
@@ -677,7 +677,7 @@ func appearanceOf(ctx context.Context, api *confluence.API, page *confluence.Pag
 		appearance = ""
 	default:
 		if _, err := metadata.ParseContentAppearance(string(appearance)); err != nil {
-			log.Warn().Msgf("page %q has the content appearance %q, which mark does not know; publishing it back gives it the default width",
+			logctx.From(ctx).Warn().Msgf("page %q has the content appearance %q, which mark does not know; publishing it back gives it the default width",
 				page.Title, appearance)
 			appearance = ""
 		}
@@ -914,7 +914,7 @@ func attachmentsToWrite(
 	for _, name := range doc.Attachments {
 		info, ok := byName[name]
 		if !ok {
-			log.Warn().Msgf("page %q refers to an attachment %q it does not have", page.Title, name)
+			logctx.From(ctx).Warn().Msgf("page %q refers to an attachment %q it does not have", page.Title, name)
 			missing[pathOf(name)] = true
 			continue
 		}
@@ -967,7 +967,7 @@ func downloadAll(ctx context.Context, api *confluence.API, pageID string, downlo
 		if err := os.Rename(temporaries[i], d.path); err != nil {
 			return written, fmt.Errorf("unable to write attachment %q to %s: %w", d.info.Filename, d.path, err)
 		}
-		log.Info().Msgf("attachment %q written to %s", d.info.Filename, d.path)
+		logctx.From(ctx).Info().Msgf("attachment %q written to %s", d.info.Filename, d.path)
 		written = append(written, d.path)
 	}
 

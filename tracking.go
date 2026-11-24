@@ -10,11 +10,11 @@ import (
 	"strings"
 
 	"github.com/kovetskiy/mark/v17/confluence"
+	"github.com/kovetskiy/mark/v17/internal/logctx"
 	"github.com/kovetskiy/mark/v17/manifest"
 	"github.com/kovetskiy/mark/v17/metadata"
 	"github.com/kovetskiy/mark/v17/page"
 	"github.com/kovetskiy/mark/v17/report"
-	"github.com/rs/zerolog/log"
 )
 
 // previewTrackedResolution says what a real run would have done with a document
@@ -37,7 +37,7 @@ func (r *publishRun) previewTrackedResolution(ctx context.Context, doc *document
 	}
 
 	if pg != nil {
-		log.Info().Msgf(
+		logctx.From(ctx).Info().Msgf(
 			"%s would be published to the existing page %s, retitled from %q to %q",
 			file, pg.ID, pg.Title, meta.Title,
 		)
@@ -51,7 +51,7 @@ func (r *publishRun) previewTrackedResolution(ctx context.Context, doc *document
 	}
 
 	if pg != nil {
-		log.Info().Msgf(
+		logctx.From(ctx).Info().Msgf(
 			"%s would be treated as a rename of an already published document, updating page %s",
 			file, pg.ID,
 		)
@@ -59,7 +59,7 @@ func (r *publishRun) previewTrackedResolution(ctx context.Context, doc *document
 		return pg, nil
 	}
 
-	log.Info().Msgf("%s would be published as a new page %q", file, meta.Title)
+	logctx.From(ctx).Info().Msgf("%s would be published as a new page %q", file, meta.Title)
 
 	return nil, nil
 }
@@ -120,7 +120,7 @@ func resolveTrackedPage(
 	}
 
 	if pg.Title != meta.Title {
-		log.Info().Msgf(
+		logctx.From(ctx).Info().Msgf(
 			"%s was published as %q and is now %q; retitling page %s rather than creating a second one",
 			file, pg.Title, meta.Title, pg.ID,
 		)
@@ -247,12 +247,12 @@ func refreshStaleParents(
 		}
 
 		if publisher != "" {
-			log.Info().Msgf(
+			logctx.From(ctx).Info().Msgf(
 				"parent %q is page %s, titled %q until %s retitles it; using it rather than creating an empty page",
 				title, pageID, renamed.Title, publisher,
 			)
 		} else {
-			log.Info().Msgf(
+			logctx.From(ctx).Info().Msgf(
 				"parent %q was renamed to %q; using it rather than creating a page under the old title",
 				title, renamed.Title,
 			)
@@ -410,7 +410,7 @@ func resolveRenamedFile(
 		return nil, tracker.Forget(ctx, meta.Space, previous)
 	}
 
-	log.Info().Msgf(
+	logctx.From(ctx).Info().Msgf(
 		"%s has the content %s published as page %s; treating it as a rename rather than a new page",
 		file, previous, pg.ID,
 	)

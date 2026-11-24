@@ -72,6 +72,7 @@ import (
 	"github.com/bmatcuk/doublestar/v4"
 	"github.com/kovetskiy/mark/v17/confluence"
 	"github.com/kovetskiy/mark/v17/internal/globpattern"
+	"github.com/kovetskiy/mark/v17/internal/logctx"
 	"github.com/kovetskiy/mark/v17/report"
 	"github.com/rs/zerolog/log"
 )
@@ -1085,7 +1086,7 @@ func (s *Store) attachLatePage(ctx context.Context, spaceKey string, state *spac
 	}
 	for _, property := range properties {
 		if isManifestKey(s.prefix, property.Key) {
-			log.Warn().Msgf(
+			logctx.From(ctx).Warn().Msgf(
 				"manifest page %q of space %q already holds a page mapping this run did not read; "+
 					"the mapping of this run is not saved",
 				s.manifestPage, spaceKey,
@@ -1098,7 +1099,7 @@ func (s *Store) attachLatePage(ctx context.Context, spaceKey string, state *spac
 	state.contentID, state.backend = contentID, backend
 	state.untracked = false
 
-	log.Info().Msgf("manifest page %q now exists in space %q; the page mapping is saved there", s.manifestPage, spaceKey)
+	logctx.From(ctx).Info().Msgf("manifest page %q now exists in space %q; the page mapping is saved there", s.manifestPage, spaceKey)
 
 	return true, nil
 }
@@ -1163,13 +1164,13 @@ func (state *spaceState) writeMapping(
 ) (bool, error) {
 	if err := state.writeProperty(ctx, api, key, value, existing); err != nil {
 		if errors.Is(err, confluence.ErrPropertyUnseen) {
-			log.Warn().Err(err).Msgf(
+			logctx.From(ctx).Warn().Err(err).Msgf(
 				"%s for space %q was not saved", what, spaceKey,
 			)
 			return false, nil
 		}
 		if errors.Is(err, confluence.ErrPropertyConflict) {
-			log.Warn().Msgf(
+			logctx.From(ctx).Warn().Msgf(
 				"%s for space %q was updated by a concurrent run; it was not saved",
 				what, spaceKey,
 			)
@@ -1230,7 +1231,7 @@ func (s *Store) load(ctx context.Context, spaceKey string) (*spaceState, error) 
 		state.contentID, state.backend, err = s.pageManifest(ctx, spaceKey)
 		var missing *MissingPageError
 		if s.manifestPageOptional && errors.As(err, &missing) {
-			log.Warn().Msgf(
+			logctx.From(ctx).Warn().Msgf(
 				"manifest page %q is not a page in space %q: publishing there untracked; "+
 					"the page mapping is saved only if this run publishes that page",
 				s.manifestPage, spaceKey,
@@ -1269,7 +1270,7 @@ func (s *Store) load(ctx context.Context, spaceKey string) (*spaceState, error) 
 			state.folderProperty = &properties[i]
 			var doc folderDocument
 			if err := json.Unmarshal(properties[i].Value, &doc); err != nil {
-				log.Warn().Err(err).Msgf(
+				logctx.From(ctx).Warn().Err(err).Msgf(
 					"ignoring unreadable %s property of space %q; folders are no longer tracked",
 					FolderPropertyKeyFor(s.prefix), spaceKey,
 				)
@@ -1283,7 +1284,7 @@ func (s *Store) load(ctx context.Context, spaceKey string) (*spaceState, error) 
 			state.parentProperty = &properties[i]
 			var doc parentDocument
 			if err := json.Unmarshal(properties[i].Value, &doc); err != nil {
-				log.Warn().Err(err).Msgf(
+				logctx.From(ctx).Warn().Err(err).Msgf(
 					"ignoring unreadable %s property of space %q; parents are no longer tracked",
 					ParentPropertyKeyFor(s.prefix), spaceKey,
 				)
@@ -1306,14 +1307,14 @@ func (s *Store) load(ctx context.Context, spaceKey string) (*spaceState, error) 
 			// would let a corrupted property block publishing, where carrying on
 			// merely costs the rename protection for the paths it held until the
 			// next write repairs it.
-			log.Warn().Err(err).Msgf(
+			logctx.From(ctx).Warn().Err(err).Msgf(
 				"ignoring unreadable %s property of space %q; those pages are no longer tracked",
 				properties[i].Key, spaceKey,
 			)
 			continue
 		}
 		if doc.Version > formatVersion {
-			log.Warn().Msgf(
+			logctx.From(ctx).Warn().Msgf(
 				"%s property of space %q was written by a newer mark (format %d); ignoring it",
 				properties[i].Key, spaceKey, doc.Version,
 			)
@@ -1388,7 +1389,7 @@ func (s *Store) Record(ctx context.Context, spaceKey, path, pageID, title, hash 
 			// follows it. Left recorded, the old path would read as an orphan
 			// whose page is the very one just published -- and --on-orphan
 			// delete would trash it.
-			log.Info().Msgf("%s moved to %s; page %s follows it", owner, path, pageID)
+			logctx.From(ctx).Info().Msgf("%s moved to %s; page %s follows it", owner, path, pageID)
 			delete(state.shards[shardFor(owner)].pages, owner)
 			state.shards[shardFor(owner)].dirty = true
 		} else {
@@ -1714,7 +1715,7 @@ func (s *Store) resolveRenamed(ctx context.Context, spaceKey, path, hash string)
 
 	if count != 1 {
 		if count > 1 {
-			log.Info().Msgf(
+			logctx.From(ctx).Info().Msgf(
 				"%d unpublished documents in space %q share this document's content; "+
 					"not treating any of them as its previous name",
 				count, spaceKey,
@@ -2370,12 +2371,12 @@ func (s *Store) saveShard(ctx context.Context, spaceKey string, state *spaceStat
 	if errors.Is(err, confluence.ErrPropertyUnseen) {
 		// Not known to be another run's doing: the shard may have been there
 		// all along, and its pages published as though untracked.
-		log.Warn().Err(err).Msgf(
+		logctx.From(ctx).Warn().Err(err).Msgf(
 			"manifest shard %s of space %q was read again; saving this run's mappings over it",
 			key, spaceKey,
 		)
 	} else {
-		log.Info().Msgf(
+		logctx.From(ctx).Info().Msgf(
 			"manifest shard %s of space %q was saved by another run meanwhile; saving this run's mappings over it",
 			key, spaceKey,
 		)
@@ -2427,7 +2428,7 @@ func (s *Store) writeShard(ctx context.Context, spaceKey string, state *spaceSta
 		// Said while there is still room to act. Confluence's own limit
 		// is not knowable from here, so this is a heads-up rather than a
 		// refusal, and the write is attempted regardless.
-		log.Warn().Msgf(
+		logctx.From(ctx).Warn().Msgf(
 			"manifest shard %s of space %q is %d bytes and holds %d pages; "+
 				"it may be approaching the property size Confluence will accept",
 			PropertyKeyFor(state.prefix, index), spaceKey, len(value), len(sh.pages),

@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	"github.com/kovetskiy/mark/v17/confluence"
-	"github.com/rs/zerolog/log"
+	"github.com/kovetskiy/mark/v17/internal/logctx"
 )
 
 // ImmediateParentID returns the direct parent content ID, or "" if unknown:
@@ -190,7 +190,7 @@ func EnsurePageUnderFolderParent(
 		if err != nil {
 			// Not knowing costs a move that may not have been needed, which is
 			// what happened every time before this was asked at all.
-			log.Debug().Err(err).Msgf("unable to tell whether page %q is in folder %s already", pg.Title, folderID)
+			logctx.From(ctx).Debug().Err(err).Msgf("unable to tell whether page %q is in folder %s already", pg.Title, folderID)
 		} else {
 			pg.ParentID, pg.ParentType = parentID, parentType
 		}
@@ -235,7 +235,7 @@ func EnsurePageUnderParent(
 		return nil
 	}
 
-	log.Info().Msgf(
+	logctx.From(ctx).Info().Msgf(
 		"moving page %q (%s) from parent %s to %s",
 		pg.Title,
 		pg.ID,

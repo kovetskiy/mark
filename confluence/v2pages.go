@@ -12,7 +12,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/rs/zerolog/log"
+	"github.com/kovetskiy/mark/v17/internal/logctx"
 )
 
 // This file is the v2 form of the page calls that mark otherwise makes against
@@ -427,7 +427,7 @@ func (api *API) getPageByIDV2(ctx context.Context, pageID, expand string) (*Page
 	if strings.Contains(expand, "space") && content.SpaceID != "" {
 		key, err := api.spaceKeyV2(ctx, content.SpaceID)
 		if err != nil {
-			log.Warn().Msgf("unable to read the key of space %s, which page %s is in: %s", content.SpaceID, pageID, err)
+			logctx.From(ctx).Warn().Msgf("unable to read the key of space %s, which page %s is in: %s", content.SpaceID, pageID, err)
 		}
 		page.Space.Key = key
 	}

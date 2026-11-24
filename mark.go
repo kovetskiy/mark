@@ -25,6 +25,7 @@ import (
 	"github.com/kovetskiy/mark/v17/includes"
 	"github.com/kovetskiy/mark/v17/internal/fspath"
 	"github.com/kovetskiy/mark/v17/internal/globpattern"
+	"github.com/kovetskiy/mark/v17/internal/logctx"
 	"github.com/kovetskiy/mark/v17/internal/mdsource"
 	"github.com/kovetskiy/mark/v17/internal/rendercheck"
 	"github.com/kovetskiy/mark/v17/manifest"
@@ -34,7 +35,6 @@ import (
 	"github.com/kovetskiy/mark/v17/page"
 	"github.com/kovetskiy/mark/v17/report"
 	"github.com/kovetskiy/mark/v17/stdlib"
-	"github.com/rs/zerolog/log"
 )
 
 // Config is everything Run needs: the publish settings each document is
@@ -639,7 +639,7 @@ const attachmentRootSetting = "Rendering.AttachmentRoot (--attachment-root)"
 // and a directory of that name is in the working directory, where a relative
 // path root is looked for: the keyword holds each document to its own
 // directory, which is not what someone naming that directory meant.
-func (r RenderingConfig) warnAttachmentRoot() {
+func (r RenderingConfig) warnAttachmentRoot(ctx context.Context) {
 	if r.AttachmentRoot != attachment.BoundaryDocument {
 		return
 	}
@@ -649,7 +649,7 @@ func (r RenderingConfig) warnAttachmentRoot() {
 		return
 	}
 
-	log.Warn().Msgf(
+	logctx.From(ctx).Warn().Msgf(
 		"%s %q holds each document to its own directory, not to the directory %q here; name that directory %q",
 		attachmentRootSetting, string(attachment.BoundaryDocument), string(attachment.BoundaryDocument),
 		"."+string(filepath.Separator)+string(attachment.BoundaryDocument),
@@ -923,7 +923,7 @@ func Run(ctx context.Context, config Config) (err error) {
 			"it names the page manifest's properties, and nothing else keeps one")
 	}
 
-	if err := config.checkDocuments(); err != nil {
+	if err := config.checkDocuments(ctx); err != nil {
 		return err
 	}
 
@@ -950,14 +950,14 @@ func Run(ctx context.Context, config Config) (err error) {
 		if len(files) == 0 {
 			msg := "no files matched"
 			if config.CI {
-				log.Warn().Msg(msg)
+				logctx.From(ctx).Warn().Msg(msg)
 			} else {
 				return errors.New(msg)
 			}
 		}
 	}
 
-	if err := config.checkUnscopedOrphans(onOrphan, files); err != nil {
+	if err := config.checkUnscopedOrphans(ctx, onOrphan, files); err != nil {
 		return err
 	}
 
@@ -1046,7 +1046,7 @@ func Run(ctx context.Context, config Config) (err error) {
 				return
 			}
 
-			log.Error().Err(writeErr).Msg("unable to write the run report")
+			logctx.From(ctx).Error().Err(writeErr).Msg("unable to write the run report")
 		}
 	}()
 
@@ -1075,7 +1075,7 @@ func Run(ctx context.Context, config Config) (err error) {
 			// The mapping is keyed on a source path within a space, and neither
 			// is known when publishing straight to a page id. Better said once
 			// than discovered later as a manifest with holes in it.
-			log.Warn().Msg(
+			logctx.From(ctx).Warn().Msg(
 				"--track-pages has no effect together with a page id: " +
 					"the mapping is per space and per file, and neither applies here",
 			)
@@ -1112,7 +1112,7 @@ func Run(ctx context.Context, config Config) (err error) {
 		// context, has already written everything unless it failed, and this
 		// one then sends nothing.
 		if err := tracker.Save(context.WithoutCancel(ctx)); err != nil {
-			log.Error().Err(err).Msg("unable to save page manifest")
+			logctx.From(ctx).Error().Err(err).Msg("unable to save page manifest")
 
 			// Only when the explicit save did not already fail: that one is
 			// in the report, and this is the same failure a second time.
@@ -1222,6 +1222,7 @@ func Run(ctx context.Context, config Config) (err error) {
 	urlsAreReport := config.Report.Output != nil && outputFormat == report.FormatURL
 	// Read only once a parent is missing.
 	pub.titles = &runTitles{
+		log:    logctx.From(ctx),
 		config: config.PublishConfig, inputs: inputs, hierarchy: hierarchy,
 		warningsFor: pub.warningsFor,
 	}
@@ -1264,7 +1265,7 @@ func Run(ctx context.Context, config Config) (err error) {
 			return err
 		}
 
-		log.Info().Msgf("processing %s", file)
+		logctx.From(ctx).Info().Msgf("processing %s", file)
 
 		target, placement, err := pub.processFile(ctx, in)
 		if placement != nil {
@@ -1293,10 +1294,10 @@ func Run(ctx context.Context, config Config) (err error) {
 				// Already said where the decision was made, with the reason.
 
 			case report.StatusUnchanged:
-				log.Info().Msgf("page is already up to date: %s", url)
+				logctx.From(ctx).Info().Msgf("page is already up to date: %s", url)
 
 			default:
-				log.Info().Msgf("page successfully updated: %s", url)
+				logctx.From(ctx).Info().Msgf("page successfully updated: %s", url)
 			}
 
 			// The other formats describe the whole run at the end, where a
@@ -1324,7 +1325,7 @@ func Run(ctx context.Context, config Config) (err error) {
 	// Everything exists now, so the documents that were waiting on a page this
 	// run created can be published again with their links resolved.
 	if waiting := deferrals.Files(); len(waiting) > 0 && !failed.any() {
-		log.Info().Msgf(
+		logctx.From(ctx).Info().Msgf(
 			"%d document(s) linked to pages created in this run; publishing them again",
 			len(waiting),
 		)
@@ -1339,7 +1340,7 @@ func Run(ctx context.Context, config Config) (err error) {
 				return err
 			}
 
-			log.Info().Msgf("processing %s again", file)
+			logctx.From(ctx).Info().Msgf("processing %s again", file)
 
 			if _, _, err := lastLook.processFile(ctx, pub.inputs.named(file)); err != nil {
 				// Over what the first pass recorded: the document published
@@ -1367,7 +1368,7 @@ func Run(ctx context.Context, config Config) (err error) {
 		pub.warnMissingLinks(missingLinks)
 	} else {
 		for _, item := range missingPages {
-			log.Warn().Msg(item)
+			logctx.From(ctx).Warn().Msg(item)
 		}
 	}
 
@@ -1420,7 +1421,7 @@ func Run(ctx context.Context, config Config) (err error) {
 		// The files are the more useful complaint; a failed manifest write is
 		// secondary and must not displace it.
 		if saveErr != nil {
-			log.Error().Err(saveErr).Msg("page manifest was not saved")
+			logctx.From(ctx).Error().Err(saveErr).Msg("page manifest was not saved")
 		}
 
 		// Not a failure of its own: it sums up the ones recorded against
@@ -1503,7 +1504,7 @@ func stepPast(ctx context.Context, continueOnError bool, file string, err error)
 		return false
 	}
 
-	log.Error().Err(err).Msgf("processing %s", file)
+	logctx.From(ctx).Error().Err(err).Msgf("processing %s", file)
 
 	return true
 }
@@ -1563,7 +1564,7 @@ func newPublisher(
 ) (*Publisher, error) {
 	// Here rather than in prepare, which Validate shares, so that a run says
 	// it once.
-	config.Rendering.warnAttachmentRoot()
+	config.Rendering.warnAttachmentRoot(ctx)
 
 	res, err := newResources(config.Rendering.MermaidEngine)
 	if err != nil {
@@ -1617,7 +1618,7 @@ func (p *Publisher) publish(ctx context.Context, in input) (*confluence.PageInfo
 	}
 
 	for _, item := range missing {
-		log.Warn().Msg(item)
+		logctx.From(ctx).Warn().Msg(item)
 	}
 
 	if p.run.config.Links.CheckLinksWarnOnly {
@@ -2089,7 +2090,7 @@ func (r *publishRun) processFile(ctx context.Context, in input) (*confluence.Pag
 		return nil, nil, err
 	}
 
-	versionMessage, shouldUpdatePage := r.changeCheck(doc, dest, html)
+	versionMessage, shouldUpdatePage := r.changeCheck(ctx, doc, dest, html)
 
 	// Only fetch the old body and inline comments when we know the page will
 	// actually be updated. This avoids unnecessary API round-trips for no-op
@@ -2321,7 +2322,7 @@ func (r *publishRun) leaveUnsynchronized(ctx context.Context, doc *document) (bo
 		return false, nil
 	}
 
-	log.Info().Msgf("%s is not synchronized; leaving it alone", file)
+	logctx.From(ctx).Info().Msgf("%s is not synchronized; leaving it alone", file)
 	r.addPage(doc, report.Page{
 		File: file, Status: report.StatusSkipped,
 		Reason: report.ReasonNotSynchronized,
@@ -2614,7 +2615,7 @@ func (r *publishRun) preview(ctx context.Context, doc *document) error {
 
 		if drift != "" {
 			status, reason = report.StatusSkipped, drift
-			log.Warn().Msgf("%s: page %q would be left alone: %s", file, previewed.Title, reason)
+			logctx.From(ctx).Warn().Msgf("%s: page %q would be left alone: %s", file, previewed.Title, reason)
 		}
 	}
 
@@ -3112,7 +3113,7 @@ func (r *publishRun) applySettings(ctx context.Context, doc *document, dest *des
 	}
 
 	if r.config.Update.EditLock {
-		log.Info().Msgf(
+		logctx.From(ctx).Info().Msgf(
 			`edit locked on page %q by the authenticated user to prevent manual edits`,
 			target.Title,
 		)
@@ -3272,7 +3273,7 @@ func (c RenderingConfig) documentConfig(ctx context.Context, res *resources, doc
 	meta := doc.meta
 
 	if c.DropH1 {
-		log.Info().Msg("the leading H1 heading will be excluded from the Confluence output")
+		logctx.From(ctx).Info().Msg("the leading H1 heading will be excluded from the Confluence output")
 	}
 
 	imageAlign, err := getImageAlign(c.ImageAlign, meta)

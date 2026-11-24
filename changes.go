@@ -10,12 +10,12 @@ import (
 
 	"github.com/kovetskiy/mark/v17/confluence"
 	"github.com/kovetskiy/mark/v17/fingerprint"
+	"github.com/kovetskiy/mark/v17/internal/logctx"
 	"github.com/kovetskiy/mark/v17/manifest"
 	"github.com/kovetskiy/mark/v17/metadata"
 	"github.com/kovetskiy/mark/v17/page"
 	"github.com/kovetskiy/mark/v17/report"
 	"github.com/kovetskiy/mark/v17/stdlib"
-	"github.com/rs/zerolog/log"
 )
 
 // previewChange says whether a real run would change the page, using the same
@@ -36,7 +36,7 @@ func previewChange(
 	std *stdlib.Lib,
 ) (report.Status, string, error) {
 	if existing == nil {
-		log.Info().Msgf("%s: page would be created", file)
+		logctx.From(ctx).Info().Msgf("%s: page would be created", file)
 
 		return report.StatusWouldCreate, "", nil
 	}
@@ -61,19 +61,19 @@ func previewChange(
 
 	switch {
 	case retitled:
-		log.Info().Msgf("%s: page %q would be retitled to %q", file, existing.Title, title)
+		logctx.From(ctx).Info().Msgf("%s: page %q would be retitled to %q", file, existing.Title, title)
 	case relinked:
-		log.Info().Msgf("%s: page %q would be updated, with an attachment it does not have yet", file, existing.Title)
+		logctx.From(ctx).Info().Msgf("%s: page %q would be updated, with an attachment it does not have yet", file, existing.Title)
 	case fingerprint.FromVersionMessage(existing.Version.Message) == hash:
 		if len(others) == 0 {
-			log.Info().Msgf("%s: page %q is already up to date", file, existing.Title)
+			logctx.From(ctx).Info().Msgf("%s: page %q is already up to date", file, existing.Title)
 
 			return report.StatusUnchanged, "", nil
 		}
 
-		log.Info().Msgf("%s: page %q has an unchanged body but %s", file, existing.Title, reason)
+		logctx.From(ctx).Info().Msgf("%s: page %q has an unchanged body but %s", file, existing.Title, reason)
 	default:
-		log.Info().Msgf("%s: page %q would be updated", file, existing.Title)
+		logctx.From(ctx).Info().Msgf("%s: page %q would be updated", file, existing.Title)
 	}
 
 	return report.StatusWouldUpdate, reason, nil
@@ -175,7 +175,7 @@ func (r *publishRun) leaveDrifted(ctx context.Context, doc *document, dest *dest
 		return false, nil
 	}
 
-	log.Warn().Msgf("page %q was %s; leaving it alone", target.Title, drift)
+	logctx.From(ctx).Warn().Msgf("page %q was %s; leaving it alone", target.Title, drift)
 
 	r.addPage(doc, report.Page{
 		File: file, Status: report.StatusSkipped,
@@ -256,7 +256,7 @@ func (r *publishRun) recordedPageOf(ctx context.Context, doc *document) (*conflu
 
 // changeCheck returns the version message to publish html under and, under
 // --changes-only, whether the page needs writing at all.
-func (r *publishRun) changeCheck(doc *document, dest *destination, html string) (string, bool) {
+func (r *publishRun) changeCheck(ctx context.Context, doc *document, dest *destination, html string) (string, bool) {
 	if !r.config.Update.ChangesOnly {
 		return r.config.Update.VersionMessage, true
 	}
@@ -269,16 +269,16 @@ func (r *publishRun) changeCheck(doc *document, dest *destination, html string) 
 		DefaultAppearance: defaultAppearance(r.config.Page.ContentAppearance),
 		Emoji:             emoji,
 	})
-	log.Debug().Msgf("content hash: %s", contentHash)
+	logctx.From(ctx).Debug().Msgf("content hash: %s", contentHash)
 
 	shouldUpdatePage := true
 	if previous := fingerprint.FromVersionMessage(target.Version.Message); previous != "" {
-		log.Debug().Msgf("previous content hash: %s", previous)
+		logctx.From(ctx).Debug().Msgf("previous content hash: %s", previous)
 		if previous == contentHash {
 			if dest.titleChanged {
-				log.Info().Msgf("page %q is unchanged but is being retitled", target.Title)
+				logctx.From(ctx).Info().Msgf("page %q is unchanged but is being retitled", target.Title)
 			} else {
-				log.Info().Msgf("page %q is already up to date", target.Title)
+				logctx.From(ctx).Info().Msgf("page %q is already up to date", target.Title)
 				shouldUpdatePage = false
 			}
 		}

@@ -8,8 +8,8 @@ import (
 	"sync"
 
 	"github.com/kovetskiy/mark/v17/confluence"
+	"github.com/kovetskiy/mark/v17/internal/logctx"
 	"github.com/kovetskiy/mark/v17/report"
-	"github.com/rs/zerolog/log"
 )
 
 // ParentInfo represents either a page or folder parent
@@ -113,7 +113,7 @@ func resolveFolder(
 				// Reported rather than done, and the folder is given back as it
 				// actually is: saying where it would end up is the dry run's
 				// job, and moving it there is not.
-				log.Info().Msgf(
+				logctx.From(ctx).Info().Msgf(
 					"folder %q would be moved under the page named by --parents", title,
 				)
 
@@ -303,7 +303,7 @@ func EnsureFolderAncestry(
 						"folder %q was recorded as %s, which is not in space %q; it is left alone", title, id, space)
 					folder = nil
 				default:
-					log.Info().Msgf(
+					logctx.From(ctx).Info().Msgf(
 						"folder %q was renamed to %q; using it rather than creating another",
 						title, folder.Title,
 					)
@@ -322,7 +322,7 @@ func EnsureFolderAncestry(
 		}
 
 		options.FolderCache.store(space, underID, title, folder.ID)
-		log.Debug().Msgf("folder %q exists: %s", title, folder.ID)
+		logctx.From(ctx).Debug().Msgf("folder %q exists: %s", title, folder.ID)
 
 		rest = folders[i:]
 		parent = &ParentInfo{
@@ -340,7 +340,7 @@ func EnsureFolderAncestry(
 		return parent, nil
 	}
 
-	log.Debug().Msgf(
+	logctx.From(ctx).Debug().Msgf(
 		"folders to be created: %s",
 		strings.Join(rest, ` > `),
 	)
@@ -396,7 +396,7 @@ func EnsureFolderAncestry(
 					)
 				}
 
-				log.Info().Msgf(
+				logctx.From(ctx).Info().Msgf(
 					"folder %q already exists as %s; using it rather than creating another",
 					title, folder.ID,
 				)
@@ -424,7 +424,7 @@ func EnsureFolderAncestry(
 			}
 		}
 	} else {
-		log.Info().Msgf(
+		logctx.From(ctx).Info().Msgf(
 			"skipping folder creation due to dry-run mode, need to create %d folders: %v",
 			len(rest),
 			rest,
@@ -471,7 +471,7 @@ func EnsureMixedAncestry(
 		// creates the rest of the chain and new folders beneath it, so the
 		// folder parent is one that does not exist yet.
 		if options.DryRun && len(folders) > 0 && !strings.EqualFold(anchor.Title, pages[len(pages)-1]) {
-			log.Info().Msgf(
+			logctx.From(ctx).Info().Msgf(
 				"skipping folder creation due to dry-run mode: MARK_PARENTS chain %q is not there yet, so neither are folders %v",
 				strings.Join(pages, " > "), folders,
 			)
@@ -533,7 +533,7 @@ func EnsureAncestry(
 			break
 		}
 
-		log.Debug().Msgf("parent page %q exists: %s", title, page.Links.Full)
+		logctx.From(ctx).Debug().Msgf("parent page %q exists: %s", title, page.Links.Full)
 
 		if options.Parents != nil {
 			if err := options.Parents.RecordParent(ctx, space, ParentPathKey(ancestry[:i+1]), page.ID); err != nil {
@@ -559,7 +559,7 @@ func EnsureAncestry(
 		return parent, nil
 	}
 
-	log.Debug().
+	logctx.From(ctx).Debug().
 		Msgf(
 			"empty pages under %q to be created: %s",
 			parent.Title,
@@ -590,7 +590,7 @@ func EnsureAncestry(
 			parent = page
 		}
 	} else {
-		log.Info().
+		logctx.From(ctx).Info().
 			Msgf(
 				"skipping page creation due to enabled dry-run mode, "+
 					"need to create %d pages: %v",
@@ -635,7 +635,7 @@ func ValidateAncestry(
 		// which is recoverable, where refusing outright was not.
 		homepage, err := api.FindHomePage(ctx, space)
 		if err != nil {
-			log.Debug().Err(err).Msgf(
+			logctx.From(ctx).Debug().Err(err).Msgf(
 				"no home page for space %q; cannot tell whether %q is it",
 				space, page.Title,
 			)
@@ -644,7 +644,7 @@ func ValidateAncestry(
 		}
 
 		if homepage != nil && page.ID == homepage.ID {
-			log.Debug().Msgf("page is homepage for space %q", space)
+			logctx.From(ctx).Debug().Msgf("page is homepage for space %q", space)
 			isHomepage = true
 		} else {
 			// The page sits at the root of its space and is not the homepage,

@@ -9,7 +9,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/rs/zerolog/log"
+	"github.com/kovetskiy/mark/v17/internal/logctx"
 )
 
 // IsWatching reports whether user watches a page. An empty user is the
@@ -140,7 +140,7 @@ func (api *API) watchBeforeWrite(ctx context.Context, pageID string) {
 		// No answer, and no write follows it under a stopped run.
 		return
 	case err != nil:
-		log.Debug().Err(err).Msgf("unable to read whether page %s is watched, so it is left watched", pageID)
+		logctx.From(ctx).Debug().Err(err).Msgf("unable to read whether page %s is watched, so it is left watched", pageID)
 		state = wasUnread
 	case watching:
 		state = wasWatched
@@ -192,7 +192,7 @@ func (api *API) UnwatchWritten(ctx context.Context) {
 	api.watchedBefore, api.watchErr, api.watchRefused = nil, nil, false
 	api.watchMutex.Unlock()
 
-	warnStayWatched("unable to read whether %d of %d page(s) mark wrote to were watched before",
+	warnStayWatched(ctx, "unable to read whether %d of %d page(s) mark wrote to were watched before",
 		unread, total, unreadErr)
 
 	slices.Sort(pages)
@@ -207,7 +207,7 @@ func (api *API) UnwatchWritten(ctx context.Context) {
 		if err == nil {
 			continue
 		}
-		log.Debug().Err(err).Msgf("unable to stop watching page %s", pageID)
+		logctx.From(ctx).Debug().Err(err).Msgf("unable to stop watching page %s", pageID)
 		failed = append(failed, pageID)
 		if first == nil {
 			first = err
@@ -223,19 +223,19 @@ func (api *API) UnwatchWritten(ctx context.Context) {
 		first = errors.Join(first, fmt.Errorf("the run was interrupted: %w", err))
 	}
 
-	warnStayWatched("unable to stop watching %d of %d page(s) mark wrote to",
+	warnStayWatched(ctx, "unable to stop watching %d of %d page(s) mark wrote to",
 		failed, len(pages), first)
 }
 
 // warnStayWatched logs one line for each kind of failure, covering every page:
 // a refusal that holds for all of them would otherwise read as one page's
 // trouble. format takes the count of pages and the total.
-func warnStayWatched(format string, pages []string, total int, err error) {
+func warnStayWatched(ctx context.Context, format string, pages []string, total int, err error) {
 	if len(pages) == 0 {
 		return
 	}
 	slices.Sort(pages)
-	log.Warn().Err(err).Msgf(format+", so they stay watched: %s",
+	logctx.From(ctx).Warn().Err(err).Msgf(format+", so they stay watched: %s",
 		len(pages), total, strings.Join(pages, ", "))
 }
 

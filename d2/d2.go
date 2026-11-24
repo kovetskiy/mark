@@ -26,7 +26,8 @@ import (
 	"github.com/kovetskiy/mark/v17/attachment"
 	"github.com/kovetskiy/mark/v17/chrome"
 	"github.com/kovetskiy/mark/v17/imageformat"
-	"github.com/rs/zerolog/log"
+	"github.com/kovetskiy/mark/v17/internal/logctx"
+	"github.com/rs/zerolog"
 
 	"github.com/d2lang/d2/d2graph"
 	"github.com/d2lang/d2/d2layouts/d2dagrelayout"
@@ -198,7 +199,7 @@ func renderPNGAttachment(ctx context.Context, browser *chrome.Browser, title str
 		}
 	}
 
-	log.Debug().Msgf("Rendering: %q", title)
+	logctx.From(ctx).Debug().Msgf("Rendering: %q", title)
 	// d2 nests the diagram in an outer svg, so the inner one is what to
 	// screenshot: the outer one carries the padding.
 	pngBytes, width, height, err := browser.PNGFromSVG(ctx, out, `document.querySelector("svg > svg")`, scale)
@@ -222,7 +223,7 @@ func renderPNGAttachment(ctx context.Context, browser *chrome.Browser, title str
 
 	checkSum, err := attachment.GetChecksum(io.MultiReader(identity...))
 
-	log.Debug().Msgf("Checksum: %q -> %s", title, checkSum)
+	logctx.From(ctx).Debug().Msgf("Checksum: %q -> %s", title, checkSum)
 
 	if err != nil {
 		return attachment.Attachment{}, err
@@ -267,7 +268,7 @@ func renderSVGAttachment(ctx context.Context, title string, d2Diagram []byte, do
 	// its own host, where a path relative to the document resolves to nothing
 	// and a remote image may be blocked. Both are inlined here, which is what
 	// d2's own --bundle does.
-	log.Debug().Msgf("Bundling what the diagram references: %q", title)
+	logctx.From(ctx).Debug().Msgf("Bundling what the diagram references: %q", title)
 
 	// Every reference is judged before any of them is fetched, because the
 	// bundler decides for itself what a name means: it reads an absolute path
@@ -289,7 +290,7 @@ func renderSVGAttachment(ctx context.Context, title string, d2Diagram []byte, do
 			return attachment.Attachment{}, fmt.Errorf("diagram %q: %w", title, err)
 		}
 	case local:
-		out, err = imgbundler.BundleLocal(ctx, bundleLogger{}, doc.path, out, false)
+		out, err = imgbundler.BundleLocal(ctx, bundleLogger{logctx.From(ctx)}, doc.path, out, false)
 		if err != nil {
 			return attachment.Attachment{}, err
 		}
@@ -314,7 +315,7 @@ func renderSVGAttachment(ctx context.Context, title string, d2Diagram []byte, do
 	// tests pin, so in practice that means a d2 upgrade that moves a line by a
 	// pixel: one re-upload, of a drawing that did change.
 	checkSum, err := attachment.GetChecksum(bytes.NewReader(out))
-	log.Debug().Msgf("Checksum: %q -> %s", title, checkSum)
+	logctx.From(ctx).Debug().Msgf("Checksum: %q -> %s", title, checkSum)
 
 	if err != nil {
 		return attachment.Attachment{}, err
@@ -586,7 +587,7 @@ func remoteReferences(svg []byte, bundleRemote bool) (remote bool, err error) {
 // server gave it, so what comes back has to pass the same check the drawing
 // did.
 func fetchRemoteImages(ctx context.Context, svg []byte) ([]byte, error) {
-	out, err := imgbundler.BundleRemote(ctx, bundleLogger{}, svg, false)
+	out, err := imgbundler.BundleRemote(ctx, bundleLogger{logctx.From(ctx)}, svg, false)
 	if err != nil {
 		return nil, err
 	}
@@ -747,8 +748,8 @@ func checkAttribute(key, value string) error {
 }
 
 // bundleLogger hands what d2's bundler has to say to mark's own log.
-type bundleLogger struct{}
+type bundleLogger struct{ log *zerolog.Logger }
 
-func (bundleLogger) Debug(message string) { log.Debug().Msg(message) }
-func (bundleLogger) Info(message string)  { log.Info().Msg(message) }
-func (bundleLogger) Error(message string) { log.Error().Msg(message) }
+func (b bundleLogger) Debug(message string) { b.log.Debug().Msg(message) }
+func (b bundleLogger) Info(message string)  { b.log.Info().Msg(message) }
+func (b bundleLogger) Error(message string) { b.log.Error().Msg(message) }

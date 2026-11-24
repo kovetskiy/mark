@@ -10,11 +10,11 @@ import (
 	"strings"
 
 	"github.com/kovetskiy/mark/v17/confluence"
+	"github.com/kovetskiy/mark/v17/internal/logctx"
 	"github.com/kovetskiy/mark/v17/internal/similar"
 	"github.com/kovetskiy/mark/v17/manifest"
 	"github.com/kovetskiy/mark/v17/metadata"
 	"github.com/kovetskiy/mark/v17/report"
-	"github.com/rs/zerolog/log"
 )
 
 // renameMargin is how far a pair has to lead the next best of either side to
@@ -128,7 +128,7 @@ func (r *publishRun) resolveRenamed(ctx context.Context, doc *document) (*conflu
 		return notTaken(fmt.Sprintf("its page %s was edited in Confluence since it was compared", pg.ID))
 	}
 
-	log.Info().Msgf("%s is %.2f alike to %s, published as page %s; treating it as a rename", key, match.Score, match.Old, pg.ID)
+	logctx.From(ctx).Info().Msgf("%s is %.2f alike to %s, published as page %s; treating it as a rename", key, match.Score, match.Old, pg.ID)
 	doc.warnings.Add(report.WarningRename,
 		"%s is taken for %s renamed, and publishes to its page %s: their texts are %.2f alike",
 		key, match.Old, pg.ID, match.Score,
@@ -188,7 +188,7 @@ func (r *publishRun) pairSimilar(ctx context.Context, space, key string) (*simil
 			return nil, fmt.Errorf("unable to tell which space page %s, recorded for %q, is in", pg.ID, key)
 		}
 		if !inSpace {
-			log.Info().Msgf("%s is not compared for a rename: its page %s is in %s, not space %q",
+			logctx.From(ctx).Info().Msgf("%s is not compared for a rename: its page %s is in %s, not space %q",
 				key, pg.ID, pageSpace(pg), space)
 
 			continue
@@ -197,7 +197,7 @@ func (r *publishRun) pairSimilar(ctx context.Context, space, key string) (*simil
 		// Taking the page would carry the old key's baseline across, and
 		// the edit would then be overwritten as though it were mark's own.
 		if r.noOverwrite && (entry.Version == 0 || pg.Version.Number != entry.Version) {
-			log.Info().Msgf(
+			logctx.From(ctx).Info().Msgf(
 				"%s is not compared for a rename: its page %s was edited in Confluence since mark wrote it, "+
 					"or has no version mark wrote, and --no-overwrite keeps it",
 				key, pg.ID,
