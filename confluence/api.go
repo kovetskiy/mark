@@ -19,8 +19,8 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/kovetskiy/mark/v17/internal/logctx"
 	"github.com/rs/zerolog"
-	"github.com/rs/zerolog/log"
 )
 
 type User struct {
@@ -530,6 +530,8 @@ type form struct {
 
 type tracer struct {
 	prefix string
+	// log is where the dumps go; nil is the global logger.
+	log *zerolog.Logger
 }
 
 func (tracer *tracer) Printf(format string, args ...any) {
@@ -543,7 +545,11 @@ func (tracer *tracer) Printf(format string, args ...any) {
 // Headers are redacted after the bound, so that a large body is not split
 // into lines and joined again only for most of it to be thrown away.
 func (tracer *tracer) write(message string) {
-	log.Trace().Msg(tracer.prefix + " " + redactHeaders(message))
+	l := tracer.log
+	if l == nil {
+		l = logctx.From(context.Background())
+	}
+	l.Trace().Msg(tracer.prefix + " " + redactHeaders(message))
 }
 
 // traceDumpLimit is how much of one request or response dump is traced.
@@ -682,19 +688,12 @@ func NewAPI(baseURL string, opts Options) *API {
 	// newHTTPClient.
 	httpClient := newHTTPClient(opts.InsecureSkipVerify, opts.HTTPClient)
 
-	trace := func(prefix string) string {
-		if zerolog.GlobalLevel() == zerolog.TraceLevel {
-			return prefix
-		}
-		return ""
-	}
-
 	username, password := opts.Username, opts.Password
 
 	return &API{
-		v1:            newAPIClient(baseURL, "/rest/api", httpClient, username, password, trace("rest:")),
-		v2:            newAPIClient(baseURL, "/api/v2", httpClient, username, password, trace("rest-v2:")),
-		site:          newClient(baseURL, httpClient, username, password, trace("site:")),
+		v1:            newAPIClient(baseURL, "/rest/api", httpClient, username, password, "rest:"),
+		v2:            newAPIClient(baseURL, "/api/v2", httpClient, username, password, "rest-v2:"),
+		site:          newClient(baseURL, httpClient, username, password, "site:"),
 		baseURL:       baseURL,
 		username:      username,
 		gateway:       isGatewayURL(baseURL),
@@ -753,7 +752,7 @@ func (api *API) FindRootPage(ctx context.Context, space string) (*PageInfo, erro
 		return nil, fmt.Errorf("can't obtain home page of space %q: %w", space, err)
 	}
 
-	log.Warn().Msgf(
+	logctx.From(ctx).Warn().Msgf(
 		"space %q has no home page; creating missing parents under its first listed root page",
 		space,
 	)
@@ -1742,7 +1741,7 @@ func (api *API) retryConflictingUpdate(
 		)
 	}
 
-	log.Debug().Msgf(
+	logctx.From(ctx).Debug().Msgf(
 		"update of page %q (%s) as version %d conflicted; retrying as version %d",
 		page.Title, page.ID, attempted, current+1,
 	)
@@ -1887,7 +1886,7 @@ func (api *API) confirmVersion(ctx context.Context, page *PageInfo, version int6
 		return err
 	}
 
-	log.Warn().Err(err).Msgf(
+	logctx.From(ctx).Warn().Err(err).Msgf(
 		"page %q (%s) is at version %d, the one the write created, so it was applied; "+
 			"something in front of Confluence answered it instead",
 		page.Title, page.ID, version,
@@ -2181,7 +2180,7 @@ func (api *API) Cloud(ctx context.Context) (bool, error) {
 
 	api.isCloudFlag, err = identifyCloud(user)
 	if err != nil {
-		log.Warn().Err(err).Msg("assuming Confluence Server or Data Center")
+		logctx.From(ctx).Warn().Err(err).Msg("assuming Confluence Server or Data Center")
 	}
 
 	return api.isCloudFlag, nil
@@ -2496,7 +2495,7 @@ func (api *API) eachDirectChild(
 	visit func(id string, typ ContentType, title string) (stop bool),
 ) error {
 	if isCloud, err := api.Cloud(ctx); err == nil && !isCloud {
-		log.Debug().Msgf(
+		logctx.From(ctx).Debug().Msgf(
 			"not listing the children of %s %s: Confluence Cloud was ruled out",
 			parentType, parentID,
 		)
@@ -2865,7 +2864,7 @@ func (api *API) MoveContentAppend(ctx context.Context, contentID, targetID strin
 		return nil
 	}
 
-	log.Debug().Err(err).Msgf(
+	logctx.From(ctx).Debug().Err(err).Msgf(
 		"this Confluence moved neither through the content move endpoint nor "+
 			"movepage.action; reparenting %s under %s with an update instead",
 		api.describeContent(contentID), targetID,
@@ -3214,7 +3213,7 @@ func (api *API) reparentContent(ctx context.Context, contentID, parentID string)
 			return err
 		}
 
-		log.Debug().Msgf(
+		logctx.From(ctx).Debug().Msgf(
 			"move of page %q (%s) as version %d conflicted; retrying as version %d",
 			page.Title, page.ID, attempted, page.Version.Number+1,
 		)

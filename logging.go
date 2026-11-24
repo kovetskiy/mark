@@ -11,8 +11,9 @@ import (
 // FATAL, in any case, as --log-level takes them.
 //
 // It sets zerolog's global level, which is TRACE until one is set, so it
-// applies to the whole process. confluence.NewAPI decides from the level when
-// it is built whether to dump every request, so set it before that.
+// applies to the whole process, a logger a run's context carries included.
+// Whether a request is dumped is decided as it is sent, from the logger in its
+// context, so the level reaches an API built before it was set.
 func SetLogLevel(level string) error {
 	var l zerolog.Level
 	switch strings.ToUpper(level) {

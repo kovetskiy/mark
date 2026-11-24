@@ -15,7 +15,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/rs/zerolog/log"
+	"github.com/kovetskiy/mark/v17/internal/logctx"
 )
 
 // client sends requests to one root of a Confluence: /rest/api, /api/v2, or
@@ -44,9 +44,10 @@ type client struct {
 	username string
 	password string
 
-	// trace is the prefix of this client's request and response dumps at
-	// TRACE, or nil when they are not written.
-	trace *tracer
+	// trace is the prefix of this client's request and response dumps, which
+	// are written when the logger in a request's context logs at TRACE; ""
+	// writes none.
+	trace string
 }
 
 // newClient roots a client at base.
@@ -58,11 +59,19 @@ func newClient(base string, httpClient *http.Client, username, password string, 
 		c.base = &url.URL{}
 	}
 
-	if trace != "" {
-		c.trace = &tracer{trace}
-	}
+	c.trace = trace
 
 	return c
+}
+
+// tracer is what dumps a request and its answer: one when ctx's logger logs at
+// TRACE, decided once so that a request and its answer are dumped together.
+func (c *client) tracer(ctx context.Context) *tracer {
+	if c.trace == "" || !logctx.Tracing(ctx) {
+		return nil
+	}
+
+	return &tracer{prefix: c.trace, log: logctx.From(ctx)}
 }
 
 // newAPIClient roots a client at apiPath under the configured base URL.
@@ -228,7 +237,7 @@ func (c *client) do(
 			target := req.URL.Redacted()
 			var release context.CancelFunc
 			ctx, release = withGrace(ctx, func(grace time.Duration) {
-				log.Warn().Msgf(
+				logctx.From(ctx).Warn().Msgf(
 					"waiting up to %s for Confluence to answer %s %s, which was already sent",
 					grace, method, target,
 				)
@@ -246,8 +255,9 @@ func (c *client) do(
 
 	maps.Copy(req.Header, header)
 
-	if c.trace != nil {
-		c.traceRequest(req, payload)
+	trace := c.tracer(ctx)
+	if trace != nil {
+		trace.request(req, payload)
 	}
 
 	resp, err := c.http.Do(req)
@@ -275,7 +285,7 @@ func (c *client) do(
 	if !successful(resp.StatusCode) {
 		limit = maxErrorBody + 1
 	}
-	if c.trace != nil {
+	if trace != nil {
 		limit = traceDumpLimit
 	}
 	received := &capture{reader: resp.Body, limit: limit}
@@ -284,8 +294,8 @@ func (c *client) do(
 	answer.Body = received.prefix
 	answer.Empty = received.total == 0
 
-	if c.trace != nil {
-		c.traceResponse(resp, received)
+	if trace != nil {
+		trace.response(resp, received)
 	}
 
 	// A redirect that turned a write into a read ended on an answer to the
@@ -443,27 +453,27 @@ func (c *capture) readPrefix(n int) error {
 	return err
 }
 
-// traceRequest dumps the headers of req and the start of its payload: no
+// request dumps the headers of req and the start of its payload: no
 // more of it than a trace shows is copied into the dump.
-func (c *client) traceRequest(req *http.Request, payload []byte) {
+func (t *tracer) request(req *http.Request, payload []byte) {
 	head, err := httputil.DumpRequest(req, false)
 	if err != nil {
-		c.trace.Printf("dump request failed: %s", err)
+		t.Printf("dump request failed: %s", err)
 
 		return
 	}
 
 	shown := payload[:min(len(payload), traceDumpLimit)]
-	c.trace.write(boundTraceDumpMore(append(head, shown...), int64(len(payload)-len(shown))))
+	t.write(boundTraceDumpMore(append(head, shown...), int64(len(payload)-len(shown))))
 }
 
-// traceResponse dumps the headers of resp and the start of its body, which
+// response dumps the headers of resp and the start of its body, which
 // is all of the body there is to dump: a success has been decoded as it
 // arrived, rather than held so that it could be traced.
-func (c *client) traceResponse(resp *http.Response, body *capture) {
+func (t *tracer) response(resp *http.Response, body *capture) {
 	head, err := httputil.DumpResponse(resp, false)
 	if err != nil {
-		c.trace.Printf("dump response failed: %s", err)
+		t.Printf("dump response failed: %s", err)
 
 		return
 	}
@@ -476,9 +486,9 @@ func (c *client) traceResponse(resp *http.Response, body *capture) {
 	noBody := resp.StatusCode == http.StatusNoContent || resp.ContentLength == 0
 
 	if body.done || noBody {
-		c.trace.write(boundTraceDumpMore(dump, rest))
+		t.write(boundTraceDumpMore(dump, rest))
 	} else {
-		c.trace.write(boundTraceDump(dump) + " (the rest of the body was not read)")
+		t.write(boundTraceDump(dump) + " (the rest of the body was not read)")
 	}
 }
 
