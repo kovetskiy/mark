@@ -10,11 +10,10 @@ import (
 // SetLogLevel sets the level mark logs at: TRACE, DEBUG, INFO, WARNING, ERROR or
 // FATAL, in any case, as --log-level takes them.
 //
-// mark logs through zerolog's global logger, and zerolog logs everything until
-// a level is set, every request to Confluence and every compiled page among it.
-// The command line sets one from --log-level; a program publishing through
-// this package sets one with this, or with zerolog.SetGlobalLevel. The level is
-// the process's, not a run's.
+// mark logs through zerolog's global logger, whose level is debug until one is
+// set; the command line sets one from --log-level, which defaults to info. This
+// sets zerolog's global level, so it applies to the whole process, the
+// program's own zerolog logging included.
 func SetLogLevel(level string) error {
 	levels := map[string]zerolog.Level{
 		"TRACE":   zerolog.TraceLevel,
