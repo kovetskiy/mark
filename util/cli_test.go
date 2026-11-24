@@ -100,6 +100,8 @@ func TestContentAppearanceFlagValidation(t *testing.T) {
 	})
 }
 
+// Test_setLogLevel covers only that --log-level reaches mark.SetLogLevel; the
+// names it takes are logging_test.go's.
 func Test_setLogLevel(t *testing.T) {
 	type args struct {
 		lvl string
@@ -109,14 +111,8 @@ func Test_setLogLevel(t *testing.T) {
 		want        zerolog.Level
 		expectedErr string
 	}{
-		"invalid": {args: args{lvl: "INVALID"}, want: zerolog.InfoLevel, expectedErr: "unknown log level: INVALID"},
-		"empty":   {args: args{lvl: ""}, want: zerolog.InfoLevel, expectedErr: "unknown log level: "},
-		"info":    {args: args{lvl: "INFO"}, want: zerolog.InfoLevel},
+		"invalid": {args: args{lvl: "INVALID"}, expectedErr: "unknown log level: INVALID"},
 		"debug":   {args: args{lvl: "DEBUG"}, want: zerolog.DebugLevel},
-		"trace":   {args: args{lvl: "TRACE"}, want: zerolog.TraceLevel},
-		"warning": {args: args{lvl: "WARNING"}, want: zerolog.WarnLevel},
-		"error":   {args: args{lvl: "ERROR"}, want: zerolog.ErrorLevel},
-		"fatal":   {args: args{lvl: "FATAL"}, want: zerolog.FatalLevel},
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
