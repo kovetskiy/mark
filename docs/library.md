@@ -363,9 +363,11 @@ makes a new API and a new `Publisher` for each batch.
 ## Logging
 
 mark logs through zerolog's global logger, `log.Logger` from
-`github.com/rs/zerolog/log`. zerolog's global level is `debug` until one is set,
-so a program gets mark's debug messages, where the command line's `--log-level`
-defaults to `info`. `mark.SetLogLevel` takes the names `--log-level` does:
+`github.com/rs/zerolog/log`. zerolog's global level is `trace` until one is set,
+so a program that sets none gets all of mark's log, every request to Confluence
+and every compiled page included, where the command line's `--log-level`
+defaults to `info`. `mark.SetLogLevel` takes the names `--log-level` does, and
+is best called before anything else of mark's:
 
 ```go
 if err := mark.SetLogLevel("info"); err != nil {
