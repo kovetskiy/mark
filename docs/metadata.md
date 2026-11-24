@@ -47,6 +47,7 @@ restrictions:
     groups:
       - <group name>
 image-align: <left|center|right>
+content-status: <status name or ~>
 order: <whole number>
 ---
 
@@ -99,13 +100,14 @@ The same metadata can be written as HTML comments at the top of the document:
 <!-- Restriction: <read|update>.<user|group>=<name> -->
 <!-- Synchronized: <true|false> -->
 <!-- Image-Align: <left|center|right> -->
+<!-- Content-Status: <status name or ~> -->
 
 <page contents>
 ```
 
 When both formats are present, HTML headers override matching scalar front
 matter values. Repeatable parents, folders, attachments, and labels are
-appended to the values from front matter.
+appended to the values from front matter. Declare the content status only once.
 
 Headers are read from the run of comments the document opens with, and only
 from there. Blank lines between them are fine, so headers may be grouped —
@@ -279,6 +281,28 @@ You can set a page emoji icon by specifying the icon in the headers.
 You can set the alignment for all images in the page. Common values are `left`, `center`, and `right`. Can also be set globally via the `--image-align` CLI option (per-page header takes precedence).
 
 **Note**: Images with width >= 760px automatically use `center` instead of the configured alignment, as Confluence requires this for wide images.
+
+## Content status
+
+For a Confluence Cloud page, give the display name of a status available on that page.
+Mark matches the name without regard to case and requires a unique match.
+The available names can vary by page and by authenticated account.
+
+```markdown
+<!-- Content-Status: Ready for review -->
+```
+
+Write `content-status: Ready for review` in YAML front matter.
+Omit the field to preserve the assigned status.
+Use `<!-- Content-Status: ~ -->` or `content-status: ~` to clear it.
+YAML also accepts an explicit `null`.
+An empty field is an error.
+
+Status declarations require access to the Cloud content status API.
+If a token cannot read that API, publishing with the field omitted leaves status handling to Confluence.
+
+Setting or clearing the status creates a page version when the assignment changes.
+`--dry-run --changes-only` reports when the status would change.
 
 ## Restrictions
 

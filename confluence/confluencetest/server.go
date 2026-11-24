@@ -42,6 +42,9 @@ type Page struct {
 	Body   string
 	Labels []string
 
+	// ContentStatus is the assigned Cloud page status name, or empty.
+	ContentStatus string
+
 	// Trashed and Archived record what became of a page, so a test can tell
 	// "moved to the trash" from "gone" and from "archived".
 	Trashed  bool
@@ -1076,6 +1079,8 @@ func (s *Server) handleV1(w http.ResponseWriter, r *http.Request, path string) {
 			s.moveContent(w, r, id, position, target)
 		case sub == "label":
 			s.label(w, r, id)
+		case sub == "state" || sub == "state/available":
+			s.contentStatus(w, r, id, sub == "state/available")
 		case sub == "copy":
 			s.copyContent(w, r, id)
 		case sub == "property":
@@ -1976,6 +1981,7 @@ func (s *Server) contentByID(w http.ResponseWriter, r *http.Request, id string) 
 		p.Message = payload.Version.Message
 		s.wroteTo(p.ID)
 		p.Body = payload.Body.Storage.Value
+		p.ContentStatus = ""
 		if payload.Title != "" {
 			p.Title = payload.Title
 		}
@@ -3106,6 +3112,7 @@ func (s *Server) contentV2ByID(w http.ResponseWriter, r *http.Request, id, pageT
 		p.Message = payload.Version.Message
 		s.wroteTo(p.ID)
 		p.Body = payload.Body.Value
+		p.ContentStatus = ""
 		if payload.Title != "" {
 			p.Title = payload.Title
 		}

@@ -2125,6 +2125,11 @@ func (r *publishRun) processFile(ctx context.Context, in input) (*confluence.Pag
 		return nil, nil, err
 	}
 
+	if !r.config.Mode.CompileOnly && doc.meta != nil && doc.meta.ContentStatus != nil {
+		if err := r.validateContentStatusPlatform(ctx, confluence.ContentType(doc.meta.Type)); err != nil {
+			return nil, nil, err
+		}
+	}
 	if err := r.claimTitle(ctx, doc); err != nil {
 		return nil, nil, err
 	}
@@ -2171,6 +2176,11 @@ func (r *publishRun) processFile(ctx context.Context, in input) (*confluence.Pag
 		return dest.page, nil, nil
 	}
 
+	contentStatus, err := r.contentStatusPlan(ctx, doc, dest.page, false)
+	if err != nil {
+		return nil, nil, err
+	}
+
 	restrictionPlan, err := r.tightenRestrictions(ctx, doc, dest)
 	if err != nil {
 		return nil, nil, err
@@ -2181,7 +2191,23 @@ func (r *publishRun) processFile(ctx context.Context, in input) (*confluence.Pag
 		return nil, nil, err
 	}
 
-	versionMessage, shouldUpdatePage := r.changeCheck(ctx, doc, dest, html)
+	versionMessage, shouldUpdatePage, err := r.changeCheck(ctx, doc, dest, html)
+	if err != nil {
+		return nil, nil, err
+	}
+	statusHash := ""
+	if r.config.Update.ChangesOnly {
+		statusHash = fingerprint.FromVersionMessage(versionMessage)
+	}
+
+	properties := len(r.globalProperties) != 0 || (doc.meta != nil && len(doc.meta.Properties) != 0)
+	settingsMayChangeStatus := shouldUpdatePage || properties
+	if !contentStatus.declared && !dest.created && settingsMayChangeStatus {
+		contentStatus, err = r.contentStatusPlan(ctx, doc, dest.page, true)
+		if err != nil {
+			return nil, nil, err
+		}
+	}
 
 	// Only fetch the old body and inline comments when we know the page will
 	// actually be updated. This avoids unnecessary API round-trips for no-op
@@ -2211,6 +2237,7 @@ func (r *publishRun) processFile(ctx context.Context, in input) (*confluence.Pag
 				if recordErr := r.recordPublished(ctx, doc, dest.page); recordErr != nil {
 					err = errors.Join(err, recordErr)
 				}
+				err = errors.Join(err, r.restoreContentStatus(ctx, doc, dest.page, contentStatus))
 			}
 
 			return nil, nil, err
@@ -2226,20 +2253,29 @@ func (r *publishRun) processFile(ctx context.Context, in input) (*confluence.Pag
 
 	if restrictionPlan != nil {
 		if err := r.api.ApplyFinal(ctx, restrictionPlan); err != nil {
-			return nil, nil, fmt.Errorf("unable to set page restrictions: %w", err)
+			return nil, nil, errors.Join(fmt.Errorf("unable to set page restrictions: %w", err),
+				r.restoreContentStatus(ctx, doc, dest.page, contentStatus))
 		}
 	}
 
-	placement, err := r.applySettings(ctx, doc, dest)
-	if err != nil {
-		return nil, nil, err
+	placement, settingsErr := r.applySettings(ctx, doc, dest)
+	if settingsErr != nil {
+		return nil, nil, errors.Join(settingsErr, r.restoreContentStatus(ctx, doc, dest.page, contentStatus))
+	}
+
+	statusChanged, statusErr := r.syncContentStatus(ctx, dest.page, contentStatus, settingsMayChangeStatus, statusHash)
+	if statusChanged {
+		statusErr = errors.Join(statusErr, r.recordPublished(ctx, doc, dest.page))
+	}
+	if statusErr != nil {
+		return nil, nil, statusErr
 	}
 
 	// Recorded last, once everything asked of the page has been done, so that
 	// a page whose update, labels or properties failed is not reported as
 	// published.
 	status := report.StatusPublished
-	if !shouldUpdatePage && (restrictionPlan == nil || !restrictionPlan.Changes()) {
+	if !shouldUpdatePage && !statusChanged && (restrictionPlan == nil || !restrictionPlan.Changes()) {
 		status = report.StatusUnchanged
 	}
 	target := dest.page
@@ -2953,7 +2989,11 @@ func (r *publishRun) previewBody(
 	}
 	others = append(others, settings...)
 
-	status, reason, err = previewChange(ctx, html, previewed, relinked, others, file, r.config, meta, r.std)
+	previousHash, err := r.previousContentHash(ctx, previewed)
+	if err != nil {
+		return "", "", "", err
+	}
+	status, reason, err = previewChange(ctx, html, previewed, previousHash, relinked, others, file, r.config, meta, r.std)
 	if err != nil {
 		return "", "", "", err
 	}

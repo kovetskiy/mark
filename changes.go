@@ -28,6 +28,7 @@ func previewChange(
 	ctx context.Context,
 	body string,
 	existing *confluence.PageInfo,
+	previousHash string,
 	relinked bool,
 	others []string,
 	file string,
@@ -64,7 +65,7 @@ func previewChange(
 		logctx.From(ctx).Info().Msgf("%s: page %q would be retitled to %q", file, existing.Title, title)
 	case relinked:
 		logctx.From(ctx).Info().Msgf("%s: page %q would be updated, with an attachment it does not have yet", file, existing.Title)
-	case fingerprint.FromVersionMessage(existing.Version.Message) == hash:
+	case previousHash == hash:
 		if len(others) == 0 {
 			logctx.From(ctx).Info().Msgf("%s: page %q is already up to date", file, existing.Title)
 
@@ -256,9 +257,9 @@ func (r *publishRun) recordedPageOf(ctx context.Context, doc *document) (*conflu
 
 // changeCheck returns the version message to publish html under and, under
 // --changes-only, whether the page needs writing at all.
-func (r *publishRun) changeCheck(ctx context.Context, doc *document, dest *destination, html string) (string, bool) {
+func (r *publishRun) changeCheck(ctx context.Context, doc *document, dest *destination, html string) (string, bool, error) {
 	if !r.config.Update.ChangesOnly {
-		return r.config.Update.VersionMessage, true
+		return r.config.Update.VersionMessage, true, nil
 	}
 
 	target := dest.page
@@ -272,7 +273,11 @@ func (r *publishRun) changeCheck(ctx context.Context, doc *document, dest *desti
 	logctx.From(ctx).Debug().Msgf("content hash: %s", contentHash)
 
 	shouldUpdatePage := true
-	if previous := fingerprint.FromVersionMessage(target.Version.Message); previous != "" {
+	previous, err := r.previousContentHash(ctx, target)
+	if err != nil {
+		return "", false, err
+	}
+	if previous != "" {
 		logctx.From(ctx).Debug().Msgf("previous content hash: %s", previous)
 		if previous == contentHash {
 			if dest.titleChanged {
@@ -284,7 +289,7 @@ func (r *publishRun) changeCheck(ctx context.Context, doc *document, dest *desti
 		}
 	}
 
-	return fingerprint.VersionMessage(r.config.Update.VersionMessage, contentHash), shouldUpdatePage
+	return fingerprint.VersionMessage(r.config.Update.VersionMessage, contentHash), shouldUpdatePage, nil
 }
 
 // previewSettingChanges is what a real run would change on a previewed page
@@ -307,6 +312,14 @@ func (r *publishRun) previewSettingChanges(ctx context.Context, doc *document, f
 	}
 	if len(add) > 0 || len(del) > 0 {
 		others = append(others, "its labels would change")
+	}
+
+	status, err := r.contentStatusPlan(ctx, doc, previewed, false)
+	if err != nil {
+		return nil, err
+	}
+	if status.differs() {
+		others = append(others, "its content status would change")
 	}
 
 	if doc.restrictions != nil {
