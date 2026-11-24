@@ -362,10 +362,9 @@ makes a new API and a new `Publisher` for each batch.
 
 ## Logging
 
-mark logs through zerolog's global logger, and zerolog logs everything until a
-level is set: every request to Confluence, and every compiled page among it.
-The command line sets one from `--log-level`; a program sets one with
-`mark.SetLogLevel`, which takes the same names, before it runs:
+mark logs through zerolog's global logger. zerolog's own level is `debug`, so a
+program gets mark's debug messages, where the command line's `--log-level`
+defaults to `info`. `mark.SetLogLevel` takes the names `--log-level` does:
 
 ```go
 if err := mark.SetLogLevel("info"); err != nil {
@@ -373,7 +372,9 @@ if err := mark.SetLogLevel("info"); err != nil {
 }
 ```
 
-The level is the process's, not a run's.
+The level is zerolog's global one, so it is the whole process's: it applies to
+every run, and to the program's own zerolog logging as well. To send mark's
+output somewhere else, replace `log.Logger` from `github.com/rs/zerolog/log`.
 
 ## Errors
 
