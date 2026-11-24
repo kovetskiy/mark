@@ -362,8 +362,9 @@ makes a new API and a new `Publisher` for each batch.
 
 ## Logging
 
-mark logs through zerolog's global logger. zerolog's own level is `debug`, so a
-program gets mark's debug messages, where the command line's `--log-level`
+mark logs through zerolog's global logger, `log.Logger` from
+`github.com/rs/zerolog/log`. zerolog's global level is `debug` until one is set,
+so a program gets mark's debug messages, where the command line's `--log-level`
 defaults to `info`. `mark.SetLogLevel` takes the names `--log-level` does:
 
 ```go
@@ -372,9 +373,16 @@ if err := mark.SetLogLevel("info"); err != nil {
 }
 ```
 
-The level is zerolog's global one, so it is the whole process's: it applies to
-every run, and to the program's own zerolog logging as well. To send mark's
-output somewhere else, replace `log.Logger` from `github.com/rs/zerolog/log`.
+The level is zerolog's global one, so it is the whole process's, the program's
+own zerolog logging included; `zerolog.SetGlobalLevel(zerolog.Disabled)` turns
+it off. `trace` adds a dump of every request to Confluence, which
+`confluence.NewAPI` decides on when it is built: set the level before building
+the API. To send mark's log somewhere else, replace `log.Logger`; a replacement
+with a level of its own logs nothing below that level, whatever is set here.
+What a run reports, such as page URLs, goes to `Output` instead.
+
+d2 diagrams log through d2's own logger, and headless Chrome's errors through
+the standard library's `log`, so neither follows this level.
 
 ## Errors
 
