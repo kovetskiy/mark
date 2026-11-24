@@ -362,12 +362,21 @@ makes a new API and a new `Publisher` for each batch.
 
 ## Logging
 
-mark logs through zerolog's global logger, `log.Logger` from
-`github.com/rs/zerolog/log`. zerolog's global level is `trace` until one is set,
-so a program that sets none gets all of mark's log, every request to Confluence
-and every compiled page included, where the command line's `--log-level`
-defaults to `info`. `mark.SetLogLevel` takes the names `--log-level` does, and
-is best called before anything else of mark's:
+mark logs to the zerolog logger in the context it is given, so a run, a
+`Publisher` call, an export or a `confluence.API` request logs wherever that
+logger writes, at its level:
+
+```go
+logger := zerolog.New(os.Stderr).Level(zerolog.InfoLevel)
+err := mark.Run(logger.WithContext(ctx), config)
+```
+
+With no logger in the context, mark logs to zerolog's global logger, `log.Logger`
+from `github.com/rs/zerolog/log`. zerolog's global level is `trace` until one is
+set, so a program that sets none gets all of mark's log, every request to
+Confluence and every compiled page included, where the command line's
+`--log-level` defaults to `info`. `mark.SetLogLevel` takes the names
+`--log-level` does:
 
 ```go
 if err := mark.SetLogLevel("info"); err != nil {
@@ -376,15 +385,20 @@ if err := mark.SetLogLevel("info"); err != nil {
 ```
 
 The level is zerolog's global one, so it is the whole process's, the program's
-own zerolog logging included; `zerolog.SetGlobalLevel(zerolog.Disabled)` turns
-it off. `trace` adds a dump of every request to Confluence, which
-`confluence.NewAPI` decides on when it is built: set the level before building
-the API. To send mark's log somewhere else, replace `log.Logger`; a replacement
-with a level of its own logs nothing below that level, whatever is set here.
-What a run reports, such as page URLs, goes to `Output` instead.
+own zerolog logging included, and it applies to a logger in the context too:
+that logger logs nothing below its own level or the global one.
+`zerolog.SetGlobalLevel(zerolog.Disabled)` turns it all off. `trace` adds a
+dump of every request to Confluence, decided as each request is sent from the
+logger in its context, so the level reaches an API built before it was set.
+`WithContext` does not keep a disabled logger such as `zerolog.Nop()`, so a run
+is silenced with `zerolog.New(io.Discard)` instead. What a run reports, such as
+page URLs, goes to `Output`, not to the log.
 
-d2 diagrams log through d2's own logger, and headless Chrome's errors through
-the standard library's `log`, so neither follows this level.
+A few messages still go to the global logger: those of exported functions that
+take no context, such as `includes.ProcessIncludesIn` and `macro.ExtractMacrosIn`,
+which a run's include and macro expansion goes through. d2 diagrams log through
+d2's own logger and headless Chrome's errors through the standard library's
+`log`, so neither follows zerolog at all.
 
 ## Errors
 
