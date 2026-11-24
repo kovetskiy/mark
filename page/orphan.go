@@ -7,8 +7,8 @@ import (
 	"strings"
 
 	"github.com/kovetskiy/mark/v17/confluence"
+	"github.com/kovetskiy/mark/v17/internal/logctx"
 	"github.com/kovetskiy/mark/v17/report"
-	"github.com/rs/zerolog/log"
 )
 
 // Orphan is a tracked page whose source file was not seen in the run.
@@ -195,7 +195,7 @@ func HandleOrphansKeeping(
 	dryRun bool,
 ) (handled []string, kept map[string]string, err error) {
 	keep := func(orphan Orphan, reason string) {
-		log.Warn().Msgf("page %q is left alone: %s", orphan.Title, reason)
+		logctx.From(ctx).Warn().Msgf("page %q is left alone: %s", orphan.Title, reason)
 
 		if kept == nil {
 			kept = map[string]string{}
@@ -236,7 +236,7 @@ func HandleOrphansKeeping(
 			// Deleted by hand already: what the action wanted is done, and
 			// keeping it tracked would fail every later run the same way.
 			if gone {
-				log.Info().Msgf("page %q (%s) is already gone from Confluence", orphan.Title, orphan.PageID)
+				logctx.From(ctx).Info().Msgf("page %q (%s) is already gone from Confluence", orphan.Title, orphan.PageID)
 				handled = append(handled, orphan.Path)
 
 				continue
@@ -276,13 +276,13 @@ func HandleOrphansKeeping(
 		}
 
 		if dryRun {
-			log.Info().Msgf("page %q would be %sd", orphan.Title, action)
+			logctx.From(ctx).Info().Msgf("page %q would be %sd", orphan.Title, action)
 			handled = append(handled, orphan.Path)
 
 			continue
 		}
 
-		log.Info().Msgf("%s page %q (%s)", action, orphan.Title, orphan.PageID)
+		logctx.From(ctx).Info().Msgf("%s page %q (%s)", action, orphan.Title, orphan.PageID)
 
 		if action == report.OnOrphanArchive {
 			err = api.ArchivePage(ctx, orphan.PageID)

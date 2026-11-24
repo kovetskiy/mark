@@ -1,14 +1,16 @@
 package mark
 
 import (
+	"context"
 	"strings"
 
 	"github.com/kovetskiy/mark/v17/fingerprint"
+	"github.com/kovetskiy/mark/v17/internal/logctx"
 	"github.com/kovetskiy/mark/v17/internal/similar"
 	"github.com/kovetskiy/mark/v17/metadata"
 	"github.com/kovetskiy/mark/v17/page"
 	"github.com/kovetskiy/mark/v17/report"
-	"github.com/rs/zerolog/log"
+	"github.com/rs/zerolog"
 )
 
 // runTitles records which of the run's own documents declare which title, so a
@@ -20,6 +22,8 @@ import (
 // metadata parsed once a run however often it is asked about. Its own turn
 // reads it again: that read is the one reporting its warnings.
 type runTitles struct {
+	// log is the run's logger; nil is the global one.
+	log       *zerolog.Logger
 	config    PublishConfig
 	inputs    []input
 	hierarchy *page.Hierarchy
@@ -112,7 +116,11 @@ func (r *runTitles) index() {
 		r.documents[key] = append(r.documents[key], in)
 	}
 
-	log.Debug().Msgf("indexed %d title(s) declared by the run's documents", len(r.documents))
+	l := r.log
+	if l == nil {
+		l = logctx.From(context.Background())
+	}
+	l.Debug().Msgf("indexed %d title(s) declared by the run's documents", len(r.documents))
 }
 
 // declaredBy returns the one document of the run that publishes content of

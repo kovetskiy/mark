@@ -8,7 +8,7 @@ import (
 
 	"github.com/kovetskiy/mark/v17/attachment"
 	"github.com/kovetskiy/mark/v17/confluence"
-	"github.com/rs/zerolog/log"
+	"github.com/kovetskiy/mark/v17/internal/logctx"
 )
 
 type Lib struct {
@@ -55,7 +55,7 @@ func templates(ctx context.Context, users UserLookup) (*template.Template, error
 				}
 				user, err := users.LookupUser(ctx, name)
 				if err != nil {
-					log.Error().Err(err).Str("user", name).Msg("unable to look up user")
+					logctx.From(ctx).Error().Err(err).Str("user", name).Msg("unable to look up user")
 					return nil
 				}
 

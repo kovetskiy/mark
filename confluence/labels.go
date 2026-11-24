@@ -8,7 +8,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/rs/zerolog/log"
+	"github.com/kovetskiy/mark/v17/internal/logctx"
 )
 
 // LabelChanges reads a page's labels and says which UpdateLabels would add and
@@ -29,20 +29,20 @@ func (api *API) LabelChanges(
 		return nil, nil, err
 	}
 
-	log.Debug().Msg("Page Labels:")
-	log.Debug().Interface("labels", labelInfo.Labels).Send()
-	log.Debug().Msg("Meta Labels:")
-	log.Debug().Interface("labels", metaLabels).Send()
+	logctx.From(ctx).Debug().Msg("Page Labels:")
+	logctx.From(ctx).Debug().Interface("labels", labelInfo.Labels).Send()
+	logctx.From(ctx).Debug().Msg("Meta Labels:")
+	logctx.From(ctx).Debug().Interface("labels", metaLabels).Send()
 
 	if !appendOnly {
 		del = determineLabelsToRemove(labelInfo, metaLabels)
 	}
-	log.Debug().Msg("Del Labels:")
-	log.Debug().Interface("labels", del).Send()
+	logctx.From(ctx).Debug().Msg("Del Labels:")
+	logctx.From(ctx).Debug().Interface("labels", del).Send()
 
 	add = determineLabelsToAdd(metaLabels, labelInfo)
-	log.Debug().Msg("Add Labels:")
-	log.Debug().Interface("labels", add).Send()
+	logctx.From(ctx).Debug().Msg("Add Labels:")
+	logctx.From(ctx).Debug().Interface("labels", add).Send()
 
 	return add, del, nil
 }

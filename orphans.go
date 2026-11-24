@@ -12,10 +12,10 @@ import (
 
 	"github.com/kovetskiy/mark/v17/confluence"
 	"github.com/kovetskiy/mark/v17/internal/globpattern"
+	"github.com/kovetskiy/mark/v17/internal/logctx"
 	"github.com/kovetskiy/mark/v17/manifest"
 	"github.com/kovetskiy/mark/v17/page"
 	"github.com/kovetskiy/mark/v17/report"
-	"github.com/rs/zerolog/log"
 )
 
 // handleOrphans deals with the pages whose source files were not seen.
@@ -58,7 +58,7 @@ func handleOrphans(
 			// Some files did not process, which is indistinguishable from those
 			// files being gone. Saying anything now would be actively
 			// misleading, and acting on it worse.
-			log.Debug().Msgf(
+			logctx.From(ctx).Debug().Msgf(
 				"space %q has %d unpublished tracked pages, not reported because this run had errors",
 				space, len(orphans),
 			)
@@ -72,7 +72,7 @@ func handleOrphans(
 				return err
 			}
 			if len(inScope) > 0 {
-				leaveOtherSpace(config, space, runSpace, inScope, results)
+				leaveOtherSpace(ctx, config, space, runSpace, inScope, results)
 			}
 
 			continue
@@ -155,11 +155,11 @@ func handleOrphans(
 			byPath[candidate.Path] = candidate
 		}
 
-		log.Info().Msgf(
+		logctx.From(ctx).Info().Msgf(
 			"space %q: %d tracked page(s) had no matching source file in this run: %s",
 			space, len(paths), strings.Join(paths, ", "),
 		)
-		warnGoneKeys(config, space, paths, globOf)
+		warnGoneKeys(ctx, config, space, paths, globOf)
 
 		handled := paths
 		if action != report.OnOrphanReport {
@@ -172,7 +172,7 @@ func handleOrphans(
 			// because the cost of it being needed once is a space emptied by a
 			// bad checkout.
 			if tracker.Published(space) == 0 {
-				log.Warn().Msgf(
+				logctx.From(ctx).Warn().Msgf(
 					"space %q: nothing was published in this run, so its %d orphaned page(s) are left alone",
 					space, len(candidates),
 				)
@@ -214,7 +214,7 @@ func handleOrphans(
 					} else {
 						reason = fmt.Sprintf("nothing under %s was published in space %q in this run", glob, space)
 					}
-					log.Warn().Msgf("space %q: %s, so %s's page is left alone", space, reason, candidate.Path)
+					logctx.From(ctx).Warn().Msgf("space %q: %s, so %s's page is left alone", space, reason, candidate.Path)
 
 					if !config.Mode.readOnly() {
 						reportKept(results, candidate, reason)
@@ -236,7 +236,7 @@ func handleOrphans(
 				}
 
 				if alone {
-					log.Warn().Msgf("page %q (%s) is left alone: %s", candidate.Title, candidate.PageID, reason)
+					logctx.From(ctx).Warn().Msgf("page %q (%s) is left alone: %s", candidate.Title, candidate.PageID, reason)
 
 					if !config.Mode.readOnly() {
 						reportKept(results, candidate, reason)
@@ -298,7 +298,7 @@ func handleOrphans(
 // whatever --on-orphan was to do with them. Such a page is that of a file that
 // is gone or of a document whose Space header now names another space, so the
 // wording claims neither.
-func leaveOtherSpace(config Config, space, runSpace string, orphans []manifest.Orphan, results *report.Report) {
+func leaveOtherSpace(ctx context.Context, config Config, space, runSpace string, orphans []manifest.Orphan, results *report.Report) {
 	reason := fmt.Sprintf(
 		"space %q is not the run's space, %q; it is left for a run whose --space is %s, or to be removed by hand",
 		space, runSpace, space,
@@ -314,7 +314,7 @@ func leaveOtherSpace(config Config, space, runSpace string, orphans []manifest.O
 		}
 	}
 
-	log.Warn().Msgf(
+	logctx.From(ctx).Warn().Msgf(
 		"space %q: %d tracked page(s) were not published by this run and are left alone, still tracked, "+
 			"for a run whose --space is %s or to be removed by hand, since space %q is not the run's space, %q: %s",
 		space, len(paths), space, space, runSpace, strings.Join(paths, ", "),
@@ -330,7 +330,7 @@ func otherSpaceInScope(
 ) ([]manifest.Orphan, error) {
 	scopeID, err := page.ResolveScope(ctx, api, space, under)
 	if errors.Is(err, page.ErrScopeNotFound) {
-		log.Debug().Msgf("space %q has no page or folder %q, so none of its tracked pages is in scope", space, under)
+		logctx.From(ctx).Debug().Msgf("space %q has no page or folder %q, so none of its tracked pages is in scope", space, under)
 
 		return nil, nil
 	}
@@ -364,7 +364,7 @@ func listedScope(config Config, glob string) bool {
 // warnGoneKeys says, per document scope of a partial run, how many of its
 // keys the run takes as gone: a key left out of DocumentKeys by mistake reads
 // exactly as one removed, and --on-orphan acts on it alike.
-func warnGoneKeys(config Config, space string, paths []string, globOf map[string]string) {
+func warnGoneKeys(ctx context.Context, config Config, space string, paths []string, globOf map[string]string) {
 	gone := map[string][]string{}
 	for _, path := range paths {
 		if glob := globOf[path]; listedScope(config, glob) {
@@ -373,7 +373,7 @@ func warnGoneKeys(config Config, space string, paths []string, globOf map[string
 	}
 
 	for _, glob := range slices.Sorted(maps.Keys(gone)) {
-		log.Warn().Msgf(
+		logctx.From(ctx).Warn().Msgf(
 			"space %q: %d key(s) of %s are neither published nor named in DocumentKeys, so they are taken as gone: %s",
 			space, len(gone[glob]), glob, strings.Join(gone[glob], ", "),
 		)

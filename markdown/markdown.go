@@ -13,6 +13,7 @@ import (
 
 	"github.com/kovetskiy/mark/v17/attachment"
 	"github.com/kovetskiy/mark/v17/includes"
+	"github.com/kovetskiy/mark/v17/internal/logctx"
 	"github.com/kovetskiy/mark/v17/internal/syntax"
 	"github.com/kovetskiy/mark/v17/macro"
 	cparser "github.com/kovetskiy/mark/v17/parser"
@@ -20,7 +21,6 @@ import (
 	"github.com/kovetskiy/mark/v17/report"
 	"github.com/kovetskiy/mark/v17/stdlib"
 	ctransformer "github.com/kovetskiy/mark/v17/transformer"
-	"github.com/rs/zerolog/log"
 	"github.com/yuin/goldmark/v2/ast"
 	"github.com/yuin/goldmark/v2/extension"
 	"github.com/yuin/goldmark/v2/parser"
@@ -50,8 +50,8 @@ type markdownExtension interface {
 // compileMarkdownWithExtension builds the goldmark converter around ext and
 // renders markdown with it, returning the page and the tree it was rendered
 // from.
-func compileMarkdownWithExtension(markdown []byte, ext markdownExtension, logMessage string) (string, ast.Node, error) {
-	log.Trace().Msgf(logMessage, string(markdown))
+func compileMarkdownWithExtension(ctx context.Context, markdown []byte, ext markdownExtension, logMessage string) (string, ast.Node, error) {
+	logctx.From(ctx).Trace().Msgf(logMessage, string(markdown))
 
 	p := parser.New(append(
 		[]parser.Option{
@@ -100,7 +100,7 @@ func compileMarkdownWithExtension(markdown []byte, ext markdownExtension, logMes
 	}
 
 	html := buf.Bytes()
-	log.Trace().Msgf("rendered markdown to html:\n%s", string(html))
+	logctx.From(ctx).Trace().Msgf("rendered markdown to html:\n%s", string(html))
 
 	return string(html), doc, nil
 }
@@ -426,7 +426,7 @@ func CompileMarkdown(ctx context.Context, markdown []byte, stdlib *stdlib.Lib, p
 	}
 
 	ghAlertsExtension := newConfluenceExtension(ctx, stdlib, path, opts, tmpl)
-	htmlOutput, doc, err := compileMarkdownWithExtension(markdown, ghAlertsExtension, "rendering markdown with GitHub Alerts support:\n%s")
+	htmlOutput, doc, err := compileMarkdownWithExtension(ctx, markdown, ghAlertsExtension, "rendering markdown with GitHub Alerts support:\n%s")
 	// A transformer cannot return an error from Transform, so each one that can
 	// fail keeps its failure for collection here.
 	if err == nil && ghAlertsExtension.Pipeline != nil && ghAlertsExtension.Pipeline.GetError() != nil {

@@ -16,8 +16,8 @@ import (
 
 	"github.com/kovetskiy/mark/v17/attachment"
 	"github.com/kovetskiy/mark/v17/confluence"
+	"github.com/kovetskiy/mark/v17/internal/logctx"
 	"github.com/kovetskiy/mark/v17/metadata"
-	"github.com/rs/zerolog/log"
 )
 
 // attachmentPreview resolves the links a real run would write for a page's
@@ -298,7 +298,7 @@ func uploadAttachments(
 	}
 
 	for i, item := range creating {
-		log.Info().Msgf("creating attachment: %q", item.Name)
+		logctx.From(ctx).Info().Msgf("creating attachment: %q", item.Name)
 
 		info, err := api.CreateAttachment(ctx,
 			page.ID,
@@ -321,7 +321,7 @@ func uploadAttachments(
 	}
 
 	for i, item := range updating {
-		log.Info().Msgf("updating attachment: %q", item.Name)
+		logctx.From(ctx).Info().Msgf("updating attachment: %q", item.Name)
 
 		info, err := api.UpdateAttachment(ctx,
 			page.ID,
@@ -352,7 +352,7 @@ func uploadAttachments(
 	}
 
 	for i := range existing {
-		log.Info().Msgf("keeping unmodified attachment: %q", existing[i].Name)
+		logctx.From(ctx).Info().Msgf("keeping unmodified attachment: %q", existing[i].Name)
 	}
 
 	attachments = []attachment.Attachment{}
