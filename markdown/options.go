@@ -23,6 +23,10 @@ type Options struct {
 	// DropH1 leaves the document's first H1 out of the page, for a page
 	// whose title already says it.
 	DropH1 bool
+	// DisableHeadingIDs leaves the ids mark derives for headings off, so a
+	// heading has an id only when the author named one with the {#custom-id}
+	// syntax. See --disable-heading-ids.
+	DisableHeadingIDs bool
 	// StripLinebreaks writes a paragraph's soft line breaks as spaces
 	// rather than newlines.
 	StripLinebreaks bool
