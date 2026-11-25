@@ -347,6 +347,9 @@ func TestSplitParentsDropsEmptyFields(t *testing.T) {
 		{"doubled", "A//B", []string{"A", "B"}},
 		{"only delimiters", "//", nil},
 		{"empty", "", nil},
+		{"spaced", "Parent / Sub", []string{"Parent", "Sub"}},
+		{"padded", "  A/B\t", []string{"A", "B"}},
+		{"blank field", "A/ /B", []string{"A", "B"}},
 		{"single", "A", []string{"A"}},
 	} {
 		t.Run(test.name, func(t *testing.T) {

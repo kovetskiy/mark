@@ -626,7 +626,11 @@ func SetLogLevel(cmd *cli.Command) error {
 	return mark.SetLogLevel(cmd.String("log-level"))
 }
 
-// splitParents reads the --parents value, dropping empty fields.
+// splitParents reads the --parents value, trimming each field as a Parent
+// header is trimmed and dropping the empty ones.
+//
+// "Parent / Sub" names the pages "Parent" and "Sub": kept as written, the
+// spaces became part of the titles mark looks up, creates and hashes.
 //
 // A delimiter is a separator, not a parent. "/A/B" split to ["", "A", "B"] and
 // the guard downstream checks only element zero, so a leading delimiter
@@ -638,7 +642,7 @@ func splitParents(value, delimiter string) []string {
 	var parents []string
 
 	for _, parent := range strings.Split(value, delimiter) {
-		if parent != "" {
+		if parent = strings.TrimSpace(parent); parent != "" {
 			parents = append(parents, parent)
 		}
 	}
