@@ -362,6 +362,15 @@ func (b *admonitionParser) Open(parent ast.Node, reader text.Reader, pc parser.C
 			// has to look like an admonition by itself.
 			return nil, parser.NoChildren
 		}
+	} else {
+		// '!!!' takes any title, so only one that closes the line, or the
+		// line up to its attributes, is read to its last quote; any other is
+		// cut at a '{' as ever.
+		rest := withoutLineEnding(line)[left:]
+		end := admonitionClassEnd(rest)
+		if at := end + util.TrimLeftSpaceLength(rest[end:]); at < len(rest) && rest[at] == '"' {
+			titleEnd = quotedTitleEnd(rest, at)
+		}
 	}
 
 	node := parseAdmonitionOpeningLine(reader, left, titleEnd)
