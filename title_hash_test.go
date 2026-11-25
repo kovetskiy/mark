@@ -75,3 +75,18 @@ func TestGeneratedHashGivesADirectoryOnePageForEitherSpaceSpelling(t *testing.T)
 	assert.Equal(t, metadata.CaseFoldedHashTitle(nil, "DOCS", "Guides"), directory.Title)
 	assert.Len(t, server.ChildOrder(directory.ID), 2, "both documents beneath it")
 }
+
+// TestGeneratedHashOfATrimmedFilenameTitle: "guide-.md" is titled "Guide",
+// and its hash goes on that, not on "Guide " with a doubled space before it.
+func TestGeneratedHashOfATrimmedFilenameTitle(t *testing.T) {
+	server, _ := docsSpace(t)
+	dir := t.TempDir()
+	writeFile(t, dir, "guide-.md", "<!-- Space: DOCS -->\n\nBody.\n")
+
+	config := publishConfig(server.URL, filepath.Join(dir, "*.md"))
+	config.Page.TitleFromFilename = true
+	config.Page.TitleAppendGeneratedHash = true
+	require.NoError(t, Run(context.Background(), config))
+
+	assert.NotEmpty(t, pageIDTitled(t, server, metadata.CaseFoldedHashTitle(nil, "DOCS", "Guide")))
+}

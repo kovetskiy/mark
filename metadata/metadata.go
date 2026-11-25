@@ -1146,11 +1146,14 @@ func ExtractMeta(data []byte, opts ExtractOptions) (*Meta, []byte, error) {
 		meta.Parents = slices.Concat(opts.Parents, meta.Parents)
 	}
 
+	// Before the hash: it is appended to the title and taken over the space,
+	// and "guide-.md" is titled "Guide " until here.
+	meta.Title = strings.Trim(meta.Title, " ")
+	meta.Space = strings.Trim(meta.Space, " ")
+
 	if opts.TitleAppendGeneratedHash {
 		AppendGeneratedHashContext(opts.context(), meta)
 	}
-	meta.Title = strings.Trim(meta.Title, " ")
-	meta.Space = strings.Trim(meta.Space, " ")
 
 	return meta, body, nil
 }
