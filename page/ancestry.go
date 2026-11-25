@@ -211,7 +211,8 @@ func ParentPathKey(chain []string) string {
 
 // folderPathKey names a folder by the chain of titles leading to it, under the
 // anchor it hangs from. The anchor is part of the key because the same chain of
-// titles under a different anchor is a different folder.
+// titles under a different anchor is a different folder. The titles are those
+// FolderTitles creates, since a hash tells apart folders one anchor holds.
 func folderPathKey(anchorPageID *string, folders []string, upto int) string {
 	anchor := ""
 	if anchorPageID != nil {
@@ -252,9 +253,11 @@ func folderUnderID(parent *ParentInfo, anchorPageID *string) string {
 	}
 }
 
-// findFolder is the folder the run cached under title, or else the one found
-// under its created title, or else under title itself. Only the plain title is
-// looked for at the space root: no hashed folder was ever created there.
+// findFolder is the folder the run cached under created, or else the one found
+// under that title, or else under title itself. Cached by created, as two
+// parent chains ending at one page hash a folder beneath it differently. Only
+// the plain title is looked for at the space root: no hashed folder was ever
+// created there.
 func findFolder(
 	ctx context.Context,
 	api *confluence.API,
@@ -262,7 +265,7 @@ func findFolder(
 	space, title, created, underID string,
 	anchorPageID *string,
 ) (*confluence.FolderInfo, error) {
-	if id, ok := options.FolderCache.lookup(space, underID, title); ok {
+	if id, ok := options.FolderCache.lookup(space, underID, created); ok {
 		return api.GetFolderByID(ctx, id)
 	}
 
@@ -332,7 +335,7 @@ func ensureFolderAncestry(
 			// Confluence since the last run, in which case the folder recorded
 			// for this position is still the right one and creating another
 			// would split the hierarchy in two.
-			key := folderPathKey(anchorPageID, folders, i)
+			key := folderPathKey(anchorPageID, created, i)
 			id, ok, lookupErr := options.Folders.LookupFolder(ctx, space, key)
 			if lookupErr != nil {
 				return nil, fmt.Errorf("unable to check whether folder %q was renamed: %w", title, lookupErr)
@@ -384,12 +387,12 @@ func ensureFolderAncestry(
 		}
 
 		if options.Folders != nil {
-			if err := options.Folders.RecordFolder(ctx, space, folderPathKey(anchorPageID, folders, i), folder.ID); err != nil {
+			if err := options.Folders.RecordFolder(ctx, space, folderPathKey(anchorPageID, created, i), folder.ID); err != nil {
 				return nil, err
 			}
 		}
 
-		options.FolderCache.store(space, underID, title, folder.ID)
+		options.FolderCache.store(space, underID, created[i], folder.ID)
 		logctx.From(ctx).Debug().Msgf("folder %q exists: %s", title, folder.ID)
 
 		rest = folders[i:]
@@ -464,10 +467,10 @@ func ensureFolderAncestry(
 				)
 			}
 
-			options.FolderCache.store(space, underID, title, folder.ID)
+			options.FolderCache.store(space, underID, name, folder.ID)
 
 			if options.Folders != nil {
-				key := folderPathKey(anchorPageID, folders, firstNew+offset)
+				key := folderPathKey(anchorPageID, created, firstNew+offset)
 				if err := options.Folders.RecordFolder(ctx, space, key, folder.ID); err != nil {
 					return nil, err
 				}
