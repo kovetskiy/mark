@@ -4,7 +4,7 @@ go 1.27.3
 
 require (
 	github.com/BurntSushi/toml v1.6.0
-	github.com/bmatcuk/doublestar/v4 v4.10.4
+	github.com/bmatcuk/doublestar/v4 v4.10.7
 	github.com/chromedp/cdproto v0.160.8
 	github.com/chromedp/chromedp v0.24.0
 	github.com/d2lang/d2 v0.9.0
