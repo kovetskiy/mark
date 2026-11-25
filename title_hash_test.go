@@ -90,3 +90,20 @@ func TestGeneratedHashOfATrimmedFilenameTitle(t *testing.T) {
 
 	assert.NotEmpty(t, pageIDTitled(t, server, metadata.CaseFoldedHashTitle(nil, "DOCS", "Guide")))
 }
+
+// TestGeneratedHashOfATrimmedDirectoryTitle: a directory "guide-" is titled
+// "Guide", as the file "guide-.md" is, and hashed on that.
+func TestGeneratedHashOfATrimmedDirectoryTitle(t *testing.T) {
+	server, _ := docsSpace(t)
+	dir := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "guide-"), 0o755))
+	writeFile(t, filepath.Join(dir, "guide-"), "one.md", "<!-- Space: DOCS -->\n<!-- Title: One -->\n\nOne.\n")
+
+	config := publishConfig(server.URL, filepath.Join(dir, "**", "*.md"))
+	config.ParentsFromPath = true
+	config.ParentsFromPathRoot = dir
+	config.Page.TitleAppendGeneratedHash = true
+	require.NoError(t, Run(context.Background(), config))
+
+	assert.NotEmpty(t, pageIDTitled(t, server, metadata.CaseFoldedHashTitle(nil, "DOCS", "Guide")))
+}
