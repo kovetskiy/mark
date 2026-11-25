@@ -124,10 +124,10 @@ runs to disappear: the documents first, then the page that held them.
 
 Only a page Mark created is remembered. A page that was already there under a
 directory's title is used as the directory's page, but Mark never writes to it
-or treats it as an orphan, so it stays when the directory's documents go. That holds for a directory page Mark created while `--track-pages` was off,
-or in a run that published none of the directory's documents, too: nothing
-recorded it. A directory's page that is already in the page manifest stays
-remembered.
+or treats it as an orphan, so it stays when the directory's documents go. That
+holds for a directory page Mark created while `--track-pages` was off, or in a
+run that published none of the directory's documents, too: nothing recorded it.
+A directory's page that is already in the page manifest stays remembered.
 
 A directory holding its own `index.md` or `README.md` is not remembered this
 way, that document's own entry having the page already. Directories are
@@ -137,11 +137,11 @@ the working directory is part of what the manifest matches on.
 A remembered directory whose title changes keeps its page, renamed, as a
 document's page is: through its `.pages` file, or with
 `--title-append-generated-hash` through the `--parents` above it, in which case
-the page is also moved under the new parent. A page renamed in Confluence while
-the directory's title stays the same is followed instead, and keeps the title it
-was given there. When another page already carries the new title, the directory
-stays on the page it has, under its old title, with a warning, and the rename is
-tried again on the next run.
+the page is also moved under the new parent, made first if need be. A page
+renamed in Confluence while the directory's title stays the same is followed
+instead, and keeps the title it was given there. When another page already
+carries the new title, the directory stays on the page it has, under its old
+title, with a warning, and the rename is tried again on the next run.
 
 ### Turning it on for pages that already exist
 
