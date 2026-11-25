@@ -1028,17 +1028,10 @@ func TestOnOrphanDeleteThroughTheGateway(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, dir, "keep.md", "<!-- Space: DOCS -->\n<!-- Title: Keep -->\n\nKeep.\n")
 	writeFile(t, dir, "gone.md", "<!-- Space: DOCS -->\n<!-- Title: Gone -->\n\nGone.\n")
-	config := Config{
-		PublishConfig: PublishConfig{
-			Rendering: RenderingConfig{Features: []string{"mention"}},
-			Output:    io.Discard,
-		},
-		Files: filepath.Join(dir, "*.md"),
-		Connection: ConnectionConfig{
-			BaseURL: server.URL + "/ex/confluence/cloud-id", Username: "user", Password: "token",
-		},
-		Tracking: TrackingConfig{TrackPages: true, ManifestPage: "Home", OnOrphan: report.OnOrphanDelete},
-	}
+	config := trackingConfig(server, filepath.Join(dir, "*.md"))
+	config.Connection.BaseURL += "/ex/confluence/cloud-id"
+	config.Tracking.ManifestPage = "Home"
+	config.Tracking.OnOrphan = report.OnOrphanDelete
 	require.NoError(t, Run(context.Background(), config))
 
 	api := confluence.NewAPI(config.Connection.BaseURL, confluence.Options{Username: "user", Password: "token"})
