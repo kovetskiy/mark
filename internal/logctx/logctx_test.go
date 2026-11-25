@@ -56,6 +56,26 @@ func TestFromPrefersTheDefaultContextLogger(t *testing.T) {
 	assert.Empty(t, global.String())
 }
 
+// TestCarried: only a logger the context itself carries, never a fallback, so
+// that one kept for later does not pin the global logger as it is now.
+func TestCarried(t *testing.T) {
+	var own bytes.Buffer
+	l := zerolog.New(&own)
+
+	ctx := l.WithContext(context.Background())
+
+	assert.Same(t, zerolog.Ctx(ctx), Carried(ctx))
+	assert.Nil(t, Carried(context.Background()))
+	//nolint:staticcheck // SA1012: a nil context is what this covers.
+	assert.Nil(t, Carried(nil))
+
+	prev := zerolog.DefaultContextLogger
+	zerolog.DefaultContextLogger = &l
+	t.Cleanup(func() { zerolog.DefaultContextLogger = prev })
+
+	assert.Nil(t, Carried(context.Background()))
+}
+
 func TestTracing(t *testing.T) {
 	prev := zerolog.GlobalLevel()
 	zerolog.SetGlobalLevel(zerolog.TraceLevel)

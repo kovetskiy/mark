@@ -23,6 +23,7 @@ import (
 	"github.com/kovetskiy/mark/v17/imageformat"
 	"github.com/kovetskiy/mark/v17/internal/lazy"
 	"github.com/kovetskiy/mark/v17/internal/logctx"
+	"github.com/rs/zerolog"
 	"golang.org/x/mod/semver"
 	"golang.org/x/net/html"
 )
@@ -55,6 +56,11 @@ const (
 type Engine struct {
 	kind EngineKind
 
+	// logger is the one NewEngineContext's ctx carried, nil for the global
+	// one. The renderer starts on the first diagram, under a context of its
+	// own that Close cancels, so it is handed the logger from here.
+	logger *zerolog.Logger
+
 	once     sync.Once
 	renderer *lazy.Lazy[mermaid.Renderer]
 
@@ -72,8 +78,9 @@ func NewEngine(kind EngineKind) (*Engine, error) {
 	return NewEngineContext(context.Background(), kind)
 }
 
-// NewEngineContext is NewEngine logging to the zerolog logger ctx carries;
-// NewEngine logs to the global one.
+// NewEngineContext is NewEngine logging to the zerolog logger ctx carries, as
+// does the renderer it starts on the first diagram; NewEngine logs to the
+// global one.
 func NewEngineContext(ctx context.Context, kind EngineKind) (*Engine, error) {
 	if err := CheckEngine(kind); err != nil {
 		return nil, err
@@ -90,7 +97,7 @@ func NewEngineContext(ctx context.Context, kind EngineKind) (*Engine, error) {
 		)
 	}
 
-	return &Engine{kind: kind}, nil
+	return &Engine{kind: kind, logger: logctx.Carried(ctx)}, nil
 }
 
 // renderers returns the engine's lazy renderer, making it on first use so that
@@ -181,6 +188,10 @@ func (b *browserEngine) Cancel() {
 // start launches the renderer of e's kind, to live as long as life, which
 // Close cancels.
 func (e *Engine) start(life context.Context) (mermaid.Renderer, error) {
+	if e.logger != nil {
+		life = e.logger.WithContext(life)
+	}
+
 	if e.kind == EngineMerman {
 		return startMerman(life)
 	}

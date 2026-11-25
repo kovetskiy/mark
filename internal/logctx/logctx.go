@@ -15,13 +15,24 @@ import (
 // disabled logger otherwise; the global logger stands in for that disabled
 // one, as it is what mark logged to before a context carried one.
 func From(ctx context.Context) *zerolog.Logger {
+	if l := Carried(ctx); l != nil {
+		return l
+	}
+
+	return fallback()
+}
+
+// Carried is the logger ctx carries, or nil when it carries none, so that
+// something outliving ctx can keep that logger without pinning the global one
+// as it is at that moment.
+func Carried(ctx context.Context) *zerolog.Logger {
 	if ctx == nil {
-		return fallback()
+		return nil
 	}
 
 	l := zerolog.Ctx(ctx)
 	if l == zerolog.Ctx(context.Background()) {
-		return fallback()
+		return nil
 	}
 
 	return l
