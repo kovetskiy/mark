@@ -102,8 +102,8 @@ type admonitionBody struct {
 	started, blankFirst bool
 
 	// level is set when that line is level with the opening line: the
-	// admonition ends at its opening line, and waits in parent for a closing
-	// run to be given the blocks parsed there up to it.
+	// admonition ends at its opening line, and a '!' one waits in parent for
+	// a closing run to be given the blocks parsed there up to it.
 	level bool
 
 	// ended is set while the last non-blank line given to an indented body
@@ -142,7 +142,8 @@ func NewAdmonition() *Admonition {
 
 // BodyFollows reports whether the lines written as the admonition's body are
 // published after it rather than in it: the line straight after its opening
-// line is level with it, and no closing run ended them.
+// line is level with it, and no closing run ended them. A '???' body is
+// always indented, so for one opened with '?' no run can.
 func (n *Admonition) BodyFollows() bool {
 	return n.body.level && !n.body.blankFirst && n.body.closedAt == 0
 }
@@ -436,10 +437,18 @@ func (b *admonitionParser) Continue(node ast.Node, reader text.Reader, pc parser
 			return parser.Close
 		case w > body.indent:
 			body.contentIndent = w
-		case w < body.indent || n.HasChildren() || !body.mayBeLevel():
+		case w < body.indent || n.HasChildren():
 			// What the opening line left in it goes on in a level line
 			// only as a paragraph does, lazily.
 			body.ended = true
+			return parser.Close
+		case !body.mayBeLevel():
+			// A '?' body is never level with its opening line, so this line
+			// follows the admonition; it was written as its body all the
+			// same, and the author is told. No run can close it, so it does
+			// not wait for one.
+			body.level = true
+
 			return parser.Close
 		default:
 			body.level = true
