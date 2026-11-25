@@ -334,3 +334,42 @@ func TestADryRunRefusesATitleItsDocumentCannotGiveUp(t *testing.T) {
 		assert.Contains(t, server.Page(pageOfB).Body, "Body of b.", "dry run %t", dryRun)
 	}
 }
+
+// TestATitleWhosePageIsRecordedForTwoDocumentsIsRefusedToBoth: two runs each
+// published a document of one title to its page, so the record names both
+// for it. Nothing says which of them the page is, so a run publishing both
+// refuses the title to each, in a dry run as in a real one, every time, and
+// writes the page for neither.
+func TestATitleWhosePageIsRecordedForTwoDocumentsIsRefusedToBoth(t *testing.T) {
+	server, _ := docsSpace(t)
+	dir := t.TempDir()
+
+	one := writeFile(t, dir, "one.md", titledDoc("Shared", "One."))
+	two := writeFile(t, dir, "two.md", titledDoc("Shared", "Two."))
+	require.NoError(t, Run(context.Background(), trackingConfig(server, one)))
+	require.NoError(t, Run(context.Background(), trackingConfig(server, two)))
+
+	id := pageIDTitled(t, server, "Shared")
+	require.NotEmpty(t, id)
+	version := server.Page(id).Version
+
+	config := trackingConfig(server, filepath.Join(dir, "*.md"))
+	config.ContinueOnError = true
+
+	for run := range 20 {
+		config.Mode.DryRun = run%2 == 0
+
+		pages, err := reportOf(t, config)
+		require.Error(t, err, "run %d", run)
+		require.Len(t, pages, 2, "run %d", run)
+
+		for _, name := range []string{"one.md", "two.md"} {
+			refused := statusOf(t, pages, name)
+			require.Equal(t, report.StatusFailed, refused.Status, "run %d: %s", run, name)
+			require.Contains(t, refused.Reason, "is recorded for both "+one+" and "+two, "run %d: %s", run, name)
+		}
+	}
+
+	assert.Equal(t, version, server.Page(id).Version, "neither document wrote the page")
+	assert.Contains(t, server.Page(id).Body, "Two.")
+}

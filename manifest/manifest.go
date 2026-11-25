@@ -949,10 +949,17 @@ func (state *spaceState) normaliseKeys() {
 
 // buildIndexes derives the reverse, fingerprint and title lookups from the
 // loaded entries.
+//
+// Of several paths naming one page, byPage keeps the one that wrote it last,
+// as Record leaves it, and the first in order of a tie: the entries are read
+// from maps, and which path stands for a page must not change from one load of
+// the same manifest to the next.
 func (state *spaceState) buildIndexes() {
 	for i := range state.shards {
 		for path, entry := range state.shards[i].pages {
-			state.byPage[entry.PageID] = path
+			if owner, ok := state.byPage[entry.PageID]; !ok || laterOwner(path, entry, owner, state) {
+				state.byPage[entry.PageID] = path
+			}
 			state.indexHash(path, entry.Hash)
 			if entry.Title == "" {
 				continue
@@ -964,6 +971,17 @@ func (state *spaceState) buildIndexes() {
 			state.titles[entry.Title] = entry.PageID
 		}
 	}
+}
+
+// laterOwner reports whether path, recorded with entry, stands for a page
+// before owner: it wrote a later version, or the same one and sorts first.
+func laterOwner(path string, entry Entry, owner string, state *spaceState) bool {
+	held := state.shards[shardFor(owner)].pages[owner]
+	if entry.Version != held.Version {
+		return entry.Version > held.Version
+	}
+
+	return path < owner
 }
 
 // indexHash notes that path is now recorded with hash.
@@ -1779,20 +1797,32 @@ func (s *Store) Recorded(ctx context.Context, spaceKey, path string) (Entry, boo
 	return s.lookup(ctx, spaceKey, path, false)
 }
 
-// RecordedFor returns the path whose entry names the page, and whether there
-// is one. It marks nothing as seen.
-func (s *Store) RecordedFor(ctx context.Context, spaceKey, pageID string) (string, bool, error) {
+// RecordedFor returns, sorted, every path whose entry names the page. It
+// marks nothing as seen.
+//
+// Two runs can each record a document for one page, so there may be more than
+// one; the reverse index keeps only one of them, and reading it alone would
+// answer for whichever that is.
+func (s *Store) RecordedFor(ctx context.Context, spaceKey, pageID string) ([]string, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	state, err := s.load(ctx, spaceKey)
 	if err != nil {
-		return "", false, err
+		return nil, err
 	}
 
-	path, _, ok := ownerOf(state, pageID)
+	var paths []string
+	for i := range state.shards {
+		for path, entry := range state.shards[i].pages {
+			if entry.PageID == pageID {
+				paths = append(paths, path)
+			}
+		}
+	}
+	sort.Strings(paths)
 
-	return path, ok, nil
+	return paths, nil
 }
 
 // Forget drops a recorded path: one whose page no longer exists, or an orphan
