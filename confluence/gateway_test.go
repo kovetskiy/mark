@@ -511,29 +511,22 @@ func TestAnArchivedPageIsRead(t *testing.T) {
 }
 
 // A scoped token is refused v1's DELETE /content, so through the gateway a
-// page is trashed through v2.
+// page or blog post is trashed through v2.
 func TestGatewayDeletePage(t *testing.T) {
-	api, server := newGatewayAPI(t)
-	page := server.AddPage("DOCS", "Gone", "page", "")
+	for _, pageType := range []string{"page", "blogpost"} {
+		t.Run(pageType, func(t *testing.T) {
+			api, server := newGatewayAPI(t)
+			page := server.AddPage("DOCS", "Gone", pageType, "")
 
-	require.NoError(t, api.DeletePage(context.Background(), page.ID))
+			require.NoError(t, api.DeletePage(context.Background(), page.ID))
 
-	got := server.Page(page.ID)
-	require.NotNil(t, got, "the page must be trashed, not purged")
-	assert.True(t, got.Trashed)
-	assert.Equal(t, 0, server.CountRequests("DELETE", "/rest/api/content"),
-		"through the gateway v1 is not asked at all")
-}
-
-func TestGatewayDeleteBlogpost(t *testing.T) {
-	api, server := newGatewayAPI(t)
-	post := server.AddPage("DOCS", "Gone", "blogpost", "")
-
-	require.NoError(t, api.DeletePage(context.Background(), post.ID))
-
-	got := server.Page(post.ID)
-	require.NotNil(t, got)
-	assert.True(t, got.Trashed)
+			got := server.Page(page.ID)
+			require.NotNil(t, got, "the page must be trashed, not purged")
+			assert.True(t, got.Trashed)
+			assert.Equal(t, 0, server.CountRequests("DELETE", "/rest/api/content"),
+				"through the gateway v1 is not asked at all")
+		})
+	}
 }
 
 // A page already gone, purged or in the trash, is the outcome that was wanted.
