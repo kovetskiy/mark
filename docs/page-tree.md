@@ -20,10 +20,17 @@ A space holds one folder of a title, wherever it sits, so a `Guides` folder unde
 one parent keeps Mark from creating a `Guides` folder under any other.
 `--folder-title-append-generated-hash` creates every folder under its title with
 a short hash of where it sits, as `--title-append-generated-hash` does for pages:
-`Guides - 3f9a1c2e`. The hash ignores case, as Confluence does, so `Guides` and
+`Guides - 3f9a1c2e`. The hash is taken over the space, the parents and the
+folders above it, and the folder's own title, the way a page's is (see
+[What the hash is taken over](#what-the-hash-is-taken-over)), so `Guides` and
 `guides` declared in two documents are one folder. A folder already there under
 its plain title is still used and keeps its title, so turning the flag on leaves
 an existing tree as it is.
+
+A folder whose parents change is a folder of another hash: Mark creates it
+under its new title and moves the pages there, and the old folder is left
+behind, with `--track-pages` too. Folders are never orphans, so delete it by
+hand.
 
 `--parents` puts every page of the run under the pages it names, ahead of the
 parents a document declares itself: with `--parents "Engineering/Handbook"`, a
