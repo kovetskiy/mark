@@ -241,21 +241,33 @@ func Rename(ctx context.Context, api *confluence.API, ref Ref, title string, opt
 		return fmt.Errorf("space %s already has a %s titled %q (%s)", target.Space.Key, target.Type, title, existing.ID)
 	}
 
-	old, oldTitle := describe(target), target.Title
+	old := describe(target)
 	if options.DryRun {
 		fmt.Fprintf(out, "would rename %s to %q\n", old, title)
 		return nil
 	}
 
-	target.Title = title
-	err = api.UpdatePage(ctx, target, target.Body.Storage.Value, confluence.UpdateOptions{
-		MinorEdit:      true,
-		VersionMessage: fmt.Sprintf("renamed from %q", oldTitle),
-	})
-	if err != nil {
-		return fmt.Errorf("unable to rename %s: %w", old, err)
+	if err := Retitle(ctx, api, target, title); err != nil {
+		return err
 	}
 	fmt.Fprintf(out, "renamed %s to %q\n", old, title)
+
+	return nil
+}
+
+// Retitle gives pg, read with its body, the title and leaves its content as
+// it is. The new version is a minor edit, so watchers are not notified.
+func Retitle(ctx context.Context, api *confluence.API, pg *confluence.PageInfo, title string) error {
+	old := describe(pg)
+	previous := pg.Title
+	pg.Title = title
+	err := api.UpdatePage(ctx, pg, pg.Body.Storage.Value, confluence.UpdateOptions{
+		MinorEdit:      true,
+		VersionMessage: fmt.Sprintf("renamed from %q", previous),
+	})
+	if err != nil {
+		return fmt.Errorf("unable to rename %s to %q: %w", old, title, err)
+	}
 
 	return nil
 }
