@@ -104,7 +104,9 @@ publishes and the next is refused.
 A page and a blog post of one title are two pieces of content, and a document
 with `Synchronized: false` publishes nothing, so neither is refused. Without
 `--parents-from-path` the hash is taken over the parents the documents declare,
-and two documents declaring the same ones need different titles.
+and two documents declaring the same ones need different titles. The refusal
+suggests `--title-append-generated-hash` only where it would tell the two
+documents apart: not when it is already on, nor for two under the same parents.
 
 ### Directories are remembered too
 

@@ -139,11 +139,13 @@ type titleHeldError struct {
 	// title it now declares; empty when it keeps the title.
 	holder   input
 	retitled string
+	// hint says to suggest --title-append-generated-hash; see hashSeparates.
+	hint bool
 }
 
 func (e *titleHeldError) Error() string {
 	if e.retitled == "" {
-		return titleTaken(e.holder.file, e.title, e.space).Error()
+		return titleTaken(e.holder.file, e.title, e.space, e.hint).Error()
 	}
 
 	return fmt.Sprintf(
@@ -152,12 +154,17 @@ func (e *titleHeldError) Error() string {
 	)
 }
 
-// titleTaken refuses a title that previous publishes in the space.
-func titleTaken(previous, title, space string) error {
+// titleTaken refuses a title that previous publishes in the space, suggesting
+// --title-append-generated-hash when hint says it would tell the two apart.
+func titleTaken(previous, title, space string, hint bool) error {
+	remedy := "rename one of them"
+	if hint {
+		remedy += ", or use --title-append-generated-hash"
+	}
+
 	return fmt.Errorf(
-		"%s already publishes %q in space %q, and a space holds one page of a title: "+
-			"rename one of them, or use --title-append-generated-hash",
-		previous, title, space,
+		"%s already publishes %q in space %q, and a space holds one page of a title: %s",
+		previous, title, space, remedy,
 	)
 }
 
@@ -229,8 +236,12 @@ func (r *publishRun) titleHeld(
 	}
 
 	holder := holders[0]
-	held := &titleHeldError{space: meta.Space, title: meta.Title, page: pg, holder: holder}
-	if declared := r.publishedAs(holder, meta); !strings.EqualFold(declared.Title, pg.Title) {
+	declared := r.publishedAs(holder, meta)
+	held := &titleHeldError{
+		space: meta.Space, title: meta.Title, page: pg, holder: holder,
+		hint: r.hashSeparates(hashedTitle(declared), hashedTitle(meta)),
+	}
+	if !strings.EqualFold(declared.Title, pg.Title) {
 		held.retitled = declared.Title
 	}
 

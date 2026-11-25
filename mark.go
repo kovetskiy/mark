@@ -1737,7 +1737,7 @@ func newPublishRun(
 		pageHeader:       pageHeader,
 		checker:          page.NewLinkChecker(checks),
 		globalProperties: globalProperties,
-		titleClaims:      map[string]string{},
+		titleClaims:      map[string]titleHolder{},
 		claimedTitles:    map[string]string{},
 		yielded:          map[string]bool{},
 		previewTitles:    map[string]string{},
@@ -1991,7 +1991,7 @@ type publishRun struct {
 
 	// titleClaims names the document publishing each title, by runTitleKey,
 	// and claimedTitles the title each document holds, by absPath.
-	titleClaims   map[string]string
+	titleClaims   map[string]titleHolder
 	claimedTitles map[string]string
 
 	// pendingClaim is the title claim of the document in hand until it
@@ -2266,8 +2266,9 @@ func (r *publishRun) claimTitle(ctx context.Context, doc *document) error {
 	}
 
 	key, name := runTitleKey(meta.Space, meta.Type, meta.Title), absPath(doc.file)
-	if previous, taken := r.titleClaims[key]; taken && absPath(previous) != name {
-		return titleTaken(previous, meta.Title, meta.Space)
+	holder := titleHolder{file: doc.file, hashed: hashedTitle(meta)}
+	if previous, taken := r.titleClaims[key]; taken && absPath(previous.file) != name {
+		return titleTaken(previous.file, meta.Title, meta.Space, r.hashSeparates(previous.hashed, holder.hashed))
 	}
 
 	// A holder waiting on this document cannot go first: the two swapped
@@ -2282,21 +2283,41 @@ func (r *publishRun) claimTitle(ctx context.Context, doc *document) error {
 
 	r.pendingClaim = nil
 	if had, ok := r.claimedTitles[name]; !ok || had != key {
-		r.pendingClaim = &titleClaim{key: key, file: doc.file}
+		r.pendingClaim = &titleClaim{key: key, holder: holder}
 		if ok {
-			r.pendingClaim.gaveUp = had
+			r.pendingClaim.gaveUp, r.pendingClaim.held = had, r.titleClaims[had]
 			delete(r.titleClaims, had)
 		}
 	}
-	r.titleClaims[key], r.claimedTitles[name] = doc.file, key
+	r.titleClaims[key], r.claimedTitles[name] = holder, key
 
 	return nil
 }
 
 // titleClaim is a title a document claimed and has not yet published under,
-// and the title it gave up for it.
+// and the title it gave up for it, with what it held that title as.
 type titleClaim struct {
-	key, file, gaveUp string
+	key, gaveUp  string
+	holder, held titleHolder
+}
+
+// titleHolder is the document holding a title, and the title
+// --title-append-generated-hash gives it.
+type titleHolder struct {
+	file, hashed string
+}
+
+// hashedTitle is the title --title-append-generated-hash would give meta,
+// whether or not the run asks for it.
+func hashedTitle(meta *metadata.Meta) string {
+	return metadata.GeneratedHashTitle(meta.Parents, meta.Space, meta.Title)
+}
+
+// hashSeparates reports whether --title-append-generated-hash would tell
+// apart two documents of one title, given the titles it gives them: not when
+// it is already on, nor when they share what it hashes.
+func (r *publishRun) hashSeparates(one, other string) bool {
+	return !r.config.Page.TitleAppendGeneratedHash && !strings.EqualFold(one, other)
 }
 
 // releaseClaim undoes the claim of a document that failed before it reached
@@ -2309,14 +2330,14 @@ func (r *publishRun) releaseClaim() {
 	}
 	r.pendingClaim = nil
 
-	name := absPath(c.file)
+	name := absPath(c.holder.file)
 	delete(r.titleClaims, c.key)
 	if c.gaveUp == "" {
 		delete(r.claimedTitles, name)
 
 		return
 	}
-	r.titleClaims[c.gaveUp], r.claimedTitles[name] = c.file, c.gaveUp
+	r.titleClaims[c.gaveUp], r.claimedTitles[name] = c.held, c.gaveUp
 }
 
 // claimPage records file as the one publishing to Page.PageID, once it has
