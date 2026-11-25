@@ -297,7 +297,9 @@ func (r *publishRun) previewSettingChanges(ctx context.Context, doc *document, f
 
 	var others []string
 
-	if page.WouldMove(ctx, r.api, previewed, found.parent, meta.Parents, found.misplaced) {
+	misplaced := found.misplaced || r.config.Page.DirectParent && found.parent != nil &&
+		found.parent.Type != "folder-parent" && page.ImmediateParentID(previewed) != found.parent.ID
+	if page.WouldMove(ctx, r.api, previewed, found.parent, meta.Parents, misplaced) {
 		others = append(others, "it would be moved under the parent its headers declare")
 	}
 

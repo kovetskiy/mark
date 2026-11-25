@@ -365,6 +365,7 @@ func RunPublish(ctx context.Context, cmd *cli.Command) (err error) {
 				TitleFromFilename:        titleFromFilename,
 				TitleAppendGeneratedHash: cmd.Bool("title-append-generated-hash"),
 				ContentAppearance:        metadata.Appearance(cmd.String("content-appearance")),
+				DirectParent:             cmd.Bool("direct-parent"),
 			},
 			Mode: mark.ModeConfig{
 				CompileOnly: cmd.Bool("compile-only"),

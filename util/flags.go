@@ -165,6 +165,12 @@ func publishFlags(config *configFile) []cli.Flag {
 			Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_TITLE_FROM_H1"), config.value("title-from-h1")),
 		},
 		&cli.BoolFlag{
+			Name:    "direct-parent",
+			Value:   false,
+			Usage:   "move a page that is below its last Parent but not directly under it. Without it, a page anywhere below its declared parents is left where it is.",
+			Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_DIRECT_PARENT"), config.value("direct-parent")),
+		},
+		&cli.BoolFlag{
 			Name:    "title-from-filename",
 			Value:   false,
 			Usage:   "use the filename (without extension) as the Confluence page title if no explicit page title is set in the metadata. Mutually exclusive with --title-from-h1.",

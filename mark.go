@@ -212,6 +212,12 @@ type PageConfig struct {
 	TitleFromFilename        bool
 	TitleAppendGeneratedHash bool
 	ContentAppearance        metadata.Appearance
+
+	// DirectParent moves a page that is below its last declared parent but
+	// not directly under it, e.g. one left under a page a since-deleted
+	// document published between the two. Off, a page anywhere below its
+	// declared parents counts as placed.
+	DirectParent bool
 }
 
 // UpdateConfig is how a page is written once it is found.
@@ -3050,7 +3056,8 @@ func (r *publishRun) resolveDocumentPage(ctx context.Context, doc *document) (*d
 		if err := page.EnsurePageUnderFolderParent(ctx, api, pg, parent.ID); err != nil {
 			return nil, fmt.Errorf("error relocating page %q: %w", meta.Title, err)
 		}
-	} else if parent != nil && !page.UnderDeclaredParents(pg, meta.Parents) {
+	} else if parent != nil && (!page.UnderDeclaredParents(pg, meta.Parents) ||
+		r.config.Page.DirectParent && page.ImmediateParentID(pg) != parent.ID) {
 		// A page resolved through the manifest rather than by title never
 		// passed the ancestry check, because that check starts from a title
 		// lookup that just missed. So an edit changing the title and the
