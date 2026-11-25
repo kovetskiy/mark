@@ -811,12 +811,19 @@ func TestAdmonitionBodyIsIndentedOrClosed(t *testing.T) {
 			want:   []string{"Blockquote", "  !note", "  Paragraph:quoted", "Paragraph:after"},
 		},
 		{
+			// A "{" in a quoted title that ends the line is the title's, and
+			// the line after it is level with it.
+			name:   "a brace in the title, then no run",
+			source: "!!! note \"Use {name}\"\nnext\n\nafter\n\n## Heading\n",
+			want:   []string{"!note", "Paragraph:next", "Paragraph:after", "Heading:Heading"},
+		},
+		{
 			// The "{" that is no attribute block starts a paragraph on the
 			// opening line, which the next line goes on lazily; the
 			// admonition ends with that paragraph.
 			name:   "a paragraph on the opening line, then no run",
-			source: "!!! note \"Use {name}\"\nnext\n\nafter\n\n## Heading\n",
-			want:   []string{"!note", "  Paragraph:{name}\"\nnext", "Paragraph:after", "Heading:Heading"},
+			source: "!!! note Use {name}\nnext\n\nafter\n\n## Heading\n",
+			want:   []string{"!note", "  Paragraph:{name}\nnext", "Paragraph:after", "Heading:Heading"},
 		},
 		{
 			// w4 goes on the paragraph of the inner indented body, and w5
