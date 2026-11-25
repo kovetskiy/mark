@@ -23,9 +23,10 @@ a short hash of where it sits, as `--title-append-generated-hash` does for pages
 `Guides - 3f9a1c2e`. The hash is taken over the space, the parents and the
 folders above it, and the folder's own title, the way a page's is (see
 [What the hash is taken over](#what-the-hash-is-taken-over)), so `Guides` and
-`guides` declared in two documents are one folder. A folder already there under
-its plain title is still used and keeps its title, so turning the flag on leaves
-an existing tree as it is.
+`guides` declared in two documents are one folder. The parents are those a
+document declares, so two documents whose chains differ but end at one page
+get a folder each. A folder already there under its plain title is still used
+and keeps its title, so turning the flag on leaves an existing tree as it is.
 
 A folder whose parents change is a folder of another hash: Mark creates it
 under its new title and moves the pages there, and the old folder is left
