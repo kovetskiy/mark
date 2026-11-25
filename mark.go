@@ -2548,7 +2548,7 @@ func (r *publishRun) validate(doc *document) error {
 		)
 	}
 
-	return checkTitleLengths(meta)
+	return checkTitleLengths(meta, r.config.Page.FolderTitleAppendGeneratedHash)
 }
 
 // linkResolver builds the resolver the document's links are rewritten
