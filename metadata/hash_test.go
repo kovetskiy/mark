@@ -62,3 +62,28 @@ func TestAppendGeneratedHashFoldsCase(t *testing.T) {
 	assert.NotEqual(t, want.Title,
 		hashedMeta(t, "<!-- Space: DOCS -->\n<!-- Parent: Other -->\n<!-- Title: Guide -->\n\nx\n", ExtractOptions{}).Title)
 }
+
+// TestAppendGeneratedHashAfterTrim: a title taken from "guide-.md" is
+// "Guide " until it is trimmed, and a space given with spaces around it is
+// the space without them. The hash goes on the trimmed title, over the
+// trimmed space, so these hash as the plain spelling does.
+func TestAppendGeneratedHashAfterTrim(t *testing.T) {
+	document := "<!-- Space: DOCS -->\n\nx\n"
+	want := hashedMeta(t, document, ExtractOptions{Filename: "guide.md", TitleFromFilename: true})
+	assert.Regexp(t, `^Guide - [0-9a-f]{8}$`, want.Title)
+
+	for _, filename := range []string{"guide-.md", "guide_.md"} {
+		t.Run(filename, func(t *testing.T) {
+			got := hashedMeta(t, document, ExtractOptions{Filename: filename, TitleFromFilename: true})
+			assert.Equal(t, want.Title, got.Title)
+		})
+	}
+
+	t.Run("space", func(t *testing.T) {
+		document := "<!-- Title: Guide -->\n\nx\n"
+		assert.Equal(t,
+			hashedMeta(t, document, ExtractOptions{Space: "DOCS"}).Title,
+			hashedMeta(t, document, ExtractOptions{Space: " DOCS "}).Title,
+		)
+	})
+}
