@@ -2,6 +2,7 @@ package mark
 
 import (
 	"bytes"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -158,41 +159,47 @@ func TestDirectoryPageRenamedByHandKeepsItsTitle(t *testing.T) {
 
 // TestHashedDirectoryPageFollowsAChangedParent: a hashed directory title
 // changes with the --parents above it. The directory keeps its page, renamed
-// and moved under the new parent, rather than a new page there leaving the
-// old one behind.
+// and moved under the new parent, made first when it does not exist yet,
+// rather than a new page there leaving the old one behind.
 func TestHashedDirectoryPageFollowsAChangedParent(t *testing.T) {
-	server := hierarchyServer(t)
-	home := pageIDTitled(t, server, "Home")
-	old := server.AddPage("DOCS", "Old", "page", home)
-	updated := server.AddPage("DOCS", "New", "page", home)
+	for _, exists := range []bool{true, false} {
+		t.Run(fmt.Sprint("parent exists ", exists), func(t *testing.T) {
+			server := hierarchyServer(t)
+			home := pageIDTitled(t, server, "Home")
+			old := server.AddPage("DOCS", "Old", "page", home)
+			if exists {
+				server.AddPage("DOCS", "New", "page", home)
+			}
 
-	dir := t.TempDir()
-	writeAt(t, dir, "guides/setup.md", space+"<!-- Title: Setup -->\n\nSetup.\n")
+			dir := t.TempDir()
+			writeAt(t, dir, "guides/setup.md", space+"<!-- Title: Setup -->\n\nSetup.\n")
 
-	config := trackingConfig(server, filepath.Join(dir, "**", "*.md"))
-	config.ParentsFromPath = true
-	config.ParentsFromPathRoot = dir
-	config.Page.TitleAppendGeneratedHash = true
-	config.Page.Parents = []string{"Old"}
-	require.NoError(t, Run(t.Context(), config))
+			config := trackingConfig(server, filepath.Join(dir, "**", "*.md"))
+			config.ParentsFromPath = true
+			config.ParentsFromPathRoot = dir
+			config.Page.TitleAppendGeneratedHash = true
+			config.Page.Parents = []string{"Old"}
+			require.NoError(t, Run(t.Context(), config))
 
-	directories := server.ChildOrder(old.ID)
-	require.Len(t, directories, 1)
-	guides := directories[0]
-	before := server.Page(guides).Title
-	require.True(t, strings.HasPrefix(before, "Guides - "), before)
-	setup := server.ChildOrder(guides)
-	require.Len(t, setup, 1)
+			directories := server.ChildOrder(old.ID)
+			require.Len(t, directories, 1)
+			guides := directories[0]
+			before := server.Page(guides).Title
+			require.True(t, strings.HasPrefix(before, "Guides - "), before)
+			setup := server.ChildOrder(guides)
+			require.Len(t, setup, 1)
 
-	config.Page.Parents = []string{"New"}
-	require.NoError(t, Run(t.Context(), config))
+			config.Page.Parents = []string{"New"}
+			require.NoError(t, Run(t.Context(), config))
 
-	after := server.Page(guides).Title
-	assert.True(t, strings.HasPrefix(after, "Guides - "), after)
-	assert.NotEqual(t, before, after, "the directory's page is renamed")
-	assert.Equal(t, []string{guides}, server.ChildOrder(updated.ID), "and moved under New")
-	assert.Empty(t, server.ChildOrder(old.ID), "and nothing is left under Old")
-	assert.Equal(t, setup, server.ChildOrder(guides), "the document stays under it")
+			after := server.Page(guides).Title
+			assert.True(t, strings.HasPrefix(after, "Guides - "), after)
+			assert.NotEqual(t, before, after, "the directory's page is renamed")
+			assert.Equal(t, []string{guides}, server.ChildOrder(pageIDTitled(t, server, "New")), "and moved under New")
+			assert.Empty(t, server.ChildOrder(old.ID), "and nothing is left under Old")
+			assert.Equal(t, setup, server.ChildOrder(guides), "the document stays under it")
+		})
+	}
 }
 
 // TestDirectoryTitleChangedBackRenamesThePageBack: the chain under the

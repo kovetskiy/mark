@@ -730,31 +730,43 @@ func ownDirectoryPage(
 	return false, tracker.Forget(ctx, space, key)
 }
 
+// resolveParents brings the parents a document declares up to date before
+// its ancestry is resolved: refreshStaleParents follows the ones renamed in
+// Confluence, then retitleDirectoryPages renames the pages of directories
+// whose own title has changed.
+func (r *publishRun) resolveParents(ctx context.Context, doc *document) error {
+	// What the document declares, before a directory's page is followed to
+	// the title it carries.
+	declared := slices.Clone(doc.meta.Parents)
+
+	if err := refreshStaleParents(ctx, r.tracker, r.api, doc.meta, r.titles, doc.warnings); err != nil {
+		return err
+	}
+
+	return r.retitleDirectoryPages(ctx, doc, declared)
+}
+
 // retitleDirectoryPages renames the pages recorded for the directories a
-// document sits under whose titles have changed since, before its ancestry
-// is resolved, and sets doc.directoryTitles.
+// document sits under whose titles have changed, and sets
+// doc.directoryTitles.
 //
-// A directory's page is found by its title, so a new title finds nothing:
-// a second page would be made under it, the documents moved there, and the
-// directory's entry pointed at it, leaving the old page empty and out of
+// A directory's page is found by its title, so a new title finds nothing: a
+// second page would be made under it and the old one left empty, out of
 // --on-orphan's reach. A directory with a document of its own is left to
-// that document, which retitles its page as any document does.
-//
-// A directory recorded under its present title is left alone, so a page
-// renamed in Confluence is still followed by refreshStaleParents.
-func (r *publishRun) retitleDirectoryPages(ctx context.Context, doc *document) error {
-	meta := doc.meta
-	if r.tracker == nil || r.hierarchy == nil || meta == nil || meta.DeclaredParents {
+// that document. A directory recorded under the title it declares is left
+// alone too, so a page renamed in Confluence stays followed.
+func (r *publishRun) retitleDirectoryPages(ctx context.Context, doc *document, declared []string) error {
+	if r.tracker == nil || r.hierarchy == nil || doc.meta.DeclaredParents {
 		return nil
 	}
 
 	directories := r.hierarchy.Directories(doc.file)
-	if len(directories) == 0 || len(meta.Parents) < len(directories) {
+	if len(directories) == 0 || len(declared) < len(directories) {
 		return nil
 	}
 
-	offset := len(meta.Parents) - len(directories)
-	doc.directoryTitles = slices.Clone(meta.Parents[offset:])
+	offset := len(declared) - len(directories)
+	doc.directoryTitles = declared[offset:]
 
 	for i, key := range directories {
 		if r.hierarchy.HasIndex(key) {
@@ -766,29 +778,27 @@ func (r *publishRun) retitleDirectoryPages(ctx context.Context, doc *document) e
 			recorded = documents
 		}
 
-		title, err := r.retitleDirectoryPage(ctx, doc, recorded, offset+i)
+		kept, err := r.retitleDirectoryPage(ctx, doc, recorded, offset+i, doc.directoryTitles[i])
 		if err != nil {
 			return fmt.Errorf("unable to retitle the page of directory %q: %w", key, err)
 		}
-		if title != "" {
-			doc.directoryTitles[i] = title
+		if kept != "" {
+			doc.directoryTitles[i] = kept
 		}
 	}
 
 	return nil
 }
 
-// retitleDirectoryPage gives the page recorded under key the title
-// meta.Parents[i] now names, and returns the title to record it under
-// instead of that one, if any.
+// retitleDirectoryPage gives the page recorded under key the title its
+// directory now declares, the parent meta.Parents[i] stands for, and returns
+// the title to record it under instead, if any.
 //
-// A title another page already carries is not taken: the directory stays
-// on its page, under the old title and recorded as before, and the change
-// is tried again on the next run. A dry run renames nothing, and has the
-// document look for the page under the title it carries.
-func (r *publishRun) retitleDirectoryPage(ctx context.Context, doc *document, key string, i int) (string, error) {
+// A title another page carries is not taken: the directory stays on its
+// page under the old title and is tried again on the next run. A dry run
+// renames nothing.
+func (r *publishRun) retitleDirectoryPage(ctx context.Context, doc *document, key string, i int, title string) (string, error) {
 	meta := doc.meta
-	title := meta.Parents[i]
 
 	entry, ok, err := r.tracker.Recorded(ctx, meta.Space, key)
 	if err != nil || !ok || entry.PageID == "" || entry.Title == "" || entry.Title == title {
@@ -805,7 +815,7 @@ func (r *publishRun) retitleDirectoryPage(ctx context.Context, doc *document, ke
 	if errors.Is(err, confluence.ErrNotFound) {
 		return "", nil
 	}
-	if err != nil || !inSpace {
+	if err != nil || !inSpace || pg.Title == title {
 		return "", err
 	}
 
@@ -821,9 +831,6 @@ func (r *publishRun) retitleDirectoryPage(ctx context.Context, doc *document, ke
 		meta.Parents[i] = pg.Title
 
 		return entry.Title, nil
-	}
-	if pg.Title == title {
-		return "", nil
 	}
 
 	if r.config.Mode.DryRun {
@@ -841,40 +848,31 @@ func (r *publishRun) retitleDirectoryPage(ctx context.Context, doc *document, ke
 
 	pg, err = r.api.GetPageByIDExpanded(ctx, pg.ID, "ancestors,version,body.storage")
 	if err != nil {
-		return "", fmt.Errorf("unable to read page %s: %w", entry.PageID, err)
+		return "", fmt.Errorf("unable to read page %s: %w", pg.ID, err)
 	}
-
 	previous := pg.Title
-	pg.Title = title
-	if err := r.api.UpdatePage(ctx, pg, pg.Body.Storage.Value, confluence.UpdateOptions{
-		MinorEdit:      true,
-		VersionMessage: fmt.Sprintf("renamed from %q", previous),
-	}); err != nil {
-		return "", fmt.Errorf("unable to rename page %s to %q: %w", pg.ID, title, err)
+	if err := page.Retitle(ctx, r.api, pg, title); err != nil {
+		return "", err
 	}
-
 	logctx.From(ctx).Info().Msgf(
 		"directory %s is now titled %q; renamed its page %s from %q", key, title, pg.ID, previous,
 	)
+	meta.Parents[i] = title
 
-	return "", r.placeDirectoryPage(ctx, meta, pg, i)
+	return "", r.placeDirectoryPage(ctx, doc, pg, i)
 }
 
-// placeDirectoryPage moves a renamed directory page under the page its
-// chain now names above it, when that is not among its ancestors: a hashed
-// title changes with the --parents above it, and the page made under the
-// new title used to go there.
-func (r *publishRun) placeDirectoryPage(ctx context.Context, meta *metadata.Meta, pg *confluence.PageInfo, i int) error {
+// placeDirectoryPage moves a renamed directory page under the page its chain
+// now names above it, made if need be, when it is not there already: a
+// hashed title changes with the --parents above it.
+func (r *publishRun) placeDirectoryPage(ctx context.Context, doc *document, pg *confluence.PageInfo, i int) error {
 	if i == 0 {
 		return nil
 	}
 
-	parent, err := r.api.FindPage(ctx, meta.Space, meta.Parents[i-1], confluence.ContentPage)
+	parent, err := page.EnsureAncestry(ctx, r.api, doc.meta.Space, doc.meta.Parents[:i], r.ancestryOptions(doc))
 	if err != nil {
-		return fmt.Errorf("unable to look up %q: %w", meta.Parents[i-1], err)
-	}
-	if parent == nil {
-		return nil
+		return err
 	}
 	for _, ancestor := range pg.Ancestors {
 		if ancestor.ID == parent.ID {

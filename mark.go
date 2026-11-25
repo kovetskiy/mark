@@ -2685,10 +2685,7 @@ func (r *publishRun) previewLocation(ctx context.Context, doc *document) (pagePr
 	// Confluence is looked for under its old title and the page is
 	// reported moved on every preview while the real run leaves it be.
 	// It only reads, and a dry run's manifest store saves nothing.
-	if err := r.retitleDirectoryPages(ctx, doc); err != nil {
-		return found, err
-	}
-	if err := refreshStaleParents(ctx, r.tracker, r.api, meta, r.titles, doc.warnings); err != nil {
+	if err := r.resolveParents(ctx, doc); err != nil {
 		return found, err
 	}
 
@@ -2997,15 +2994,11 @@ func (r *publishRun) resolveDocumentPage(ctx context.Context, doc *document) (*d
 	api, meta := r.api, doc.meta
 	dest := &destination{}
 
-	if err := r.retitleDirectoryPages(ctx, doc); err != nil {
-		return nil, err
-	}
-
 	// Parents are named by title, so a parent that has itself been renamed
 	// leaves this document pointing at a name nothing carries any more.
 	// Do this before resolution, so ancestry is walked against titles that
 	// exist rather than creating an empty page under the old one.
-	if err := refreshStaleParents(ctx, r.tracker, api, meta, r.titles, doc.warnings); err != nil {
+	if err := r.resolveParents(ctx, doc); err != nil {
 		return nil, err
 	}
 
