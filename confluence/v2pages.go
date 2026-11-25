@@ -235,6 +235,20 @@ func eachV2[T any](
 	describe string,
 	visit func(result T) (stop bool),
 ) error {
+	return walkV2(ctx, api, path, query, describe, true, visit)
+}
+
+// walkV2 is eachV2, with a 404 on the first page read as an empty collection
+// only when notFoundEmpty is set.
+func walkV2[T any](
+	ctx context.Context,
+	api *API,
+	path []string,
+	query url.Values,
+	describe string,
+	notFoundEmpty bool,
+	visit func(result T) (stop bool),
+) error {
 	var cursor string
 
 	for {
@@ -247,7 +261,7 @@ func eachV2[T any](
 		}
 
 		result, err := get[listing[T]](ctx, api.v2, path, page)
-		if errors.Is(err, ErrNotFound) && cursor == "" {
+		if notFoundEmpty && errors.Is(err, ErrNotFound) && cursor == "" {
 			return nil
 		}
 		if err != nil {
@@ -399,6 +413,31 @@ func (api *API) collectionOfV2(ctx context.Context, id string) (string, error) {
 	api.contentTypesV2.Store(id, pageType)
 
 	return v2Collection(pageType), nil
+}
+
+// childPagesV2 is GetChildPages against v2. The parent may be a page or a
+// folder, which v2 lists under different routes, so a 404 from the page route
+// sends the request to the folder one. A 404 from both is a parent that is
+// gone, and is returned as v1 returns it rather than read as no children.
+func (api *API) childPagesV2(ctx context.Context, parentID string) ([]PageInfo, error) {
+	var pages []PageInfo
+	visit := func(id string, typ ContentType, title string) bool {
+		if typ == ContentPage {
+			pages = append(pages, PageInfo{ID: id, Type: ContentPage, Title: title})
+		}
+		return false
+	}
+
+	operation := "list child pages of " + parentID
+	err := api.walkDirectChildren(ctx, "pages", parentID, operation, false, visit)
+	if errors.Is(err, ErrNotFound) && len(pages) == 0 {
+		err = api.walkDirectChildren(ctx, "folders", parentID, operation, false, visit)
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	return pages, nil
 }
 
 // deletePageV2 is DeletePage against v2, which a token minted with

@@ -552,3 +552,34 @@ func TestGatewayGetChildPages(t *testing.T) {
 	assert.Equal(t, "Child", children[0].Title)
 	assert.Equal(t, 0, server.CountRequests("GET", "/rest/api/content"))
 }
+
+// The children come in the order of the tree, as v1 gives them, for the
+// ordering of siblings and the check after a move.
+func TestGatewayGetChildPagesInTreeOrder(t *testing.T) {
+	api, server := newGatewayAPI(t)
+	parent := server.AddPage("DOCS", "Parent", "page", "")
+	first := server.AddPage("DOCS", "First", "page", parent.ID)
+	second := server.AddPage("DOCS", "Second", "page", parent.ID)
+	server.MovePage(first.ID, parent.ID)
+
+	children, err := api.GetChildPages(context.Background(), parent.ID)
+	require.NoError(t, err)
+	require.Len(t, children, 2)
+	assert.Equal(t, []string{second.ID, first.ID}, []string{children[0].ID, children[1].ID})
+}
+
+// A page can sit in a folder, which v2 lists under its own route, and a
+// parent that is gone is reported, not read as childless.
+func TestGatewayGetChildPagesOfAFolder(t *testing.T) {
+	api, server := newGatewayAPI(t)
+	folder := server.AddFolder("DOCS", "Folder", "", "")
+	child := server.AddPage("DOCS", "Child", "page", folder.ID)
+
+	children, err := api.GetChildPages(context.Background(), folder.ID)
+	require.NoError(t, err)
+	require.Len(t, children, 1)
+	assert.Equal(t, child.ID, children[0].ID)
+
+	_, err = api.GetChildPages(context.Background(), "424242")
+	require.ErrorIs(t, err, confluence.ErrNotFound)
+}

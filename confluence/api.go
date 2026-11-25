@@ -2539,15 +2539,27 @@ func (api *API) eachDirectChild(
 		collection = "folders"
 	}
 
+	return api.walkDirectChildren(ctx, collection, parentID, operation, true, visit)
+}
+
+// walkDirectChildren reads the v2 direct-children listing of parentID in
+// collection ("pages" or "folders"), in the order of the tree: the listing's
+// default order is not documented to be that one.
+func (api *API) walkDirectChildren(
+	ctx context.Context,
+	collection, parentID, operation string,
+	notFoundEmpty bool,
+	visit func(id string, typ ContentType, title string) (stop bool),
+) error {
 	type child struct {
 		ID    string      `json:"id"`
 		Type  ContentType `json:"type"`
 		Title string      `json:"title"`
 	}
 
-	return eachV2(
+	return walkV2(
 		ctx, api, []string{collection, parentID, "direct-children"},
-		url.Values{"limit": {"100"}}, operation,
+		url.Values{"limit": {"100"}, "sort": {"child-position"}}, operation, notFoundEmpty,
 		func(c child) bool { return visit(c.ID, c.Type, c.Title) },
 	)
 }
@@ -2772,16 +2784,7 @@ func (api *API) CreatePageWithFolderParent(
 // scoped token is refused v1's.
 func (api *API) GetChildPages(ctx context.Context, parentID string) ([]PageInfo, error) {
 	if api.gateway {
-		var pages []PageInfo
-		err := api.eachDirectChild(ctx, parentID, ContentPage, "list child pages of "+parentID,
-			func(id string, typ ContentType, title string) bool {
-				if typ == ContentPage {
-					pages = append(pages, PageInfo{ID: id, Type: ContentPage, Title: title})
-				}
-				return false
-			},
-		)
-		return pages, err
+		return api.childPagesV2(ctx, parentID)
 	}
 
 	return listV1[PageInfo](
