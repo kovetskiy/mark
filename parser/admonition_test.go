@@ -262,6 +262,12 @@ func TestAdmonitionParser(t *testing.T) {
 			want:   []string{"note::a"},
 		},
 		{
+			// goldmark's ParseAttributes refuses an empty name, which would
+			// leave the block in the hidden body as text.
+			name:   "an attribute block goldmark refuses is a sentence",
+			source: "??? note {#}\n    x\n\n??? note {.}\n    x\n\n??? tip \"T\" {#}\n    x\n",
+		},
+		{
 			name:   "nested collapsed in a panel",
 			source: "!!! note \"outer\"\n    a\n\n    ??? tip \"inner\"\n        b\n\n    c\n",
 			want:   []string{`note:"outer":a`, `  tip:"inner":b`},

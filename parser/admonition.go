@@ -606,11 +606,25 @@ func collapsedOpening(rest []byte) (class []byte, titleEnd int, ok bool) {
 	}
 
 	// A block followed by prose is not attributes, and the sentence is text.
-	if !attributesEndLine(rest, text.NewSegment(at, len(rest))) {
+	if !attributesTaken(rest, at) {
 		return nil, 0, false
 	}
 
 	return class, titleEnd, true
+}
+
+// attributesTaken reports whether the attribute block at at in rest ends the
+// line and is one goldmark reads: goldmark v1's grammar also takes "{.}" and
+// "{#}", which ParseAttributes refuses, and the opening line would then leave
+// them in the body as text.
+func attributesTaken(rest []byte, at int) bool {
+	if !attributesEndLine(rest, text.NewSegment(at, len(rest))) {
+		return false
+	}
+
+	_, ok := parser.ParseAttributes(text.NewReader(rest[at:], text.IdentityDecoder))
+
+	return ok
 }
 
 // quotedTitleEnd returns the offset just past the quote that closes the title
@@ -629,7 +643,7 @@ func quotedTitleEnd(rest []byte, open int) int {
 		}
 
 		after := i + 1 + util.TrimLeftSpaceLength(rest[i+1:])
-		if after < len(rest) && rest[after] == '{' && attributesEndLine(rest, text.NewSegment(after, len(rest))) {
+		if after < len(rest) && rest[after] == '{' && attributesTaken(rest, after) {
 			return i + 1
 		}
 	}
