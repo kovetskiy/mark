@@ -20,7 +20,10 @@ mixed in the same document to create complex hierarchies.
 parents a document declares itself: with `--parents "Engineering/Handbook"`, a
 document whose `Parent` is `Setup` ends up under Engineering > Handbook >
 Setup. The titles are separated by `/`, and `--parents-delimiter` sets another
-separator for titles that contain a slash.
+separator for titles that contain a slash. Each title is trimmed of the spaces
+around it, as a `Parent` header is, so `--parents "Engineering / Handbook"` names
+the same two pages, and an empty one, as in `Engineering//Handbook`, is
+skipped.
 
 ## Parents from the directory a file is in
 
@@ -107,6 +110,42 @@ with `Synchronized: false` publishes nothing, so neither is refused. Without
 and two documents declaring the same ones need different titles. The refusal
 suggests `--title-append-generated-hash` only where it would tell the two
 documents apart: not when it is already on, nor for two under the same parents.
+
+### What the hash is taken over
+
+The hash takes titles and the space key the way Confluence does, without regard
+to case, so `Parent: Handbook` and `Parent: handbook`, or `Space: DOCS` and
+`Space: docs`, give a page the same hash; the title keeps the case it was
+written in. It is taken over the trimmed title, so with `--title-from-filename`
+a file named `guide-.md` is published as `Guide - <hash>`, with the hash of
+`guide.md`.
+
+> **Upgrading from v17.3.1 or earlier:** the hash used to be taken over the
+> parents, space key and title as written, case included. It now gives a
+> different hash to nearly every page -- any whose title, parents or space key
+> has an upper-case letter in it -- so the next run publishes each page under a
+> new title: a document titled `Doc` under `Parent` in `DOCS`, published as
+> `Doc - 1f761d56`, becomes `Doc - b00f6d06`. What happens to the pages
+> already there depends on `--track-pages`:
+>
+> * **Without it**, mark finds no page of the new title and creates one beside
+>   the old one, under the same parent. The old page is left as it was, with its
+>   history, comments and attachments, and nothing removes it: delete it by
+>   hand. With `--parents-from-path`, every directory's page is created again
+>   under its new title too, so the whole tree is published a second time
+>   beside the first.
+> * **With it**, each document's page is renamed in place: it keeps its id,
+>   history, comments and attachments, and links to it keep working. With
+>   `--parents-from-path`, so is a directory's page that its own `index.md` or
+>   `README.md` publishes. The page of a directory without one is not: a page
+>   is created under the directory's new title, the documents are moved under
+>   it, and the old directory page is left empty. The manifest no longer
+>   records it, so `--on-orphan` does not offer it; delete it by hand.
+>
+> `--dry-run` shows the new titles, and with `--track-pages` each rename,
+> before anything changes. A `--parents` title written with spaces around a
+> delimiter, and a `--title-from-filename` title of a name ending in `-` or
+> `_`, change as well, being trimmed now before they are hashed or looked up.
 
 ### Directories are remembered too
 
