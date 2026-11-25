@@ -593,3 +593,47 @@ func TestFolderTitleAppendGeneratedHashIgnoresCase(t *testing.T) {
 	assert.Len(t, server.Folders(), 1)
 	assert.Equal(t, root.ID, server.Folders()[0].ParentID)
 }
+
+// folderRecord is a page.FolderTracker kept in a map, as the manifest keeps it
+// from run to run.
+type folderRecord map[string]string
+
+func (r folderRecord) RecordFolder(_ context.Context, _, path, id string) error {
+	r[path] = id
+	return nil
+}
+
+func (r folderRecord) LookupFolder(_ context.Context, _, path string) (string, bool, error) {
+	id, ok := r[path]
+	return id, ok, nil
+}
+
+// TestFolderTitleAppendGeneratedHashFollowsTheHash: two parent chains that end
+// at one page hash a folder beneath it differently. Neither the run's cache
+// nor the --track-pages record may hand the second the folder the first
+// created, or where a page lands depends on which file went first.
+func TestFolderTitleAppendGeneratedHashFollowsTheHash(t *testing.T) {
+	want := page.FolderTitles("DOCS", []string{"Root"}, []string{"Guides"}, true)[0]
+
+	for _, tracked := range []bool{false, true} {
+		ctx := t.Context()
+		api, server := newAPI(t)
+		top := server.AddPage("DOCS", "Top", "page", "")
+		server.AddPage("DOCS", "Root", "page", top.ID)
+
+		options := hashedOptions(false)
+		if tracked {
+			options.Folders = folderRecord{}
+		}
+		_, err := page.EnsureMixedAncestry(ctx, api, "DOCS", []string{"Guides"}, []string{"Top", "Root"}, options)
+		require.NoError(t, err)
+
+		if tracked {
+			options.FolderCache = page.NewFolderCache()
+		}
+		short, err := page.EnsureMixedAncestry(ctx, api, "DOCS", []string{"Guides"}, []string{"Root"}, options)
+		require.NoError(t, err)
+		require.NotNil(t, short)
+		assert.Equal(t, want, short.Title, "tracked: %v", tracked)
+	}
+}
