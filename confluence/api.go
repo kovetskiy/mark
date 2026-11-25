@@ -1080,9 +1080,15 @@ func (api *API) listContent(
 	}
 
 	searched, searchErr := api.searchContentCQL(ctx, query, space, title, pageType)
+	if IsCancellation(searchErr) {
+		return listing[PageInfo]{}, searchErr
+	}
 	if searchErr != nil {
+		// The search's error is text only: its 404 must not reach
+		// errors.Is(ErrNotFound), or the caller creates the page.
 		return listing[PageInfo]{}, fmt.Errorf(
-			"%w (the search fallback through /content/search was tried and failed: %w)", err, searchErr,
+			"%w (the search fallback through /content/search was tried and failed: %v)",
+			err, searchErr, //nolint:errorlint // the search's 404 must not read as a missing page
 		)
 	}
 	if len(searched.Results) == 0 {

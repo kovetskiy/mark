@@ -180,3 +180,29 @@ func TestFindPageThroughTheGatewayNeverSearches(t *testing.T) {
 	assert.Equal(t, 0, contentGets(server, "/rest/api/content"))
 	assert.Equal(t, 0, contentGets(server, "/content/search"))
 }
+
+func TestFindPageDoesNotReadAFailedSearchAsNoPageWhenTheListingIsRefused(t *testing.T) {
+	api, server := newAPI(t)
+	server.AddPage("DOCS", "Page", "page", "")
+	server.SetFail(func(r *http.Request) (int, string, bool) {
+		path := strings.TrimRight(r.URL.Path, "/")
+		switch {
+		case r.Method != http.MethodGet:
+		case strings.HasSuffix(path, "/rest/api/content"):
+			return http.StatusForbidden, `{"message":"refused"}`, true
+		case strings.HasSuffix(path, "/content/search"):
+			return http.StatusNotFound, `{"message":"no search here"}`, true
+		}
+		return 0, "", false
+	})
+
+	page, err := api.FindPage(context.Background(), "DOCS", "Page", "page")
+	require.ErrorIs(t, err, confluence.ErrForbidden)
+	assert.NotErrorIs(t, err, confluence.ErrNotFound)
+	assert.Nil(t, page)
+	assert.Contains(t, err.Error(), "404")
+
+	for _, req := range server.Requests() {
+		assert.NotEqual(t, http.MethodPost, req.Method, "nothing may be created: %s %s", req.Method, req.Path)
+	}
+}
