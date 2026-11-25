@@ -172,7 +172,7 @@ file, no commit. The record lives in Confluence.
 | title of a recorded page declared by a second document | the page is recorded for a document of the run that still declares the title, so that document is published first and the second is refused |
 | folder renamed in Confluence | the recorded folder ID, reused rather than duplicated |
 | source file deleted | a recorded path absent from a run whose pattern covered it |
-| two files claiming one page | the reverse index, when the second one is recorded |
+| two files claiming one page | the reverse index, when the second one is recorded; a run of both is refused their title |
 | document changed `Space` | the same path recorded against another space |
 
 A retitle is written even under `--changes-only`. The content fingerprint would
@@ -195,6 +195,12 @@ with the document it is recorded for, and the other one is refused as a second
 document of the title. A file renamed since counts as the recorded document when
 its content is unchanged. A recorded file that is gone from the run, or that
 gives the title up, holds nothing, and the title goes to the document taking it.
+
+A page can be recorded for two documents, when two runs each published one of
+them under its title. While both are in a run, every document of it declaring
+that title is refused it, as nothing says which of the two the page is. Removing the document
+the page is not from one run, with the pattern that published it still covering
+its path, makes the record forget it; it can come back under another title.
 
 Renaming a file is the awkward case: the path is the key, so a rename is a miss,
 and when the title comes from the filename the title lookup misses too. What

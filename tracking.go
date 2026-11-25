@@ -189,39 +189,81 @@ func (r *publishRun) titleHeld(
 		return nil, nil
 	}
 
-	recorded, ok, err := r.tracker.RecordedFor(ctx, meta.Space, pg.ID)
+	recorded, err := r.tracker.RecordedFor(ctx, meta.Space, pg.ID)
 	if err != nil {
 		return nil, fmt.Errorf("unable to read page mapping for page %s: %w", pg.ID, err)
 	}
-	if !ok || recorded == manifest.Key(key) {
-		return nil, nil
+
+	// The documents of the run the page is recorded for, this one included,
+	// each once and in the order of their keys.
+	own := manifest.Key(key)
+	var holders []input
+	for _, path := range recorded {
+		holder, ok := input{file: file, key: key}, path == own
+		if !ok {
+			holder, ok = r.titles.keyed(path)
+		}
+		if !ok {
+			holder, ok, err = r.renamedFrom(ctx, meta, path, pg.ID)
+			if err != nil {
+				return nil, err
+			}
+		}
+		// A holder that publishes nothing leaves the page to be found by its
+		// title.
+		if !ok || holder.file != file && r.publishedAs(holder, meta) == nil ||
+			slices.ContainsFunc(holders, func(in input) bool { return in.file == holder.file }) {
+			continue
+		}
+		holders = append(holders, holder)
 	}
 
-	holder, ok := r.titles.keyed(recorded)
-	if !ok {
-		holder, ok, err = r.renamedFrom(ctx, meta, recorded, pg.ID)
-		if err != nil {
-			return nil, err
+	if len(holders) > 1 {
+		return nil, &titleSharedError{
+			space: meta.Space, title: meta.Title, page: pg.ID,
+			one: holders[0].file, other: holders[1].file,
 		}
 	}
-	if !ok || holder.file == file {
+	if len(holders) == 0 || holders[0].file == file {
 		return nil, nil
 	}
 
-	// A holder that publishes nothing leaves the page to be found by its
-	// title.
-	declared := r.titles.readAhead(holder).meta
-	if declared == nil || !declared.Publish() || declared.Title == "" ||
-		!strings.EqualFold(declared.Space, meta.Space) || declared.Type != meta.Type {
-		return nil, nil
-	}
-
+	holder := holders[0]
 	held := &titleHeldError{space: meta.Space, title: meta.Title, page: pg, holder: holder}
-	if !strings.EqualFold(declared.Title, pg.Title) {
+	if declared := r.publishedAs(holder, meta); !strings.EqualFold(declared.Title, pg.Title) {
 		held.retitled = declared.Title
 	}
 
 	return held, nil
+}
+
+// publishedAs returns what holder declares when it publishes content of
+// meta's space and type under a title, and nil when it does not.
+func (r *publishRun) publishedAs(holder input, meta *metadata.Meta) *metadata.Meta {
+	declared := r.titles.readAhead(holder).meta
+	if declared == nil || !declared.Publish() || declared.Title == "" ||
+		!strings.EqualFold(declared.Space, meta.Space) || declared.Type != meta.Type {
+		return nil
+	}
+
+	return declared
+}
+
+// titleSharedError refuses a title whose page is recorded for two documents
+// of the run: two runs each published one of them to it, and nothing says
+// which of the two the page is.
+type titleSharedError struct {
+	space, title, page string
+	one, other         string
+}
+
+func (e *titleSharedError) Error() string {
+	return fmt.Sprintf(
+		"page %s, which the title %q finds in space %q, is recorded for both %s and %s, "+
+			"and which of them publishes it cannot be told: remove the one it is not from a run, "+
+			"which forgets its record, and add it back under another title",
+		e.page, e.title, e.space, e.one, e.other,
+	)
 }
 
 // renamedFrom returns the document of the run declaring meta's title that

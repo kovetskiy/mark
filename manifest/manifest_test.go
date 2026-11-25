@@ -102,20 +102,73 @@ func TestRecordedForNamesThePathOfAPage(t *testing.T) {
 
 	require.NoError(t, store.Record(ctx, "DOCS", "docs/intro.md", "1234", "T", ""))
 
-	path, ok, err := store.RecordedFor(ctx, "DOCS", "1234")
+	paths, err := store.RecordedFor(ctx, "DOCS", "1234")
 	require.NoError(t, err)
-	require.True(t, ok)
-	assert.Equal(t, "docs/intro.md", path)
+	assert.Equal(t, []string{"docs/intro.md"}, paths)
 
-	_, ok, err = store.RecordedFor(ctx, "DOCS", "5678")
+	paths, err = store.RecordedFor(ctx, "DOCS", "5678")
 	require.NoError(t, err)
-	assert.False(t, ok, "no path recorded the page")
+	assert.Empty(t, paths, "no path recorded the page")
 
 	require.NoError(t, store.Record(ctx, "DOCS", "docs/intro.md", "5678", "T", ""))
 
-	_, ok, err = store.RecordedFor(ctx, "DOCS", "1234")
+	paths, err = store.RecordedFor(ctx, "DOCS", "1234")
 	require.NoError(t, err)
-	assert.False(t, ok, "the path publishes to another page now")
+	assert.Empty(t, paths, "the path publishes to another page now")
+}
+
+// TestRecordedForNamesEveryPathOfAPage: two runs can each record a document
+// for one page, and the answer names both, the same on every load, rather
+// than whichever the reverse index happened to keep. One of them recording
+// another page since leaves the other.
+func TestRecordedForNamesEveryPathOfAPage(t *testing.T) {
+	ctx := t.Context()
+	store, server := newStore(t)
+	server.AddSpace("DOCS")
+
+	require.NoError(t, store.Record(ctx, "DOCS", "one.md", "1", "Shared", "h1"))
+	require.NoError(t, store.Record(ctx, "DOCS", "two.md", "1", "Shared", "h2"))
+	require.NoError(t, store.Save(ctx))
+
+	for range 20 {
+		paths, err := newStoreOn(t, server).RecordedFor(ctx, "DOCS", "1")
+		require.NoError(t, err)
+		require.Equal(t, []string{"one.md", "two.md"}, paths)
+	}
+
+	require.NoError(t, store.Record(ctx, "DOCS", "two.md", "2", "Other", "h2"))
+	require.NoError(t, store.Save(ctx))
+
+	for range 20 {
+		paths, err := newStoreOn(t, server).RecordedFor(ctx, "DOCS", "1")
+		require.NoError(t, err)
+		require.Equal(t, []string{"one.md"}, paths)
+	}
+}
+
+// TestLookupMovedFollowsTheLatestOfTwoPathsOfAPage: of two entries naming
+// one page, both gone from the run, a document moving onto the page takes the
+// one that wrote it last, on every load of the manifest.
+func TestLookupMovedFollowsTheLatestOfTwoPathsOfAPage(t *testing.T) {
+	ctx := t.Context()
+	store, server := newStore(t)
+	server.AddSpace("DOCS")
+
+	// f.md and two.md are kept in one shard, so only the order a map is read
+	// in tells them apart.
+	require.Equal(t, manifest.ShardFor("f.md"), manifest.ShardFor("two.md"))
+	require.NoError(t, store.Record(ctx, "DOCS", "f.md", "1", "Doc", "h1"))
+	require.NoError(t, store.RecordVersion(ctx, "DOCS", "f.md", 3))
+	require.NoError(t, store.Record(ctx, "DOCS", "two.md", "1", "Doc", "h2"))
+	require.NoError(t, store.RecordVersion(ctx, "DOCS", "two.md", 5))
+	require.NoError(t, store.Save(ctx))
+
+	for range 40 {
+		entry, ok, err := runStore(t, server, "sub/doc.md").LookupMoved(ctx, "DOCS", "sub/doc.md", "1")
+		require.NoError(t, err)
+		require.True(t, ok)
+		require.Equal(t, int64(5), entry.Version, "the entry that wrote the page last")
+	}
 }
 
 // TestLookupSurvivesTitleChange is the point of the whole package: the title
