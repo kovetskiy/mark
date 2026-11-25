@@ -38,12 +38,17 @@ func TestGeneratedAdmonitionDocumentsCompile(t *testing.T) {
 	// A heading's words are its id as well.
 	id := regexp.MustCompile(` id="[^"]*"`)
 
-	for n := range documents {
-		source := admonitiongen.New(rand.New(rand.NewSource(int64(seed+n))), options).Text
+	// The documents with '???' admonitions are a corpus of their own.
+	for _, collapsed := range []bool{false, true} {
+		options.Collapsed = collapsed
 
-		out, _, err := CompileMarkdown(t.Context(), []byte(source), std, "test.md", Options{Features: []string{"mkdocsadmonitions"}})
-		require.NoError(t, err, "seed %d, document %q", seed+n, source)
-		require.NoError(t, CheckWellFormed(out), "seed %d, document %q, page %q", seed+n, source, out)
-		require.Equal(t, word.FindAllString(source, -1), word.FindAllString(id.ReplaceAllString(out, ""), -1), "seed %d, document %q, page %q", seed+n, source, out)
+		for n := range documents {
+			source := admonitiongen.New(rand.New(rand.NewSource(int64(seed+n))), options).Text
+
+			out, _, err := CompileMarkdown(t.Context(), []byte(source), std, "test.md", Options{Features: []string{"mkdocsadmonitions"}})
+			require.NoError(t, err, "seed %d, document %q", seed+n, source)
+			require.NoError(t, CheckWellFormed(out), "seed %d, document %q, page %q", seed+n, source, out)
+			require.Equal(t, word.FindAllString(source, -1), word.FindAllString(id.ReplaceAllString(out, ""), -1), "seed %d, document %q, page %q", seed+n, source, out)
+		}
 	}
 }

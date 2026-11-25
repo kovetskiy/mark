@@ -146,7 +146,8 @@ func (r reading) closedAsRead() error {
 
 		run := r.lineOf(body.ClosedAt)
 		text := strings.TrimRight(r.lineText(run), " \t\n")
-		if n := len(text) - len(strings.TrimRight(text, "!")); n < body.Length {
+		marker := string(r.source[admonition.Pos()])
+		if n := len(text) - len(strings.TrimRight(text, marker)); n < body.Length {
 			return ast.WalkStop, fmt.Errorf("line %d: closed by line %d, %q, which is no run as long as its own",
 				line, run+1, text)
 		}
@@ -299,8 +300,10 @@ func (r reading) closedInLiteralText(literal [][2]int) error {
 // blockquote or body, with a line of nothing but a run as long as its own in
 // its column.
 //
-// It looks only at an admonition that is not indented in what holds it, whose
-// column is that of the lines of a paragraph after it.
+// It looks only at an admonition opened with '!' that is not indented in
+// what holds it, whose column is that of the lines of a paragraph after it: a
+// '?' body is never level with its opening line, and no run closes one that
+// is.
 func (r reading) runLeftAsText() error {
 	run := func(at int) int {
 		n := 0
@@ -317,7 +320,8 @@ func (r reading) runLeftAsText() error {
 			return ast.WalkContinue, nil
 		}
 
-		if body := cparser.BodyOf(admonition); !body.Level || body.ClosedAt > 0 || body.Indent != 0 {
+		body := cparser.BodyOf(admonition)
+		if !body.Level || body.ClosedAt > 0 || body.Indent != 0 || r.source[admonition.Pos()] != '!' {
 			return ast.WalkContinue, nil
 		}
 
@@ -418,12 +422,14 @@ func checkTabbedAlike(r admonitiongen.Rand, document admonitiongen.Document, reg
 }
 
 // checkGenerated writes a document from r's choices, any document or a
-// regular one, and checks it as written and with tabs.
-func checkGenerated(r admonitiongen.Rand, regularOnly bool) error {
+// regular one, with '???' admonitions or without, and checks it as written
+// and with tabs.
+func checkGenerated(r admonitiongen.Rand, regularOnly, collapsed bool) error {
 	o := admonitiongen.All()
 	if regularOnly {
 		o = regular()
 	}
+	o.Collapsed = collapsed
 
 	document := admonitiongen.New(r, o)
 
@@ -447,8 +453,22 @@ func TestAdmonitionGeneratedDocuments(t *testing.T) {
 	for n := range differentialDocuments {
 		seed := int64(differentialSeed + n)
 
-		if err := checkGenerated(rand.New(rand.NewSource(seed)), n%2 == 1); err != nil {
+		if err := checkGenerated(rand.New(rand.NewSource(seed)), n%2 == 1, false); err != nil {
 			t.Fatalf("seed %d, regular %v, %v", seed, n%2 == 1, err)
+		}
+	}
+}
+
+// TestCollapsedAdmonitionGeneratedDocuments is TestAdmonitionGeneratedDocuments
+// for documents that open admonitions with '???' and '???+' too, and write runs
+// of '?'. They are a corpus of their own, so that the seeds above still name
+// the documents they named.
+func TestCollapsedAdmonitionGeneratedDocuments(t *testing.T) {
+	for n := range differentialDocuments {
+		seed := int64(differentialSeed + n)
+
+		if err := checkGenerated(rand.New(rand.NewSource(seed)), n%2 == 1, true); err != nil {
+			t.Fatalf("seed %d, regular %v, collapsed, %v", seed, n%2 == 1, err)
 		}
 	}
 }
@@ -465,6 +485,9 @@ func FuzzAdmonitionDocuments(f *testing.F) {
 		"!!!! quote \"T\"\nw2\n\n!!! note \"N\"\n    w5\n\n!!!!\nafter\n",
 		"- !!! note\n  text\ntext\n  !!!\n",
 		"\x04\x09\x03\x01\x02\x05\x08\x00\x07\x06\x0b\x0a\x0d\x0c\x04\x04\x09\x09\x03\x03\x08\x08",
+		"??? note \"T\"\n    body\n???\nafter\n",
+		"- ??? note \"T\"\n  prose\n",
+		"> ???+ tip \"say \"hi\"\"\n>     q\n> ???\n",
 	} {
 		f.Add([]byte(seed))
 	}
@@ -475,9 +498,11 @@ func FuzzAdmonitionDocuments(f *testing.F) {
 		}
 
 		for _, regularOnly := range []bool{false, true} {
-			choices := admonitiongen.Bytes(data)
-			if err := checkGenerated(&choices, regularOnly); err != nil {
-				t.Fatalf("regular %v, %v", regularOnly, err)
+			for _, collapsed := range []bool{false, true} {
+				choices := admonitiongen.Bytes(data)
+				if err := checkGenerated(&choices, regularOnly, collapsed); err != nil {
+					t.Fatalf("regular %v, collapsed %v, %v", regularOnly, collapsed, err)
+				}
 			}
 		}
 	})
