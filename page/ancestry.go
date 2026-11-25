@@ -72,8 +72,8 @@ func (c *FolderCache) lookup(space, contextID, title string) (string, bool) {
 	return id, ok
 }
 
-// resolveFolder finds the folder a title names, and may move one that an
-// earlier sync left at the space root.
+// resolveFolder finds the folder a title names, and with fromRoot may move one
+// that an earlier sync left at the space root.
 //
 // It takes dryRun because that move is a write, and it happens while the
 // ancestry is still being worked out -- long before the guard that decides
@@ -82,7 +82,7 @@ func (c *FolderCache) lookup(space, contextID, title string) (string, bool) {
 func resolveFolder(
 	ctx context.Context,
 	api *confluence.API,
-	dryRun bool,
+	dryRun, fromRoot bool,
 	space, title, underID string,
 	anchorPageID *string,
 ) (*confluence.FolderInfo, error) {
@@ -105,7 +105,7 @@ func resolveFolder(
 	}
 
 	// Top-level wiki folder may exist at space root from an earlier sync; move it under MARK_PARENTS.
-	if underAnchor {
+	if underAnchor && fromRoot {
 		folder, err = api.FindRootFolder(ctx, space, title)
 		if err != nil || folder == nil {
 			return folder, err
@@ -220,20 +220,18 @@ func folderPathKey(anchorPageID *string, folders []string, upto int) string {
 	return anchor + "\x00" + strings.Join(folders[:upto+1], "\x00")
 }
 
-// folderTitles are the titles the folder at folders[upto] is looked for under,
-// in order; it is created under the first. With FolderTitleAppendGeneratedHash
-// that is its title with a short hash of the parent pages and folders above
-// it and the space, as --title-append-generated-hash titles a page but
-// without regard to case: Confluence takes "Guides" and "guides" for one
-// folder, so they must hash alike or the second spelling makes another.
-func (o AncestryOptions) folderTitles(parents []string, space string, folders []string, upto int) []string {
+// folderTitle is the title the folder at folders[upto] is created under. With
+// FolderTitleAppendGeneratedHash that is its title with a short hash of the
+// parent pages and folders above it and the space, as
+// --title-append-generated-hash titles a page but without regard to case:
+// Confluence takes "Guides" and "guides" for one folder, so they must hash
+// alike or the second spelling makes another.
+func (o AncestryOptions) folderTitle(parents []string, space string, folders []string, upto int) string {
 	if !o.FolderTitleAppendGeneratedHash {
-		return folders[upto : upto+1]
+		return folders[upto]
 	}
 
-	hashed := metadata.CaseFoldedHashTitle(slices.Concat(parents, folders[:upto]), space, folders[upto])
-
-	return []string{hashed, folders[upto]}
+	return metadata.CaseFoldedHashTitle(slices.Concat(parents, folders[:upto]), space, folders[upto])
 }
 
 // folderUnderID is the ID a folder is looked for and created under: the folder
@@ -249,34 +247,34 @@ func folderUnderID(parent *ParentInfo, anchorPageID *string) string {
 	}
 }
 
-// findFolder is the folder the run cached under title, or else the first found
-// under one of titles.
+// findFolder is the folder the run cached under title, or else the one found
+// under its created title, or else under title itself. Only the plain title is
+// looked for at the space root: no hashed folder was ever created there.
 func findFolder(
 	ctx context.Context,
 	api *confluence.API,
 	options AncestryOptions,
-	space, title, underID string,
+	space, title, created, underID string,
 	anchorPageID *string,
-	titles []string,
 ) (*confluence.FolderInfo, error) {
 	if id, ok := options.FolderCache.lookup(space, underID, title); ok {
 		return api.GetFolderByID(ctx, id)
 	}
 
-	for _, candidate := range titles {
-		folder, err := resolveFolder(ctx, api, options.DryRun, space, candidate, underID, anchorPageID)
+	if created != title {
+		folder, err := resolveFolder(ctx, api, options.DryRun, false, space, created, underID, anchorPageID)
 		if err != nil || folder != nil {
 			return folder, err
 		}
 	}
 
-	return nil, nil
+	return resolveFolder(ctx, api, options.DryRun, true, space, title, underID, anchorPageID)
 }
 
 // EnsureFolderAncestry creates the folder hierarchy and returns the final parent for page creation.
 // Top-level folders are created under anchorPageID (MARK_PARENTS page); nested folders nest under prior folders.
-// With options.FolderTitleAppendGeneratedHash, the hash of a folder's title
-// covers no parent pages; EnsureMixedAncestry's covers its pages.
+// With options.FolderTitleAppendGeneratedHash, the hash covers the space and
+// the folders above.
 //
 // It reads options.DryRun, FolderCache and Folders.
 func EnsureFolderAncestry(
@@ -310,15 +308,19 @@ func ensureFolderAncestry(
 		return nil, fmt.Errorf("failed to get space ID for %q: %w", space, err)
 	}
 
+	created := make([]string, len(folders))
+	for i := range folders {
+		created[i] = options.folderTitle(parents, space, folders, i)
+	}
+
 	var parent *ParentInfo
 	rest := folders
 
 	// Find existing folders from the beginning of the hierarchy
 	for i, title := range folders {
 		underID := folderUnderID(parent, anchorPageID)
-		titles := options.folderTitles(parents, space, folders, i)
 
-		folder, err := findFolder(ctx, api, options, space, title, underID, anchorPageID, titles)
+		folder, err := findFolder(ctx, api, options, space, title, created[i], underID, anchorPageID)
 		if err != nil {
 			return nil, fmt.Errorf("error finding folder with title %q: %w", title, err)
 		}
@@ -414,12 +416,10 @@ func ensureFolderAncestry(
 		// within folders is what makes a recorded key match on the next run.
 		firstNew := len(folders) - len(rest)
 		for offset, title := range rest {
-			var folder *confluence.FolderInfo
-			var err error
-
 			underID := folderUnderID(parent, anchorPageID)
-			created := options.folderTitles(parents, space, folders, firstNew+offset)[0]
+			name := created[firstNew+offset]
 
+			underKind := confluence.ContentFolder
 			if parent == nil {
 				if anchorPageID == nil {
 					return nil, fmt.Errorf(
@@ -427,11 +427,10 @@ func ensureFolderAncestry(
 						title,
 					)
 				}
-				folder, err = api.CreateFolder(ctx, spaceID, created, anchorPageID, confluence.ContentPage)
-			} else {
-				pid := parent.ID
-				folder, err = api.CreateFolder(ctx, spaceID, created, &pid, confluence.ContentFolder)
+				underKind = confluence.ContentPage
 			}
+
+			folder, err := api.CreateFolder(ctx, spaceID, name, &underID, underKind)
 			if err != nil {
 				createErr := err
 
@@ -443,7 +442,7 @@ func ensureFolderAncestry(
 				// hit into a hard failure. A create that failed for a real
 				// reason leaves nothing to find, and the original error is what
 				// gets reported.
-				folder, err = findFolder(ctx, api, options, space, title, underID, anchorPageID, []string{created})
+				folder, err = findFolder(ctx, api, options, space, title, name, underID, anchorPageID)
 				if err != nil || folder == nil {
 					hint := ""
 					if !options.FolderTitleAppendGeneratedHash {
@@ -452,14 +451,14 @@ func ensureFolderAncestry(
 
 					return nil, fmt.Errorf(
 						"error creating folder with title %q%s: %w",
-						created, hint,
+						name, hint,
 						createErr,
 					)
 				}
 
 				logctx.From(ctx).Info().Msgf(
 					"folder %q already exists as %s; using it rather than creating another",
-					created, folder.ID,
+					name, folder.ID,
 				)
 			}
 
@@ -487,7 +486,7 @@ func ensureFolderAncestry(
 		// For dry-run, simulate the final parent
 		parent = &ParentInfo{
 			ID:    dryRunFolderID,
-			Title: options.folderTitles(parents, space, folders, len(folders)-1)[0],
+			Title: created[len(created)-1],
 			Type:  confluence.ContentFolder,
 		}
 	}
@@ -531,7 +530,7 @@ func EnsureMixedAncestry(
 			return &confluence.PageInfo{
 				ID:    dryRunFolderID,
 				Type:  "folder-parent",
-				Title: options.folderTitles(pages, space, folders, len(folders)-1)[0],
+				Title: options.folderTitle(pages, space, folders, len(folders)-1),
 			}, nil
 		}
 	}
