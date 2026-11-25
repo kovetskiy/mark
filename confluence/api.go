@@ -1898,7 +1898,8 @@ func (api *API) confirmVersion(ctx context.Context, page *PageInfo, version int6
 }
 
 // forgetStaleTitles drops what the cache says of a title page id has just
-// been given, and of the titles it no longer carries.
+// been given, and of the titles it no longer carries, and the pages kept
+// with it among their ancestors under another title.
 //
 // The cache is keyed by title, and a lookup of a title before any page wore it
 // records a miss. An update that moves a page onto that title outlives the fact
@@ -1931,8 +1932,23 @@ func (api *API) forgetStaleTitles(id, title string, pageType ContentType) {
 			}
 		case entry.ID == id && entry.Title != title:
 			delete(api.pageCache, key)
+		case hasStaleAncestor(entry, id, title):
+			delete(api.pageCache, key)
+			delete(api.pageCacheByID, entry.ID)
 		}
 	}
+}
+
+// hasStaleAncestor reports whether pg is kept with page id among its
+// ancestors under a title other than title.
+func hasStaleAncestor(pg *PageInfo, id, title string) bool {
+	for _, ancestor := range pg.Ancestors {
+		if ancestor.ID == id {
+			return ancestor.Title != title
+		}
+	}
+
+	return false
 }
 
 func (api *API) AddPageLabels(ctx context.Context, page *PageInfo, newLabels []string) (*LabelInfo, error) {

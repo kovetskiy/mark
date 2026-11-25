@@ -64,6 +64,7 @@ func TestRetitledDirectoryPageIsRenamedInPlace(t *testing.T) {
 			entry, ok := lookupKey(t, server, filepath.Join(dir, "guides"))
 			require.True(t, ok)
 			assert.Equal(t, guides, entry.PageID, "the directory is still recorded against its page")
+			assert.Equal(t, "Handbook", entry.Title, "under its new title")
 
 			require.NoError(t, os.RemoveAll(filepath.Join(dir, "guides")))
 			require.NoError(t, Run(t.Context(), config))
@@ -192,4 +193,18 @@ func TestHashedDirectoryPageFollowsAChangedParent(t *testing.T) {
 	assert.Equal(t, []string{guides}, server.ChildOrder(updated.ID), "and moved under New")
 	assert.Empty(t, server.ChildOrder(old.ID), "and nothing is left under Old")
 	assert.Equal(t, setup, server.ChildOrder(guides), "the document stays under it")
+}
+
+// TestDirectoryTitleChangedBackRenamesThePageBack: the chain under the
+// first title is still recorded for the page, which refreshStaleParents
+// follows to the second title; the directory's own title wins.
+func TestDirectoryTitleChangedBackRenamesThePageBack(t *testing.T) {
+	server, config, dir, guides, setup := retitledDirectoryFixture(t, "")
+
+	for _, title := range []string{"Handbook", "Guides"} {
+		writeAt(t, dir, "guides/.pages", "title: "+title+"\n")
+		require.NoError(t, Run(t.Context(), config))
+		assert.Equal(t, title, server.Page(guides).Title)
+		assert.Equal(t, guides, server.Page(setup).ParentID)
+	}
 }
