@@ -1261,10 +1261,8 @@ func AppendGeneratedHashContext(ctx context.Context, meta *Meta) {
 }
 
 // GeneratedHashTitle is title with a hash of it, its space and its parents as
-// written; AppendGeneratedHash uses CaseFoldedHashTitle. It is for a page with no
-// document of its own to hash, or whose title has to be known before its
-// document is read: the page standing for a directory, which every document
-// beneath it names as a parent.
+// written, case included. Mark hashes with CaseFoldedHashTitle, so this is not
+// the title it gives a page.
 func GeneratedHashTitle(parents []string, space, title string) string {
 	return title + " - " + generatedHash(append(slices.Clone(parents), space, title))
 }
