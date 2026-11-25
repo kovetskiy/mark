@@ -581,6 +581,9 @@ func (b admonitionHTMLBlockParser) Continue(node ast.Node, reader text.Reader, p
 // here, whatever it holds. The class has to be a word: "Really?" and `note"T"`
 // are prose.
 func collapsedOpening(rest []byte) (class []byte, titleEnd int, ok bool) {
+	// Blanks that end the line, a tab among them, are no part of it.
+	rest = rest[:len(rest)-util.TrimRightSpaceLength(rest)]
+
 	end := admonitionClassEnd(rest)
 	if end == 0 || !isAdmonitionClass(rest[:end]) {
 		return nil, 0, false
@@ -719,7 +722,8 @@ func parseAdmonitionOpeningLine(reader text.Reader, left, titleEnd int) *Admonit
 	remainingLine = withoutLineEnding(remainingLine)
 	remainingLength := len(remainingLine)
 
-	endClass := admonitionClassEnd(remainingLine)
+	// A tab at the end of the line ends the class as a space does.
+	endClass := admonitionClassEnd(remainingLine[:remainingLength-util.TrimRightSpaceLength(remainingLine)])
 	if endClass > 0 {
 		node.AdmonitionClass = remainingLine[0:endClass]
 	}

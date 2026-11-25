@@ -214,6 +214,11 @@ func TestAdmonitionParser(t *testing.T) {
 			want:   nil,
 		},
 		{
+			name:   "a tab that ends the line is a blank like a space",
+			source: "??? note\t\n    x\n\n!!! tip\t\n    y\n\n???+ info \"T\"\t \n    z\n",
+			want:   []string{"note::x", "tip::y", `info:"T":z`},
+		},
+		{
 			name:   "an unknown bare class in a list is prose",
 			source: "- ??? what\n  is this about\n",
 		},
