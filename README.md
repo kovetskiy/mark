@@ -393,7 +393,8 @@ pages with the v2 API, which needs:
 | `read:content.property:confluence`, `write:content.property:confluence` | the content appearance and emoji title of a page |
 | `read:page:confluence`, `write:page:confluence` | `--track-pages` with `--manifest-page`; without it the mapping is a space property, whose creation a scoped token is refused |
 | `read:folder:confluence`, `write:folder:confluence`, `read:hierarchical-content:confluence` | `Folder` headers: reading and creating folders, and finding one among its parent's direct children |
-| `delete:page:confluence`, `delete:blogpost:confluence` | `--on-orphan delete`: moving a page whose file is gone to the trash; with `read:hierarchical-content:confluence` to check it has no children first |
+| `read:hierarchical-content:confluence` | listing what is beneath a page or a folder: `--on-orphan archive` and `delete` checking that a page has no children first, `Order` headers, and `mark page` |
+| `delete:page:confluence`, `delete:blogpost:confluence` | `--on-orphan delete` and `mark page delete`: moving a page to the trash |
 
 Uploading attachments, applying `Label` headers, `--preserve-comments`,
 `--on-orphan archive`, `--watch=false`, page restrictions, mentions, moving a page among its siblings and

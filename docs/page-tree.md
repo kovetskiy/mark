@@ -454,6 +454,13 @@ mark publish --track-pages --on-orphan delete --files "docs/**/*.md"
 `delete` means the trash, which Confluence keeps recoverable. Mark never purges
 a page: that second step is left to a person.
 
+With a scoped API token, through the `api.atlassian.com` gateway, the page is
+trashed and its children listed through the v2 API: grant
+`delete:page:confluence` (and `delete:blogpost:confluence` for blog posts) and
+`read:hierarchical-content:confluence`, which `archive` needs as well for the
+check that a page has no children. See
+[Scoped API tokens](../README.md#scoped-api-tokens).
+
 A page somebody has already deleted or purged by hand counts as dealt with
 under `archive` and `delete`: Mark says it is already gone and stops tracking
 it.
