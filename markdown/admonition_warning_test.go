@@ -57,6 +57,24 @@ func TestAdmonitionBodyLeftOutIsAWarning(t *testing.T) {
 	}, warnings[0])
 }
 
+// TestCollapsedAdmonitionBodyLeftOutIsAWarning: a '???' body has to be
+// indented, so the warning does not offer a closing line, which would not
+// take the lines.
+func TestCollapsedAdmonitionBodyLeftOutIsAWarning(t *testing.T) {
+	out, warnings := compileWarned(t, "- ??? note \"T\"\n  prose\n", "docs/page.md", "mkdocsadmonitions")
+
+	assert.Contains(t, out, "</ac:structured-macro>\nprose</li>", "the page is still published")
+
+	require.Len(t, warnings, 1)
+	assert.Equal(t, report.Warning{
+		Kind: report.WarningAdmonitionBody,
+		File: "docs/page.md",
+		Line: 1,
+		Message: `the lines after "??? note \"T\"" are not indented, so they are published after the admonition ` +
+			`and not in it; indent them under it`,
+	}, warnings[0])
+}
+
 // TestAdmonitionBodyWarningIsForTheRightAdmonitions: one warning for each
 // admonition that lost the lines written as its body, and none for an
 // admonition that has no body to lose, has an indented one, or is closed.
@@ -72,6 +90,10 @@ func TestAdmonitionBodyWarningIsForTheRightAdmonitions(t *testing.T) {
 		{name: "in a list item", source: "- one\n- !!! note\n  in the item\n- three\n", lines: []int{2}},
 		{name: "in a blockquote", source: "> !!! note\n> quoted\n", lines: []int{1}},
 		{name: "in an indented body", source: "!!! note\n    !!! tip\n    a\n", lines: []int{2}},
+		{name: "collapsed, in a list item", source: "- one\n- ??? note \"T\"\n  prose\n", lines: []int{2}},
+		{name: "collapsed, in a blockquote", source: "> ??? note \"T\"\n> body\n", lines: []int{1}},
+		{name: "collapsed, in an indented body", source: "!!! note\n    ??? tip \"T\"\n    a\n", lines: []int{2}},
+		{name: "collapsed, indented body", source: "- ??? note \"T\"\n      body\n"},
 		{
 			// The run closes the admonition with the indented body, and the
 			// one around it has none of its own.
