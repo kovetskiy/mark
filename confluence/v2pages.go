@@ -443,10 +443,24 @@ func (api *API) childPagesV2(ctx context.Context, parentID string) ([]PageInfo, 
 // deletePageV2 is DeletePage against v2, which a token minted with
 // delete:page:confluence is allowed where v1's DELETE /content is not. Like
 // v1 without status=trashed, it moves the page to the trash.
+//
+// v2 answers 404 as well to a user or token that may not delete the page, so
+// a 404 counts as done only once the page reads back gone or in the trash.
 func (api *API) deletePageV2(ctx context.Context, contentID string) error {
 	collection, err := api.collectionOfV2(ctx, contentID)
 	if err == nil {
 		_, err = api.v2.do(ctx, nil, http.MethodDelete, []string{collection, contentID}, nil, nil, &struct{}{})
+		if errors.Is(err, ErrNotFound) {
+			if _, _, readErr := api.lookupContentV2(ctx, contentID, false); readErr == nil {
+				return fmt.Errorf(
+					"unable to delete content %s: Confluence answered 404 but the page is still there; "+
+						"the token may lack delete:page:confluence, or the user permission to delete it",
+					contentID,
+				)
+			} else if !errors.Is(readErr, ErrNotFound) {
+				return requestError("delete content "+contentID, readErr)
+			}
+		}
 	}
 	if err != nil && !errors.Is(err, ErrNotFound) {
 		return requestError("delete content "+contentID, err)
