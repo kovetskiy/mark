@@ -674,11 +674,7 @@ func recordDirectoryPages(
 				continue
 			}
 
-			recorded := key
-			if documents, ok := directoryKeys[key]; ok {
-				recorded = documents
-			}
-
+			recorded := directoryEntryKey(directoryKeys, key)
 			own, err := ownDirectoryPage(ctx, tracker, created, space, recorded, directory.ID)
 			if err != nil {
 				return fmt.Errorf("unable to look up directory page for %q: %w", key, err)
@@ -699,6 +695,17 @@ func recordDirectoryPages(
 	}
 
 	return nil
+}
+
+// directoryEntryKey is the manifest key a directory's page is recorded
+// under: its key in directoryKeys, in their scope, if only documents lie in
+// it, and its path otherwise.
+func directoryEntryKey(directoryKeys map[string]string, key string) string {
+	if documents, ok := directoryKeys[key]; ok {
+		return documents
+	}
+
+	return key
 }
 
 // ownDirectoryPage reports whether the page found for a directory is one mark
@@ -773,11 +780,7 @@ func (r *publishRun) retitleDirectoryPages(ctx context.Context, doc *document, d
 			continue
 		}
 
-		recorded := key
-		if documents, ok := r.directoryKeys[key]; ok {
-			recorded = documents
-		}
-
+		recorded := directoryEntryKey(r.directoryKeys, key)
 		kept, err := r.retitleDirectoryPage(ctx, doc, recorded, offset+i, doc.directoryTitles[i])
 		if err != nil {
 			return fmt.Errorf("unable to retitle the page of directory %q: %w", key, err)
