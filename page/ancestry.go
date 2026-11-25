@@ -411,15 +411,16 @@ func ensureFolderAncestry(
 		return parent, nil
 	}
 
+	// rest is the tail of folders that does not exist yet, so its offset
+	// within folders is what makes a recorded key match on the next run.
+	firstNew := len(folders) - len(rest)
+
 	logctx.From(ctx).Debug().Msgf(
 		"folders to be created: %s",
-		strings.Join(rest, ` > `),
+		strings.Join(created[firstNew:], ` > `),
 	)
 
 	if !options.DryRun {
-		// rest is the tail of folders that does not exist yet, so its offset
-		// within folders is what makes a recorded key match on the next run.
-		firstNew := len(folders) - len(rest)
 		for offset, title := range rest {
 			underID := folderUnderID(parent, anchorPageID)
 			name := created[firstNew+offset]
@@ -486,7 +487,7 @@ func ensureFolderAncestry(
 		logctx.From(ctx).Info().Msgf(
 			"skipping folder creation due to dry-run mode, need to create %d folders: %v",
 			len(rest),
-			rest,
+			created[firstNew:],
 		)
 		// For dry-run, simulate the final parent
 		parent = &ParentInfo{
