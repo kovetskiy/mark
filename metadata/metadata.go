@@ -1146,8 +1146,7 @@ func ExtractMeta(data []byte, opts ExtractOptions) (*Meta, []byte, error) {
 		meta.Parents = slices.Concat(opts.Parents, meta.Parents)
 	}
 
-	// Before the hash: it is appended to the title and taken over the space,
-	// and "guide-.md" is titled "Guide " until here.
+	// Before the hash, which is appended to the title and taken over both.
 	meta.Title = strings.Trim(meta.Title, " ")
 	meta.Space = strings.Trim(meta.Space, " ")
 
@@ -1291,12 +1290,12 @@ func generatedHash(path []string) string {
 }
 
 // TitleFromName turns a file or directory name into a page title, so that
-// "getting-started" reads as "Getting Started".
+// "getting-started" reads as "Getting Started" and "guide-" as "Guide".
 func TitleFromName(name string) string {
 	name = strings.ReplaceAll(name, "_", " ")
 	name = strings.ReplaceAll(name, "-", " ")
 
-	return cases.Title(language.English).String(name)
+	return cases.Title(language.English).String(strings.TrimSpace(name))
 }
 
 // ExtractDocumentLeadingH1 will extract leading H1 heading

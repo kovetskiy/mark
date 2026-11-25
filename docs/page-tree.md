@@ -118,7 +118,7 @@ to case, so `Parent: Handbook` and `Parent: handbook`, or `Space: DOCS` and
 `Space: docs`, give a page the same hash; the title keeps the case it was
 written in. It is taken over the trimmed title, so with `--title-from-filename`
 a file named `guide-.md` is published as `Guide - <hash>`, with the hash of
-`guide.md`.
+`guide.md`, and with `--parents-from-path` a directory named `guide-` is too.
 
 > **Upgrading from v17.3.1 or earlier:** the hash used to be taken over the
 > parents, space key and title as written, case included. It now gives a
@@ -144,8 +144,9 @@ a file named `guide-.md` is published as `Guide - <hash>`, with the hash of
 >
 > `--dry-run` shows the new titles, and with `--track-pages` each rename,
 > before anything changes. A `--parents` title written with spaces around a
-> delimiter, and a `--title-from-filename` title of a name ending in `-` or
-> `_`, change as well, being trimmed now before they are hashed or looked up.
+> delimiter, and a title taken from a file or directory name that starts or
+> ends in `-` or `_`, change as well, being trimmed now before they are hashed
+> or looked up.
 
 ### Directories are remembered too
 

@@ -64,9 +64,8 @@ func TestAppendGeneratedHashFoldsCase(t *testing.T) {
 }
 
 // TestAppendGeneratedHashAfterTrim: a title taken from "guide-.md" is
-// "Guide " until it is trimmed, and a space given with spaces around it is
-// the space without them. The hash goes on the trimmed title, over the
-// trimmed space, so these hash as the plain spelling does.
+// "Guide", and a space given with spaces around it is the space without
+// them, so these hash as the plain spelling does.
 func TestAppendGeneratedHashAfterTrim(t *testing.T) {
 	document := "<!-- Space: DOCS -->\n\nx\n"
 	want := hashedMeta(t, document, ExtractOptions{Filename: "guide.md", TitleFromFilename: true})
