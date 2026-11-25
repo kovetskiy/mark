@@ -54,21 +54,39 @@ func ParseMkDocsAdmonitionType(node ast.Node) AdmonitionType {
 
 // renderMkDocsAdmonition renders an admonition node as a Confluence structured macro.
 // All admonitions (including nested ones) are rendered as Confluence macros.
+//
+// Confluence's expand macro cannot start open, so only '???' is wrapped;
+// '???+' reads as '!!!'. The expand goes around whatever the block renders
+// as, a class with no panel included.
 func (r *ConfluenceMkDocsAdmonitionRenderer) renderMkDocsAdmonition(writer util.BufWriter, source []byte, node ast.Node, entering bool, rc renderer.Context) (ast.WalkStatus, error) {
 	n := node.(*parser.Admonition)
-	admonitionType := ParseMkDocsAdmonitionType(node)
 
-	// Confluence's expand macro cannot start open, so only '???' is wrapped;
-	// '???+' reads as '!!!'. The expand goes around whatever the block renders
-	// as, a class with no panel included.
 	if entering && n.Collapsed {
 		expand := `<ac:structured-macro ac:name="expand"><ac:parameter ac:name="title">` +
 			stdlib.XMLEscape(collapsedAdmonitionTitle(n)) +
 			"</ac:parameter><ac:rich-text-body>\n\n"
-		if _, err := writer.Write([]byte(expand)); err != nil {
+		if _, err := writer.WriteString(expand); err != nil {
 			return ast.WalkStop, err
 		}
 	}
+
+	if status, err := r.renderPanel(writer, source, n, entering, rc); err != nil {
+		return status, err
+	}
+
+	if !entering && n.Collapsed {
+		if _, err := writer.WriteString("\n</ac:rich-text-body></ac:structured-macro>\n"); err != nil {
+			return ast.WalkStop, err
+		}
+	}
+
+	return ast.WalkContinue, nil
+}
+
+// renderPanel renders the block itself: the macro of its type, or a
+// blockquote for a class with none.
+func (r *ConfluenceMkDocsAdmonitionRenderer) renderPanel(writer util.BufWriter, source []byte, n *parser.Admonition, entering bool, rc renderer.Context) (ast.WalkStatus, error) {
+	admonitionType := ParseMkDocsAdmonitionType(n)
 
 	if entering && admonitionType != AdmonitionNone {
 		prefix := fmt.Sprintf("<ac:structured-macro ac:name=\"%s\"><ac:parameter ac:name=\"icon\">true</ac:parameter><ac:rich-text-body>\n", admonitionType)
@@ -90,17 +108,9 @@ func (r *ConfluenceMkDocsAdmonitionRenderer) renderMkDocsAdmonition(writer util.
 		if _, err := writer.Write([]byte(suffix)); err != nil {
 			return ast.WalkStop, err
 		}
-	} else if status, err := r.renderMkDocsAdmon(writer, source, node, entering, rc); err != nil {
-		return status, err
+		return ast.WalkContinue, nil
 	}
-
-	if !entering && n.Collapsed {
-		if _, err := writer.Write([]byte("\n</ac:rich-text-body></ac:structured-macro>\n")); err != nil {
-			return ast.WalkStop, err
-		}
-	}
-
-	return ast.WalkContinue, nil
+	return r.renderMkDocsAdmon(writer, source, n, entering, rc)
 }
 
 // admonitionTitle is the quoted title of an opening line. MkDocs titles are

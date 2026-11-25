@@ -239,15 +239,6 @@ func TestAdmonitionCollapsedUnknownClassIsAnExpandAroundAQuote(t *testing.T) {
 	assert.Equal(t, 1, strings.Count(actual, "ac:structured-macro "))
 }
 
-// TestAdmonitionTitleThatIsNotAGoLiteral: MkDocs titles are literal text.
-func TestAdmonitionTitleThatIsNotAGoLiteral(t *testing.T) {
-	actual := render(t, "??? note \"C:\\path\\to\"\n    Body.\n", admonitionRenderers(), admonitionParserOptions()...)
-	assertWellFormed(t, actual)
-
-	assert.Contains(t, actual, `<ac:parameter ac:name="title">C:\path\to</ac:parameter>`)
-	assert.Contains(t, actual, `<p><strong>C:\path\to</strong></p>`)
-}
-
 func TestAdmonitionCollapsedNested(t *testing.T) {
 	actual := render(t, "!!! note \"Outer\"\n    Text.\n\n    ??? tip \"Inner\"\n        Hidden.\n", admonitionRenderers(), admonitionParserOptions()...)
 	assertWellFormed(t, actual)
@@ -271,7 +262,7 @@ func TestAdmonitionTitleIsLiteral(t *testing.T) {
 		{"unicode escape", `\u00e9`, `\u00e9`},
 		{"deep path", `C:\path\to`, `C:\path\to`},
 		{"escaped quote", `say \"hi\"`, `say &#34;hi&#34;`},
-		{"escaped backslash", `a\b`, `a\b`},
+		{"escaped backslash", `a\\b`, `a\b`},
 	}
 
 	for _, tt := range tests {
