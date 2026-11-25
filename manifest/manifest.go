@@ -1572,17 +1572,29 @@ func matches(pattern, path string) bool {
 // is a second document claiming the page, which is a conflict to report and
 // not a move to follow.
 func (s *Store) movedOwner(state *spaceState, path, pageID string) (Entry, bool) {
-	owner, ok := state.byPage[pageID]
-	if !ok || owner == path {
-		return Entry{}, false
-	}
-
-	entry, recorded := state.shards[shardFor(owner)].pages[owner]
-	if !recorded || entry.PageID != pageID || !s.gone(state, path, owner, entry) {
+	owner, entry, ok := ownerOf(state, pageID)
+	if !ok || owner == path || !s.gone(state, path, owner, entry) {
 		return Entry{}, false
 	}
 
 	return entry, true
+}
+
+// ownerOf returns the path whose entry names the page, and that entry.
+// byPage keeps a path that has since recorded another page, so the entry is
+// asked as well.
+func ownerOf(state *spaceState, pageID string) (string, Entry, bool) {
+	owner, ok := state.byPage[pageID]
+	if !ok {
+		return "", Entry{}, false
+	}
+
+	entry, recorded := state.shards[shardFor(owner)].pages[owner]
+	if !recorded || entry.PageID != pageID {
+		return "", Entry{}, false
+	}
+
+	return owner, entry, true
 }
 
 // gone reports whether candidate's entry is one path could have moved or been
@@ -1778,13 +1790,9 @@ func (s *Store) RecordedFor(ctx context.Context, spaceKey, pageID string) (strin
 		return "", false, err
 	}
 
-	// byPage keeps a path that has since recorded another page.
-	path, ok := state.byPage[pageID]
-	if !ok || state.shards[shardFor(path)].pages[path].PageID != pageID {
-		return "", false, nil
-	}
+	path, _, ok := ownerOf(state, pageID)
 
-	return path, true, nil
+	return path, ok, nil
 }
 
 // Forget drops a recorded path: one whose page no longer exists, or an orphan

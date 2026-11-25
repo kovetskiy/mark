@@ -1223,7 +1223,7 @@ func Run(ctx context.Context, config Config) (err error) {
 	// Read only once a parent is missing.
 	pub.titles = &runTitles{
 		log:    logctx.From(ctx),
-		config: config.PublishConfig, inputs: inputs, hierarchy: hierarchy,
+		config: config.PublishConfig, inputs: inputs, run: run, hierarchy: hierarchy,
 		warningsFor: pub.warningsFor,
 	}
 	if tracker != nil && config.Tracking.RenameSimilarity > 0 && config.DocumentScope != "" && len(documents) > 0 {
@@ -2272,18 +2272,20 @@ func (r *publishRun) claimTitle(ctx context.Context, doc *document) error {
 
 	// A holder waiting on this document cannot go first: the two swapped
 	// titles, and each takes the page its title finds.
-	if held, err := r.titleHeld(ctx, doc.file, doc.key, meta); err != nil {
+	held, err := r.titleHeld(ctx, doc.file, doc.key, meta)
+	if err != nil {
 		return err
-	} else if held != nil && (held.retitled == "" || !r.yielded[held.holder.file]) {
+	}
+	if held != nil && (held.retitled == "" || !r.yielded[held.holder.file]) {
 		return held
 	}
 
 	r.pendingClaim = nil
-	if held, ok := r.claimedTitles[name]; !ok || held != key {
-		r.pendingClaim = &titleClaim{key: key, name: name, file: doc.file}
+	if had, ok := r.claimedTitles[name]; !ok || had != key {
+		r.pendingClaim = &titleClaim{key: key, file: doc.file}
 		if ok {
-			r.pendingClaim.gaveUp = held
-			delete(r.titleClaims, held)
+			r.pendingClaim.gaveUp = had
+			delete(r.titleClaims, had)
 		}
 	}
 	r.titleClaims[key], r.claimedTitles[name] = doc.file, key
@@ -2294,7 +2296,7 @@ func (r *publishRun) claimTitle(ctx context.Context, doc *document) error {
 // titleClaim is a title a document claimed and has not yet published under,
 // and the title it gave up for it.
 type titleClaim struct {
-	key, name, file, gaveUp string
+	key, file, gaveUp string
 }
 
 // releaseClaim undoes the claim of a document that failed before it reached
@@ -2307,13 +2309,14 @@ func (r *publishRun) releaseClaim() {
 	}
 	r.pendingClaim = nil
 
+	name := absPath(c.file)
 	delete(r.titleClaims, c.key)
 	if c.gaveUp == "" {
-		delete(r.claimedTitles, c.name)
+		delete(r.claimedTitles, name)
 
 		return
 	}
-	r.titleClaims[c.gaveUp], r.claimedTitles[c.name] = c.file, c.gaveUp
+	r.titleClaims[c.gaveUp], r.claimedTitles[name] = c.file, c.gaveUp
 }
 
 // claimPage records file as the one publishing to Page.PageID, once it has

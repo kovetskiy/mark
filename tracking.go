@@ -162,8 +162,8 @@ func titleTaken(previous, title, space string) error {
 }
 
 // titleHeld returns, as the error refusing it, the other document of the run
-// that the page the document's title finds is recorded for; nil when there is
-// none.
+// that the page the document's title finds is recorded for, when that one
+// publishes content of the same space and type; nil when there is none.
 //
 // When that document now declares another title, the lookup cannot tell its
 // page from this document's own until it has retitled it: publishing to it
@@ -176,13 +176,44 @@ func (r *publishRun) titleHeld(
 	ctx context.Context, file, key string, meta *metadata.Meta,
 ) (*titleHeldError, error) {
 	// A compile asks nothing of Confluence.
-	if r.config.Mode.CompileOnly {
+	if r.config.Mode.CompileOnly || r.tracker == nil || meta == nil {
 		return nil, nil
 	}
 
-	pg, holder, declared, err := r.recordedDocument(ctx, file, key, meta)
-	if err != nil || declared == nil {
-		return nil, err
+	// Memoised, and the question resolving the page asks next.
+	pg, err := r.api.FindPage(ctx, meta.Space, meta.Title, confluence.ContentType(meta.Type))
+	if err != nil {
+		return nil, fmt.Errorf("error while finding page %q: %w", meta.Title, err)
+	}
+	if pg = r.carrying(pg, meta.Title); pg == nil {
+		return nil, nil
+	}
+
+	recorded, ok, err := r.tracker.RecordedFor(ctx, meta.Space, pg.ID)
+	if err != nil {
+		return nil, fmt.Errorf("unable to read page mapping for page %s: %w", pg.ID, err)
+	}
+	if !ok || recorded == manifest.Key(key) {
+		return nil, nil
+	}
+
+	holder, ok := r.titles.keyed(recorded)
+	if !ok {
+		holder, ok, err = r.renamedFrom(ctx, meta, recorded, pg.ID)
+		if err != nil {
+			return nil, err
+		}
+	}
+	if !ok || holder.file == file {
+		return nil, nil
+	}
+
+	// A holder that publishes nothing leaves the page to be found by its
+	// title.
+	declared := r.titles.readAhead(holder).meta
+	if declared == nil || !declared.Publish() || declared.Title == "" ||
+		!strings.EqualFold(declared.Space, meta.Space) || declared.Type != meta.Type {
+		return nil, nil
 	}
 
 	held := &titleHeldError{space: meta.Space, title: meta.Title, page: pg, holder: holder}
@@ -191,56 +222,6 @@ func (r *publishRun) titleHeld(
 	}
 
 	return held, nil
-}
-
-// recordedDocument returns the page the document's title finds, the other
-// document of the run that page is recorded for, and the metadata that one
-// declares: content of the same space and type that it publishes. The
-// metadata is nil when there is no such document.
-func (r *publishRun) recordedDocument(
-	ctx context.Context, file, key string, meta *metadata.Meta,
-) (*confluence.PageInfo, input, *metadata.Meta, error) {
-	if r.tracker == nil || meta == nil {
-		return nil, input{}, nil, nil
-	}
-
-	// Memoised, and the question resolving the page asks next.
-	pg, err := r.api.FindPage(ctx, meta.Space, meta.Title, confluence.ContentType(meta.Type))
-	if err != nil {
-		return nil, input{}, nil, fmt.Errorf("error while finding page %q: %w", meta.Title, err)
-	}
-	if pg = r.carrying(pg, meta.Title); pg == nil {
-		return nil, input{}, nil, nil
-	}
-
-	recorded, ok, err := r.tracker.RecordedFor(ctx, meta.Space, pg.ID)
-	if err != nil {
-		return nil, input{}, nil, fmt.Errorf("unable to read page mapping for page %s: %w", pg.ID, err)
-	}
-	if !ok || recorded == manifest.Key(key) {
-		return nil, input{}, nil, nil
-	}
-
-	holder, ok := r.titles.keyed(recorded)
-	if !ok {
-		holder, ok, err = r.renamedFrom(ctx, meta, recorded, pg.ID)
-		if err != nil {
-			return nil, input{}, nil, err
-		}
-	}
-	if !ok || holder.file == file {
-		return nil, input{}, nil, nil
-	}
-
-	// A holder that publishes nothing leaves the page to be found by its
-	// title.
-	declared := r.titles.readAhead(holder).meta
-	if declared == nil || !declared.Publish() || declared.Title == "" ||
-		!strings.EqualFold(declared.Space, meta.Space) || declared.Type != meta.Type {
-		return nil, input{}, nil, nil
-	}
-
-	return pg, holder, declared, nil
 }
 
 // renamedFrom returns the document of the run declaring meta's title that
