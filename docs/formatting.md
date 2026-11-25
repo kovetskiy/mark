@@ -602,10 +602,11 @@ braces that end the line, or nothing. A sentence such as `??? what is this`, an
 unquoted title as in `??? note Title`, a title with no type as in
 `??? "Title"`, extra words as in `??? note inline end`, or attributes followed
 by prose all stay text. MkDocs' attr_list spelling `??? note {: .foo }` stays
-text too, while `??? note {.foo}` is accepted and its attributes are dropped. The
-next non-blank
-line must also be indented under the opening line, or be the closing run, so
-`??? note` or `??? note "Title"` above an ordinary paragraph stays text rather
+text too, as do `{#}` and `{.}`, while `??? note {.foo}` is accepted. Its
+attributes are dropped for a type published as a macro panel, and kept on the
+blockquote of a type published as one, such as `??? example {.foo}`. The next
+non-blank line must also be indented under the opening line, or be the closing
+run, so `??? note` or `??? note "Title"` above an ordinary paragraph stays text rather
 than hiding it in an empty expand. Inside a list, a blockquote or another
 admonition the next line cannot be judged, so there the opening line has to
 carry a quoted title or name a MkDocs type such as `note` or `question`.
