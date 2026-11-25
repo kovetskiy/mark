@@ -136,11 +136,11 @@ a file named `guide-.md` is published as `Guide - <hash>`, with the hash of
 >   beside the first.
 > * **With it**, each document's page is renamed in place: it keeps its id,
 >   history, comments and attachments, and links to it keep working. With
->   `--parents-from-path`, so is a directory's page that its own `index.md` or
->   `README.md` publishes. The page of a directory without one is not: a page
->   is created under the directory's new title, the documents are moved under
->   it, and the old directory page is left empty. The manifest no longer
->   records it, so `--on-orphan` does not offer it; delete it by hand.
+>   `--parents-from-path`, so is every directory's page, whether its own
+>   `index.md` or `README.md` publishes it or not (see [Directories are
+>   remembered too](#directories-are-remembered-too)). Where another page
+>   already carries a directory's new title, the directory keeps its page
+>   under the old title, with a warning, until that title is free.
 >
 > `--dry-run` shows the new titles, and with `--track-pages` each rename,
 > before anything changes. A `--parents` title written with spaces around a
