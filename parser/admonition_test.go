@@ -223,6 +223,11 @@ func TestAdmonitionParser(t *testing.T) {
 			source: "- ??? what\n  is this about\n",
 		},
 		{
+			// MkDocs has no "warn" type, and renders none of it.
+			name:   "warn in a list is prose",
+			source: "- ??? warn\n      a\n",
+		},
+		{
 			name:   "an unknown bare class in a blockquote is prose",
 			source: "> ??? why\n> would this be\n",
 		},
