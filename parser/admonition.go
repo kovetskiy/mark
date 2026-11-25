@@ -584,20 +584,12 @@ func collapsedOpening(rest []byte) (class []byte, titleEnd int, ok bool) {
 	}
 
 	if rest[at] == '"' {
-		i := at + 1
-		for ; i < len(rest) && rest[i] != '"'; i++ {
-			if rest[i] == '\\' {
-				i++
-			}
-		}
-		if i >= len(rest) {
+		titleEnd = quotedTitleEnd(rest, at)
+		if titleEnd == 0 {
 			return nil, 0, false
 		}
-		titleEnd = i + 1
-		at = titleEnd + util.TrimLeftSpaceLength(rest[titleEnd:])
-		if at >= len(rest) {
-			return class, titleEnd, true
-		}
+
+		return class, titleEnd, true
 	}
 
 	if rest[at] != '{' {
@@ -610,6 +602,30 @@ func collapsedOpening(rest []byte) (class []byte, titleEnd int, ok bool) {
 	}
 
 	return class, titleEnd, true
+}
+
+// quotedTitleEnd returns the offset just past the quote that closes the title
+// opened by the quote at open in rest, and 0 when none does. As in MkDocs,
+// whose title is `"(.*?)" *$`, that is the last quote on the line, blanks
+// aside, so a title may hold quotes and end in a backslash; or, where the line
+// ends in an attribute block, the last quote before it.
+func quotedTitleEnd(rest []byte, open int) int {
+	if end := len(rest) - util.TrimRightSpaceLength(rest); end > open+1 && rest[end-1] == '"' {
+		return end
+	}
+
+	for i := len(rest) - 1; i > open; i-- {
+		if rest[i] != '"' {
+			continue
+		}
+
+		after := i + 1 + util.TrimLeftSpaceLength(rest[i+1:])
+		if after < len(rest) && rest[after] == '{' && attributesEndLine(rest, text.NewSegment(after, len(rest))) {
+			return i + 1
+		}
+	}
+
+	return 0
 }
 
 // admonitionClassEnd is where the class at the start of line ends: at a space
