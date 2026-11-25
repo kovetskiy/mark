@@ -968,20 +968,29 @@ func TestHashTellsSameDirectoriesApart(t *testing.T) {
 	}
 }
 
-// failOnceLookingUp makes the fake refuse the first page lookup for a title and
-// answer every later one normally, which is what a network blip looks like from
-// here.
+// lookingUp reports whether r is a page lookup for title: the listing, or the
+// /content/search the client falls back to when the listing is refused.
+func lookingUp(r *http.Request, title string) bool {
+	q := r.URL.Query()
+	if q.Get("title") == title {
+		return true
+	}
+
+	return strings.HasSuffix(r.URL.Path, "/content/search") &&
+		strings.Contains(q.Get("cql"), "title="+confluence.QuoteCQL(title))
+}
+
+// failOnceLookingUp makes the fake refuse the first page lookup for a title,
+// the listing and the search the client falls back to, and answer every later
+// one normally, which is what a network blip looks like from here.
 func failOnceLookingUp(server *confluencetest.Server, title string) {
-	failed := false
+	refused := 0
 	server.SetFail(func(r *http.Request) (int, string, bool) {
-		if failed || r.Method != http.MethodGet {
-			return 0, "", false
-		}
-		if r.URL.Query().Get("title") != title {
+		if refused >= 2 || r.Method != http.MethodGet || !lookingUp(r, title) {
 			return 0, "", false
 		}
 
-		failed = true
+		refused++
 
 		return http.StatusForbidden, `{"message":"nope"}`, true
 	})
@@ -1011,6 +1020,28 @@ func TestStaleParentLookupSucceedsNormally(t *testing.T) {
 	server, api := docsSpace(t)
 	dir := t.TempDir()
 	file := writeFile(t, dir, "doc.md", markdownWithTitle("Child"))
+
+	require.NoError(t, Run(context.Background(), trackingConfig(server, file)))
+
+	published, err := api.FindPage(context.Background(), "DOCS", "Child", "page")
+	require.NoError(t, err)
+	require.NotNil(t, published)
+}
+
+// TestStaleParentLookupFallsBackWhenOnlyTheListingIsRefused pins the one case
+// the /content/search fallback is for: the listing answers 403 and the search
+// still finds the parent, so the run goes on and does not duplicate it.
+func TestStaleParentLookupFallsBackWhenOnlyTheListingIsRefused(t *testing.T) {
+	server, api := docsSpace(t)
+	dir := t.TempDir()
+	file := writeFile(t, dir, "doc.md", markdownWithTitle("Child"))
+
+	server.SetFail(func(r *http.Request) (int, string, bool) {
+		if r.Method == http.MethodGet && r.URL.Query().Get("title") == "Parent" {
+			return http.StatusForbidden, `{"message":"nope"}`, true
+		}
+		return 0, "", false
+	})
 
 	require.NoError(t, Run(context.Background(), trackingConfig(server, file)))
 

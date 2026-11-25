@@ -370,6 +370,26 @@ later step that runs even when publishing failed:
 A library caller sets `ReportConfig.Output` to a writer of its own to the same
 effect; `PublishConfig.Output` then carries the URLs and compiled bodies.
 
+## When the page listing is disabled
+
+Some Data Center instances refuse the `/rest/api/content` listing with a 403
+(CONFSERVER-57639) while still serving pages by id. Mark looks pages up by
+title through that listing, so when it is answered 403 mark asks
+`/rest/api/content/search` with a CQL query for the same space, type and
+title. Nothing needs to be configured.
+
+A 403 is also what a space you may not see answers, so a search that finds
+nothing is not taken for a missing page: mark reports the listing's 403, with a
+note that the search was tried, rather than create the page. Only once a search
+has found a page does mark go straight to the search for the rest of the run; a
+search that failed or found nothing leaves the next lookup to try the listing
+again. On an instance that disables the listing, the first page to publish must
+therefore be one that already exists, or the run stops with that error.
+
+This applies to Data Center and Server. Cloud, and Cloud through the
+`api.atlassian.com` gateway, looks pages up with the v2 API and never uses the
+listing or the search.
+
 ## When Confluence is busy or unavailable
 
 Mark tries a request up to four times, waiting longer before each retry and
