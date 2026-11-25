@@ -275,7 +275,9 @@ which lines are code, HTML or a list item is goldmark's call alone.
 them on documents `internal/admonitiongen` writes from a fixed seed, and on
 `parser/testdata/admonition-master.json`, the trees the parser gave such documents before
 a level body had to end at a closing run; `FuzzAdmonitionDocuments` is the same for as
-long as it is left running.
+long as it is left running. `???` openings are written only with `Options.Collapsed`,
+which `All()` leaves out so that a seed still names the document it named, and are read
+as a corpus of their own.
 
 Coverage is uneven, and where it is thin matters more than the number. Measured with
 `go test -cover ./...`: `markdown/` 84%, `renderer/` 69%, `confluence/` 84%, `stdlib/` 68%,
