@@ -2059,6 +2059,10 @@ type document struct {
 	// warnings are what was wrong with the document but did not stop it,
 	// for its line of the report.
 	warnings *report.Warnings
+	// directoryTitles are the titles to record the pages of the
+	// document's directories under, one per directory; see
+	// retitleDirectoryPages.
+	directoryTitles []string
 }
 
 // destination is the page a document publishes to.
@@ -2681,6 +2685,9 @@ func (r *publishRun) previewLocation(ctx context.Context, doc *document) (pagePr
 	// Confluence is looked for under its old title and the page is
 	// reported moved on every preview while the real run leaves it be.
 	// It only reads, and a dry run's manifest store saves nothing.
+	if err := r.retitleDirectoryPages(ctx, doc); err != nil {
+		return found, err
+	}
 	if err := refreshStaleParents(ctx, r.tracker, r.api, meta, r.titles, doc.warnings); err != nil {
 		return found, err
 	}
@@ -2989,6 +2996,10 @@ func (r *publishRun) resolveDestination(ctx context.Context, doc *document) (*de
 func (r *publishRun) resolveDocumentPage(ctx context.Context, doc *document) (*destination, error) {
 	api, meta := r.api, doc.meta
 	dest := &destination{}
+
+	if err := r.retitleDirectoryPages(ctx, doc); err != nil {
+		return nil, err
+	}
 
 	// Parents are named by title, so a parent that has itself been renamed
 	// leaves this document pointing at a name nothing carries any more.

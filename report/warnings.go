@@ -46,7 +46,9 @@ const (
 	// WarningPlacement is a page not placed where its document asks: found
 	// outside its declared parents, outside --parents-from-path-root, under a
 	// parent title several documents declare, given an Order its parent
-	// cannot be found for, or left behind in the space it used to publish to.
+	// cannot be found for, left behind in the space it used to publish to, or
+	// under a directory page kept under its old title because another page
+	// carries the new one.
 	WarningPlacement WarningKind = "placement"
 
 	// WarningAttachment is a file that was not uploaded, or one uploaded and
