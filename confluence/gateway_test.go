@@ -539,6 +539,33 @@ func TestGatewayDeleteAPageAlreadyGone(t *testing.T) {
 	require.NoError(t, api.DeletePage(context.Background(), "424242"))
 }
 
+// v2 answers 404 to a delete it refuses, so a page that reads back live is
+// not taken for one already gone; one that reads back trashed is.
+func TestGatewayDeleteAnswered404(t *testing.T) {
+	api, server := newGatewayAPI(t)
+	page := server.AddPage("DOCS", "Kept", "page", "")
+	server.SetFail(func(r *http.Request) (int, string, bool) {
+		if strings.Contains(r.URL.Path, "/rest/api/") {
+			return http.StatusUnauthorized, `{"code":401,"message":"Unauthorized; scope does not match"}`, true
+		}
+		if r.Method == http.MethodDelete {
+			return http.StatusNotFound, `{"errors":[{"status":404,"title":"Not Found"}]}`, true
+		}
+		return 0, "", false
+	})
+
+	_, err := api.GetPageByID(context.Background(), page.ID)
+	require.NoError(t, err)
+
+	err = api.DeletePage(context.Background(), page.ID)
+	require.Error(t, err)
+	assert.NotErrorIs(t, err, confluence.ErrNotFound)
+	assert.False(t, server.Page(page.ID).Trashed)
+
+	server.TrashPage(page.ID)
+	require.NoError(t, api.DeletePage(context.Background(), page.ID))
+}
+
 func TestGatewayGetChildPages(t *testing.T) {
 	api, server := newGatewayAPI(t)
 	parent := server.AddPage("DOCS", "Parent", "page", "")
