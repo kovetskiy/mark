@@ -666,11 +666,12 @@ func admonitionClassEnd(line []byte) int {
 
 // knownAdmonitionTypes are the words MkDocs Material and its aliases give an
 // admonition. Where the lines ahead cannot be judged, an opening line with no
-// quoted title opens one only for these.
+// quoted title opens one only for these. "warn" is a marker of mark's other
+// admonition syntaxes and no MkDocs type, so it is not one.
 var knownAdmonitionTypes = []string{
 	"note", "abstract", "summary", "tldr", "info", "todo", "tip", "hint",
 	"important", "success", "check", "done", "question", "help", "faq",
-	"warning", "warn", "caution", "attention", "failure", "fail", "missing",
+	"warning", "caution", "attention", "failure", "fail", "missing",
 	"danger", "error", "bug", "example", "quote", "cite",
 }
 
