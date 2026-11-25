@@ -591,7 +591,10 @@ a closing run. Classes without a Confluence macro (such as `question` or
 the title twice: on the expand macro, and in bold at the top of the panel inside
 it. A collapsed blockquote shows it once, on the expand macro.
 A title is literal text: a backslash in it is kept as written, and only `\"` and
-`\\` are escapes.
+`\\` are escapes. As in MkDocs, the title of a `???` admonition runs to the last
+double quote on the line, or the last one before the attributes that end it, so
+`??? note "say "hi" now"` is titled `say "hi" now` and `??? note "C:\"` is
+titled `C:\`.
 
 Prose often starts with `???`, so a line that does is only an admonition when
 the type is a single word followed by a title in double quotes, attributes in

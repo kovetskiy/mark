@@ -242,6 +242,17 @@ func TestAdmonitionParser(t *testing.T) {
 			want:   []string{`note:"Config {env}":a`},
 		},
 		{
+			// MkDocs reads `"(.*?)" *$`: the title runs to the last quote.
+			name:   "a title runs to the last quote on the line",
+			source: "??? note \"say \"hi\" now\"  \n    a\n\n??? tip \"C:\\\"\n    b\n\n??? info \"a\" {.x} b\"\n    c\n",
+			want:   []string{`note:"say "hi" now":a`, `tip:"C:\":b`, `info:"a" {.x} b":c`},
+		},
+		{
+			name:   "a title with quotes before attributes",
+			source: "??? note \"say \"hi\"\" {.x}\n    a\n\n??? tip \"T\" {data-x=\"y\"}\n    b\n",
+			want:   []string{`note:"say "hi"":a`, `tip:"T":b`},
+		},
+		{
 			name:   "attributes followed by prose are a sentence",
 			source: "??? note {see below} for the reasons\n    a\n",
 		},
