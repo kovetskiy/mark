@@ -1149,10 +1149,9 @@ func ExtractMeta(data []byte, opts ExtractOptions) (*Meta, []byte, error) {
 	if opts.TitleAppendGeneratedHash {
 		AppendGeneratedHashContext(opts.context(), meta)
 	}
-
-	// Remove trailing spaces from title
 	meta.Title = strings.Trim(meta.Title, " ")
 	meta.Space = strings.Trim(meta.Space, " ")
+
 	return meta, body, nil
 }
 
@@ -1232,7 +1231,9 @@ func setTitleFromFilename(meta *Meta, filename string) {
 }
 
 // AppendGeneratedHash makes a title unique to the page's place in the tree by
-// appending a short hash of its parents, space and title.
+// appending a short hash of its parents, space and title. The hash does not
+// tell case apart, as Confluence does not in titles and space keys: a Parent
+// or Space spelled another way names the same place, and keeps the title.
 //
 // It is deterministic, so a page keeps its title from run to run, and it is
 // what tells two documents of the same title apart when they sit under
@@ -1253,20 +1254,37 @@ func AppendGeneratedHashContext(ctx context.Context, meta *Meta) {
 		return
 	}
 
-	meta.Title = GeneratedHashTitle(meta.Parents, meta.Space, meta.Title)
+	meta.Title = CaseFoldedHashTitle(meta.Parents, meta.Space, meta.Title)
 	logctx.From(ctx).Debug().Msgf("appended hash to page title: %s", meta.Title)
 }
 
-// GeneratedHashTitle is title with the hash AppendGeneratedHash gives a page of
-// that title in that space under those parents. It is for a page with no
+// GeneratedHashTitle is title with a hash of it, its space and its parents as
+// written; AppendGeneratedHash uses CaseFoldedHashTitle. It is for a page with no
 // document of its own to hash, or whose title has to be known before its
 // document is read: the page standing for a directory, which every document
 // beneath it names as a parent.
 func GeneratedHashTitle(parents []string, space, title string) string {
-	path := strings.Join(append(slices.Clone(parents), space, title), "/")
-	pathHash := sha256.Sum256([]byte(path))
-	// postfix is an 8-character hexadecimal string representation of the first 4 out of 32 bytes of the hash
-	return fmt.Sprintf("%s - %x", title, pathHash[0:4])
+	return title + " - " + generatedHash(append(slices.Clone(parents), space, title))
+}
+
+// CaseFoldedHashTitle is GeneratedHashTitle with the parents, space and title
+// it hashes taken without regard to case, as Confluence takes titles and
+// space keys, so that two spellings of one place get one hash. The title
+// keeps its spelling.
+func CaseFoldedHashTitle(parents []string, space, title string) string {
+	path := make([]string, 0, len(parents)+2)
+	for _, part := range append(slices.Clone(parents), space, title) {
+		path = append(path, strings.ToLower(part))
+	}
+
+	return title + " - " + generatedHash(path)
+}
+
+// generatedHash is the first 4 of the 32 bytes of the path's SHA-256, in hex.
+func generatedHash(path []string) string {
+	sum := sha256.Sum256([]byte(strings.Join(path, "/")))
+
+	return fmt.Sprintf("%x", sum[0:4])
 }
 
 // TitleFromName turns a file or directory name into a page title, so that

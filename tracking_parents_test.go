@@ -96,7 +96,7 @@ func TestChildNamingOldParentTitleStillFollowsRename(t *testing.T) {
 // creates an empty page under the new name.
 func TestRetitledParentAndChildWithGeneratedHash(t *testing.T) {
 	hashed := func(title string) string {
-		return metadata.GeneratedHashTitle(nil, "DOCS", title)
+		return metadata.CaseFoldedHashTitle(nil, "DOCS", title)
 	}
 
 	for name, tweak := range map[string]func(*Config, string){
@@ -114,7 +114,7 @@ func TestRetitledParentAndChildWithGeneratedHash(t *testing.T) {
 			require.NoError(t, Run(context.Background(), config))
 
 			parentID := pageIDTitled(t, server, hashed("Parent"))
-			childID := pageIDTitled(t, server, metadata.GeneratedHashTitle([]string{hashed("Parent")}, "DOCS", "Child"))
+			childID := pageIDTitled(t, server, metadata.CaseFoldedHashTitle([]string{hashed("Parent")}, "DOCS", "Child"))
 			require.NotEmpty(t, parentID)
 			require.NotEmpty(t, childID)
 
@@ -198,13 +198,13 @@ func TestRetitledDirectoryDocument(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			guideTitle := func(title string) string {
 				if hash {
-					return metadata.GeneratedHashTitle(nil, "DOCS", title)
+					return metadata.CaseFoldedHashTitle(nil, "DOCS", title)
 				}
 				return title
 			}
 			apiTitle := "API"
 			if hash {
-				apiTitle = metadata.GeneratedHashTitle([]string{guideTitle("Guide")}, "DOCS", "API")
+				apiTitle = metadata.CaseFoldedHashTitle([]string{guideTitle("Guide")}, "DOCS", "API")
 			}
 
 			server, _ := docsSpace(t)

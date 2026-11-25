@@ -63,13 +63,13 @@ func HashDirectoryTitles(prefix []string, space string, derived []string, title 
 
 	hashed := make([]string, 0, len(derived))
 	for _, parent := range derived {
-		parent = metadata.GeneratedHashTitle(chain, space, parent)
+		parent = metadata.CaseFoldedHashTitle(chain, space, parent)
 		hashed = append(hashed, parent)
 		chain = append(chain, parent)
 	}
 
 	if title != "" {
-		title = metadata.GeneratedHashTitle(chain, space, title)
+		title = metadata.CaseFoldedHashTitle(chain, space, title)
 	}
 
 	return hashed, title

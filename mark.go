@@ -2310,7 +2310,7 @@ type titleHolder struct {
 // hashedTitle is the title --title-append-generated-hash would give meta,
 // whether or not the run asks for it.
 func hashedTitle(meta *metadata.Meta) string {
-	return metadata.GeneratedHashTitle(meta.Parents, meta.Space, meta.Title)
+	return metadata.CaseFoldedHashTitle(meta.Parents, meta.Space, meta.Title)
 }
 
 // hashSeparates reports whether --title-append-generated-hash would tell
