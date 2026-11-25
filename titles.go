@@ -7,6 +7,7 @@ import (
 	"unicode/utf16"
 
 	"github.com/kovetskiy/mark/v17/metadata"
+	"github.com/kovetskiy/mark/v17/page"
 )
 
 // maxTitleLength is the longest title Confluence accepts for a page or a
@@ -16,8 +17,9 @@ const maxTitleLength = 255
 
 // checkTitleLengths refuses a document whose page, or a parent or folder mark
 // would create for it, has a title Confluence will not take -- before anything
-// is created, rather than with a 400 once its parents exist.
-func checkTitleLengths(meta *metadata.Meta) error {
+// is created, rather than with a 400 once its parents exist. hashFolders is
+// --folder-title-append-generated-hash, whose hash is part of the title.
+func checkTitleLengths(meta *metadata.Meta, hashFolders bool) error {
 	check := func(what, title string) error {
 		if n := len(utf16.Encode([]rune(title))); n > maxTitleLength {
 			return fmt.Errorf(
@@ -36,7 +38,7 @@ func checkTitleLengths(meta *metadata.Meta) error {
 			return err
 		}
 	}
-	for _, folder := range meta.Folders {
+	for _, folder := range page.FolderTitles(meta.Space, meta.Parents, meta.Folders, hashFolders) {
 		if err := check("folder", folder); err != nil {
 			return err
 		}

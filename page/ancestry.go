@@ -220,18 +220,23 @@ func folderPathKey(anchorPageID *string, folders []string, upto int) string {
 	return anchor + "\x00" + strings.Join(folders[:upto+1], "\x00")
 }
 
-// folderTitle is the title the folder at folders[upto] is created under. With
-// FolderTitleAppendGeneratedHash that is its title with a short hash of the
-// parent pages and folders above it and the space, as
-// --title-append-generated-hash titles a page but without regard to case:
-// Confluence takes "Guides" and "guides" for one folder, so they must hash
-// alike or the second spelling makes another.
-func (o AncestryOptions) folderTitle(parents []string, space string, folders []string, upto int) string {
-	if !o.FolderTitleAppendGeneratedHash {
-		return folders[upto]
+// FolderTitles are the titles the folders are created under, below the
+// parent pages titled parents in space. With hash each is its title with a
+// short hash of the space and the parent pages and folders above it, taken
+// as metadata.CaseFoldedHashTitle takes a page's: Confluence takes "Guides"
+// and "guides" for one folder, so they must hash alike or the second
+// spelling makes another.
+//
+// Exported so that a title can be checked before anything is created.
+func FolderTitles(space string, parents, folders []string, hash bool) []string {
+	titles := slices.Clone(folders)
+	if hash {
+		for i, title := range folders {
+			titles[i] = metadata.CaseFoldedHashTitle(slices.Concat(parents, folders[:i]), space, title)
+		}
 	}
 
-	return metadata.CaseFoldedHashTitle(slices.Concat(parents, folders[:upto]), space, folders[upto])
+	return titles
 }
 
 // folderUnderID is the ID a folder is looked for and created under: the folder
@@ -308,10 +313,7 @@ func ensureFolderAncestry(
 		return nil, fmt.Errorf("failed to get space ID for %q: %w", space, err)
 	}
 
-	created := make([]string, len(folders))
-	for i := range folders {
-		created[i] = options.folderTitle(parents, space, folders, i)
-	}
+	created := FolderTitles(space, parents, folders, options.FolderTitleAppendGeneratedHash)
 
 	var parent *ParentInfo
 	rest := folders
@@ -530,7 +532,7 @@ func EnsureMixedAncestry(
 			return &confluence.PageInfo{
 				ID:    dryRunFolderID,
 				Type:  "folder-parent",
-				Title: options.folderTitle(pages, space, folders, len(folders)-1),
+				Title: FolderTitles(space, pages, folders, options.FolderTitleAppendGeneratedHash)[len(folders)-1],
 			}, nil
 		}
 	}
