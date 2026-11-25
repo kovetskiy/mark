@@ -267,6 +267,47 @@ func TestTwoDocumentsOfOneTitleAreRefused(t *testing.T) {
 	assert.Contains(t, pages[1].Reason, "one.md already publishes")
 }
 
+// TestTheGeneratedHashIsSuggestedOnlyWhereItTellsTitlesApart: the hash
+// --title-append-generated-hash appends is taken over the parents, space and
+// title, so it is suggested for two documents under different parents, and
+// not for two under the same ones, nor when it is already on.
+func TestTheGeneratedHashIsSuggestedOnlyWhereItTellsTitlesApart(t *testing.T) {
+	for _, tc := range []struct {
+		name         string
+		parentOfTwo  string
+		hash, hinted bool
+	}{
+		{name: "other parents", parentOfTwo: "Home", hinted: true},
+		{name: "same parents", parentOfTwo: "Parent"},
+		{name: "same parents, hashed", parentOfTwo: "Parent", hash: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			server, _ := docsSpace(t)
+			dir := t.TempDir()
+			writeFile(t, dir, "one.md", titledDoc("Shared", "Body of one."))
+			writeFile(t, dir, "two.md", strings.Replace(
+				titledDoc("Shared", "Body of two."), "Parent: Parent", "Parent: "+tc.parentOfTwo, 1,
+			))
+
+			config := publishConfig(server.URL, filepath.Join(dir, "*.md"))
+			config.ContinueOnError = true
+			config.Page.TitleAppendGeneratedHash = tc.hash
+
+			pages, err := reportOf(t, config)
+			require.Error(t, err)
+
+			require.Len(t, pages, 2)
+			assert.Equal(t, report.StatusFailed, pages[1].Status)
+			assert.Contains(t, pages[1].Reason, "one.md already publishes")
+			if tc.hinted {
+				assert.Contains(t, pages[1].Reason, "--title-append-generated-hash")
+			} else {
+				assert.NotContains(t, pages[1].Reason, "--title-append-generated-hash")
+			}
+		})
+	}
+}
+
 // TestAPublisherRefusesASecondFileOfOneTitle: a library caller publishing
 // file by file is refused the same way.
 func TestAPublisherRefusesASecondFileOfOneTitle(t *testing.T) {

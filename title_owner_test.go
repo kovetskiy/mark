@@ -54,6 +54,8 @@ func TestATitleStaysWithTheDocumentItsPageIsRecordedFor(t *testing.T) {
 				refused := statusOf(t, pages, newcomer)
 				assert.Equal(t, report.StatusFailed, refused.Status, "run %d", run)
 				assert.Contains(t, refused.Reason, "b-old.md already publishes \"Overview\"", "run %d", run)
+				assert.NotContains(t, refused.Reason, "--title-append-generated-hash",
+					"run %d: under the same parents the hash cannot tell them apart", run)
 			}
 		})
 	}
