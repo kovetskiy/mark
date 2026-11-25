@@ -195,8 +195,13 @@ A document that keeps its title is published ahead of its turn in the same way,
 when another document of the run declares that title before it: the page stays
 with the document it is recorded for, and the other one is refused as a second
 document of the title. A file renamed since counts as the recorded document when
-its content is unchanged. A recorded file that is gone from the run, or that
-gives the title up, holds nothing, and the title goes to the document taking it.
+its content is unchanged. One renamed and edited at once does not, even with
+`Tracking.RenameSimilarity` (see
+[Using mark from Go](library.md#renamed-and-edited-at-once)): that compares
+only documents whose title finds no page, and this one's finds the page it had,
+so whichever document declaring the title comes first publishes to it. A
+recorded file that is gone from the run, or that gives the title up, holds
+nothing, and the title goes to the document taking it.
 
 A page can be recorded for two documents, when two runs each published one of
 them under its title. While both are in a run, every document of it declaring
