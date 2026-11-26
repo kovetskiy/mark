@@ -146,5 +146,5 @@ func TestSameInstanceWantsABaseURL(t *testing.T) {
 	assert.Contains(t, err.Error(), "path")
 
 	assert.NoError(t, SameInstance("https://example.atlassian.net/wiki", "https://example.atlassian.net/wiki"),
-		"the page's base URL, as export.ParsePageURL gives it, matches")
+		"the page's base URL, as ParsePageURL gives it, matches")
 }

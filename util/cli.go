@@ -11,6 +11,7 @@ import (
 
 	mark "github.com/kovetskiy/mark/v17"
 	"github.com/kovetskiy/mark/v17/attachment"
+	"github.com/kovetskiy/mark/v17/confluence"
 	"github.com/kovetskiy/mark/v17/export"
 	"github.com/kovetskiy/mark/v17/mermaid"
 	"github.com/kovetskiy/mark/v17/metadata"
@@ -84,7 +85,7 @@ func buildCommand(version string, publish, export cli.ActionFunc) *cli.Command {
 			Flags:        exportFlags(config),
 			Action:       line.runExport,
 			OnUsageError: renamedFlagHint,
-		}, line.pageCommand(), line.doctorCommand()},
+		}, line.pageCommand(), line.doctorCommand(), line.metadataCommand()},
 	}
 	trackSources(root)
 
@@ -474,7 +475,7 @@ func RunExport(ctx context.Context, cmd *cli.Command) error {
 	baseURL := cmd.String("base-url")
 
 	if address := page["url"]; address != "" {
-		ref, err := export.ParsePageURL(address)
+		ref, err := confluence.ParsePageURL(address)
 		if err != nil {
 			return err
 		}
@@ -492,7 +493,7 @@ func RunExport(ctx context.Context, cmd *cli.Command) error {
 	// A page URL the command line set aside still names the instance, so its
 	// host serves when no base URL is configured.
 	if baseURL == "" && page["url"] == "" {
-		if ref, err := export.ParsePageURL(cmd.String("url")); err == nil {
+		if ref, err := confluence.ParsePageURL(cmd.String("url")); err == nil {
 			baseURL = ref.BaseURL
 		}
 	}
@@ -528,13 +529,14 @@ func RunExport(ctx context.Context, cmd *cli.Command) error {
 		Space:  space,
 		Title:  title,
 
-		Output:         cmd.String("output"),
-		AttachmentsDir: cmd.String("attachments-dir"),
-		Overwrite:      cmd.Bool("overwrite"),
-		NoAttachments:  cmd.Bool("no-attachments"),
-		Format:         export.Format(cmd.String("format")),
-		Metadata:       export.Metadata(cmd.String("metadata")),
-		Generator:      generator(cmd.Root().Version),
+		Output:               cmd.String("output"),
+		AttachmentsDir:       cmd.String("attachments-dir"),
+		Overwrite:            cmd.Bool("overwrite"),
+		NoAttachments:        cmd.Bool("no-attachments"),
+		Format:               export.Format(cmd.String("format")),
+		Metadata:             export.Metadata(cmd.String("metadata")),
+		IncludeContentStatus: cmd.Bool("include-content-status"),
+		Generator:            generator(cmd.Root().Version),
 
 		Stdout: os.Stdout,
 	}

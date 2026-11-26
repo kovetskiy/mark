@@ -166,6 +166,47 @@ func (api *API) ListContentProperties(ctx context.Context, contentID string) ([]
 	)
 }
 
+// GetPublishedPageProperty reads a named page property, or nil if absent.
+func (api *API) GetPublishedPageProperty(ctx context.Context, pageID, key string) (*Property, error) {
+	if api.gateway {
+		collection, err := api.collectionOfV2(ctx, pageID)
+		if err != nil {
+			return nil, err
+		}
+		properties, err := api.listPropertiesV2(ctx, collection, pageID)
+		if err != nil {
+			return nil, err
+		}
+		for _, property := range properties {
+			if property.Key == key {
+				return &property, nil
+			}
+		}
+		return nil, nil
+	}
+
+	property, err := get[Property](ctx, api.v1, []string{"content", pageID, "property", key}, nil)
+	if errors.Is(err, ErrNotFound) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, requestError(fmt.Sprintf("read property %q of content %s", key, pageID), err)
+	}
+	return &property, nil
+}
+
+// SetPublishedPageProperty creates or updates a property on a published page.
+func (api *API) SetPublishedPageProperty(ctx context.Context, pageID, key string, value []byte, existing *Property) error {
+	if api.gateway {
+		collection, err := api.collectionOfV2(ctx, pageID)
+		if err != nil {
+			return err
+		}
+		return api.setPropertyV2(ctx, collection, pageID, key, value, existing)
+	}
+	return api.SetContentProperty(ctx, pageID, key, value, existing)
+}
+
 // SetContentProperty writes value to a page property, creating it if absent.
 func (api *API) SetContentProperty(ctx context.Context, contentID, key string, value []byte, existing *Property) error {
 	payload := map[string]any{

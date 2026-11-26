@@ -37,6 +37,7 @@ The reference is split by topic under [`docs/`](docs/):
 * [Page metadata](docs/metadata.md): YAML front matter and header comments,
   layout and appearance, restrictions, page titles, labels and content
   properties.
+* [Confluence metadata commands](docs/metadata_cli.md): using `mark metadata`.
 * [Where pages go](docs/page-tree.md): parents and folders, parents from the
   directory tree, tracking pages across renames, removing pages whose files
   are gone, and listing, moving, copying, renaming, removing and watching pages
@@ -152,11 +153,12 @@ DESCRIPTION:
    Mark is a tool to update Atlassian Confluence pages from markdown. Documentation is available here: https://github.com/kovetskiy/mark
 
 COMMANDS:
-   publish  publish markdown files to Confluence
-   export   export a Confluence page, or a tree of them, to markdown (experimental)
-   page     list, move, copy, rename, archive, delete or watch Confluence pages (experimental)
-   doctor   check that mark can reach Confluence, log in, and publish to a space
-   help, h  Shows a list of commands or help for one command
+   publish   publish markdown files to Confluence
+   export    export a Confluence page, or a tree of them, to markdown (experimental)
+   page      list, move, copy, rename, archive, delete or watch Confluence pages (experimental)
+   doctor    check that mark can reach Confluence, log in, and publish to a space
+   metadata  work with Confluence metadata (experimental)
+   help, h   Shows a list of commands or help for one command
 
 GLOBAL OPTIONS:
    --config string, -c string    use the specified configuration file. (default: "${HOME}/.config/mark.toml") [$MARK_CONFIG]
@@ -276,6 +278,7 @@ OPTIONS:
    --overwrite                 replace the Markdown file and attachments if they are already there. Without it, the export fails before writing anything. [$MARK_OVERWRITE]
    --format string             what to write: "mark", a document mark publishes back to the page, or "okf", an Open Knowledge Format concept, and with --recursive a bundle of them, for agents and knowledge catalogs to read. (default: "mark") [$MARK_FORMAT]
    --metadata string           how a "mark" document spells the metadata that names its page: "comments", HTML comment headers, "frontmatter", YAML front matter, which mark publishes only with the frontmatter feature (--features=mermaid,mention,frontmatter), or "none", the body alone, which cannot be published back by itself: --recursive refuses it on the command line, and sets aside one from MARK_METADATA or the configuration file with a warning. --format okf ignores it. (default: "comments") [$MARK_METADATA]
+   --include-content-status    include the assigned Confluence Cloud page status in the Markdown metadata. [$MARK_INCLUDE_CONTENT_STATUS]
    --no-attachments            write the Markdown only, and download no attachments. The document still refers to them where they would have been written. [$MARK_NO_ATTACHMENTS]
    --recursive, -r             export the pages beneath it too, into the directory --output names: the page to index.md there, and each page beneath it to index.md in a directory of its own named after its title.
    --depth int, -d int         with --recursive, export this many levels, counting the page itself; 0 is every level. (default: 0)

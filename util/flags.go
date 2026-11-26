@@ -548,6 +548,11 @@ func exportFlags(config *configFile) []cli.Flag {
 			Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_METADATA"), config.value("metadata")),
 		},
 		&cli.BoolFlag{
+			Name:    "include-content-status",
+			Usage:   "include the assigned Confluence Cloud page status in the Markdown metadata.",
+			Sources: cli.NewValueSourceChain(cli.EnvVar("MARK_INCLUDE_CONTENT_STATUS"), config.value("include-content-status")),
+		},
+		&cli.BoolFlag{
 			Name:    "no-attachments",
 			Value:   false,
 			Usage:   "write the Markdown only, and download no attachments. The document still refers to them where they would have been written.",

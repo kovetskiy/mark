@@ -25,23 +25,24 @@ import (
 )
 
 const (
-	HeaderParent       = `Parent`
-	HeaderFolder       = `Folder`
-	HeaderSpace        = `Space`
-	HeaderType         = `Type`
-	HeaderTitle        = `Title`
-	HeaderLayout       = `Layout`
-	HeaderEmoji        = `Emoji`
-	HeaderAttachment   = `Attachment`
-	HeaderLabel        = `Label`
-	HeaderOrder        = `Order`
-	HeaderInclude      = `Include`
-	HeaderSidebar      = `Sidebar`
-	ContentAppearance  = `Content-Appearance`
-	HeaderImageAlign   = `Image-Align`
-	HeaderProperty     = `Property`
-	HeaderRestriction  = `Restriction`
-	HeaderSynchronized = `Synchronized`
+	HeaderParent        = `Parent`
+	HeaderFolder        = `Folder`
+	HeaderSpace         = `Space`
+	HeaderType          = `Type`
+	HeaderTitle         = `Title`
+	HeaderLayout        = `Layout`
+	HeaderEmoji         = `Emoji`
+	HeaderAttachment    = `Attachment`
+	HeaderLabel         = `Label`
+	HeaderOrder         = `Order`
+	HeaderInclude       = `Include`
+	HeaderSidebar       = `Sidebar`
+	ContentAppearance   = `Content-Appearance`
+	HeaderContentStatus = `Content-Status`
+	HeaderImageAlign    = `Image-Align`
+	HeaderProperty      = `Property`
+	HeaderRestriction   = `Restriction`
+	HeaderSynchronized  = `Synchronized`
 )
 
 // knownHeaders is every header name a document may write, in the order an
@@ -49,6 +50,7 @@ const (
 var knownHeaders = []string{
 	HeaderAttachment,
 	ContentAppearance,
+	HeaderContentStatus,
 	HeaderEmoji,
 	HeaderFolder,
 	HeaderImageAlign,
@@ -176,6 +178,10 @@ type Meta struct {
 	Labels            []string
 	ContentAppearance Appearance
 	Restrictions      *Restrictions
+
+	// ContentStatus names the requested status.
+	// Nil leaves it unspecified; an empty string requests removal.
+	ContentStatus *string
 
 	// DeclaredParents records that the document named its own parents, as
 	// against a command line flag supplying them. Deriving parents from the
@@ -545,6 +551,23 @@ func setContentAppearance(meta *Meta, key, value string) error {
 	return nil
 }
 
+// setContentStatus records a status declaration and refuses duplicate or
+// empty values. Only the explicit clear spelling may yield an empty name.
+func setContentStatus(meta *Meta, value string, clear bool) error {
+	if meta.ContentStatus != nil {
+		return errors.New("content status was declared more than once")
+	}
+
+	value = strings.TrimSpace(value)
+	if clear {
+		value = ""
+	} else if value == "" {
+		return errors.New("content status needs a name or ~ to clear it")
+	}
+	meta.ContentStatus = &value
+	return nil
+}
+
 // ParseContentAppearance is the appearance a Content-Appearance value, or the
 // --content-appearance default, names: full-width, default or max, or "" when
 // it is empty. Anything else is refused rather than published full width.
@@ -816,6 +839,15 @@ func ExtractMeta(data []byte, opts ExtractOptions) (*Meta, []byte, error) {
 				meta.Sidebar = toText(v, k, written, lines[k], warnings)
 			case "emoji":
 				meta.Emoji = toText(v, k, written, lines[k], warnings)
+			case "contentstatus":
+				value := written[k]
+				clear := v == nil && value != ""
+				if v == nil {
+					value = ""
+				}
+				if err := setContentStatus(meta, value, clear); err != nil {
+					return nil, nil, err
+				}
 			case "attachments":
 				meta.Attachments = append(meta.Attachments, toStringSlice(v, k, lines[k], warnings)...)
 			case "labels":
@@ -994,6 +1026,11 @@ func ExtractMeta(data []byte, opts ExtractOptions) (*Meta, []byte, error) {
 
 				case HeaderEmoji:
 					meta.Emoji = strings.TrimSpace(value)
+
+				case HeaderContentStatus:
+					if err := setContentStatus(meta, value, value == "~"); err != nil {
+						return nil, nil, err
+					}
 
 				case HeaderOrder:
 					order, err := strconv.Atoi(strings.TrimSpace(value))

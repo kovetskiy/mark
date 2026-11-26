@@ -123,15 +123,16 @@ func Tree(ctx context.Context, api *confluence.API, cfg Config, options TreeOpti
 		}
 
 		export, err := preparePage(ctx, api, Config{
-			PageID:         p.id,
-			Output:         p.output,
-			AttachmentsDir: attachments,
-			NoAttachments:  cfg.NoAttachments,
-			Stdout:         cfg.Stdout,
-			Format:         format,
-			Metadata:       spelling,
-			Generator:      cfg.Generator,
-			Documents:      documents,
+			PageID:               p.id,
+			Output:               p.output,
+			AttachmentsDir:       attachments,
+			NoAttachments:        cfg.NoAttachments,
+			Stdout:               cfg.Stdout,
+			Format:               format,
+			Metadata:             spelling,
+			IncludeContentStatus: cfg.IncludeContentStatus,
+			Generator:            cfg.Generator,
+			Documents:            documents,
 		}, p.beside)
 		if err != nil {
 			return nil, fmt.Errorf("unable to export page %s: %w", p.id, err)

@@ -101,7 +101,7 @@ const commentOpen = "<!--"
 // normaliseFrontMatterKey spells them.
 func frontMatterKeys() []string {
 	return []string{
-		"attachments", "contentappearance", "emoji", "folders", "imagealign",
+		"attachments", "contentappearance", "contentstatus", "emoji", "folders", "imagealign",
 		"labels", "layout", "order", "parents", "properties", "restrictions",
 		"sidebar", "space", "synchronized", "title", "type",
 	}
@@ -130,9 +130,10 @@ func frontMatterKeys() []string {
 // out: a string for space, title,
 // type, layout, sidebar, emoji and image-align; a string or a list of strings
 // for parents, folders, attachments and labels; a map with string keys for
-// properties. How mark then reads each key is as for any front matter:
-// strings are trimmed, empty list items left out, order has to be a whole
-// number and synchronized true or false.
+// properties. A content-status value is a nonempty name; nil requests removal.
+//
+// Values are read as front matter: strings are trimmed and empty list items left out.
+// Order must be a whole number and synchronized must be true or false.
 func FrontMatter(fields map[string]any) (string, error) {
 	known := frontMatterKeys()
 	seen := map[string]string{}
@@ -324,6 +325,11 @@ func checkFrontMatterKind(key string, value any) error {
 	case "space", "title", "type", "layout", "sidebar", "emoji", "imagealign":
 		if v.Kind() != reflect.String {
 			return fmt.Errorf("takes a string, not a %s", v.Type())
+		}
+
+	case "contentstatus":
+		if v.Kind() != reflect.String || strings.TrimSpace(v.String()) == "" {
+			return errors.New("takes a status name or nil to clear it")
 		}
 
 	case "parents", "folders", "attachments", "labels":

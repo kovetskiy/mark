@@ -27,6 +27,12 @@ import (
 	"testing"
 )
 
+// contentState is a status returned by the test server.
+type contentState struct {
+	ID   int64  `json:"id"`
+	Name string `json:"name"`
+}
+
 // Page is a page, blogpost or folder held by the fake.
 type Page struct {
 	ID       string
@@ -41,6 +47,9 @@ type Page struct {
 	When   string
 	Body   string
 	Labels []string
+
+	// ContentStatus is the status name assigned to this test page, or empty.
+	ContentStatus string
 
 	// Trashed and Archived record what became of a page, so a test can tell
 	// "moved to the trash" from "gone" and from "archived".
@@ -1076,6 +1085,10 @@ func (s *Server) handleV1(w http.ResponseWriter, r *http.Request, path string) {
 			s.moveContent(w, r, id, position, target)
 		case sub == "label":
 			s.label(w, r, id)
+		case sub == "state":
+			s.contentStatus(w, r, id)
+		case sub == "state/available":
+			s.availableContentStatuses(w, r, id)
 		case sub == "copy":
 			s.copyContent(w, r, id)
 		case sub == "property":
@@ -1556,6 +1569,84 @@ func (s *Server) movePageAction(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// contentStates returns the statuses available to pages and blog posts in the test server.
+func contentStates() []contentState {
+	return []contentState{{ID: 0, Name: "Ready for review"}, {ID: 1, Name: "In progress"}}
+}
+
+// availableContentStatuses lists the statuses available to a test page.
+func (s *Server) availableContentStatuses(w http.ResponseWriter, r *http.Request, id string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	page := s.pages[id]
+	if s.dataCenter || page == nil || page.Trashed || (page.Type != "page" && page.Type != "blogpost") {
+		http.NotFound(w, r)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"spaceContentStates": contentStates()})
+}
+
+// contentStatus reads, sets, or clears a test page's assigned status.
+func (s *Server) contentStatus(w http.ResponseWriter, r *http.Request, id string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	page := s.pages[id]
+	if s.dataCenter || page == nil || page.Trashed || (page.Type != "page" && page.Type != "blogpost") {
+		http.NotFound(w, r)
+		return
+	}
+
+	states := contentStates()
+
+	if r.URL.Query().Get("status") != "current" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"message": "expected current status"})
+		return
+	}
+
+	switch r.Method {
+	case http.MethodGet:
+	case http.MethodPut:
+		var payload struct {
+			ID *int64 `json:"id"`
+		}
+		decoder := json.NewDecoder(r.Body)
+		decoder.DisallowUnknownFields()
+		if err := decoder.Decode(&payload); err != nil || payload.ID == nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"message": "expected a status ID"})
+			return
+		}
+		for _, candidate := range states {
+			if candidate.ID == *payload.ID {
+				page.ContentStatus = candidate.Name
+				page.Version++
+				page.Message = ""
+				writeJSON(w, http.StatusOK, map[string]any{"contentState": candidate})
+				return
+			}
+		}
+		http.NotFound(w, r)
+		return
+	case http.MethodDelete:
+		page.ContentStatus = ""
+		page.Version++
+		page.Message = ""
+	default:
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+
+	for _, candidate := range states {
+		if candidate.Name == page.ContentStatus {
+			writeJSON(w, http.StatusOK, map[string]any{"contentState": candidate})
+			return
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{})
+}
+
 // contentProperties serves the v1 content property API, which differs from the
 // v2 space one in two ways that matter: a read of a single key returns the
 // property object directly rather than a collection, and an update addresses it
@@ -1976,6 +2067,8 @@ func (s *Server) contentByID(w http.ResponseWriter, r *http.Request, id string) 
 		p.Message = payload.Version.Message
 		s.wroteTo(p.ID)
 		p.Body = payload.Body.Storage.Value
+		// Exercise Mark's preservation path when a body update clears the status.
+		p.ContentStatus = ""
 		if payload.Title != "" {
 			p.Title = payload.Title
 		}
