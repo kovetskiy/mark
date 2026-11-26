@@ -1,6 +1,7 @@
 package page
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -95,11 +96,11 @@ func TestFindLinkTargetSaysWhichKindOfNothingItFound(t *testing.T) {
 	base := t.TempDir()
 	require.NoError(t, os.Mkdir(filepath.Join(base, "example"), 0o755))
 
-	_, why := findLinkTarget(attachment.Root{}, []string{base}, "example")
+	_, why := findLinkTarget(context.Background(), attachment.Root{}, []string{base}, "example")
 	require.NotNil(t, why)
 	assert.Contains(t, why.reason, "directory")
 
-	_, why = findLinkTarget(attachment.Root{}, []string{base}, "no-such-thing")
+	_, why = findLinkTarget(context.Background(), attachment.Root{}, []string{base}, "no-such-thing")
 	require.NotNil(t, why)
 	assert.Contains(t, why.reason, "no such file")
 }
@@ -119,7 +120,7 @@ func TestFindLinkTargetPrefersAFileInALaterSearchDirectory(t *testing.T) {
 	document := filepath.Join(second, "shared")
 	require.NoError(t, os.WriteFile(document, []byte("Body.\n"), 0o600))
 
-	found, why := findLinkTarget(attachment.Root{}, []string{first, second}, "shared")
+	found, why := findLinkTarget(context.Background(), attachment.Root{}, []string{first, second}, "shared")
 	require.Nil(t, why, "the file in the second directory is the answer")
 	assert.Equal(t, document, found)
 }

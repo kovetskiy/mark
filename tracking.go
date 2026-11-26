@@ -10,11 +10,11 @@ import (
 	"strings"
 
 	"github.com/kovetskiy/mark/v17/confluence"
+	"github.com/kovetskiy/mark/v17/internal/logctx"
 	"github.com/kovetskiy/mark/v17/manifest"
 	"github.com/kovetskiy/mark/v17/metadata"
 	"github.com/kovetskiy/mark/v17/page"
 	"github.com/kovetskiy/mark/v17/report"
-	"github.com/rs/zerolog/log"
 )
 
 // previewTrackedResolution says what a real run would have done with a document
@@ -37,7 +37,7 @@ func (r *publishRun) previewTrackedResolution(ctx context.Context, doc *document
 	}
 
 	if pg != nil {
-		log.Info().Msgf(
+		logctx.From(ctx).Info().Msgf(
 			"%s would be published to the existing page %s, retitled from %q to %q",
 			file, pg.ID, pg.Title, meta.Title,
 		)
@@ -51,7 +51,7 @@ func (r *publishRun) previewTrackedResolution(ctx context.Context, doc *document
 	}
 
 	if pg != nil {
-		log.Info().Msgf(
+		logctx.From(ctx).Info().Msgf(
 			"%s would be treated as a rename of an already published document, updating page %s",
 			file, pg.ID,
 		)
@@ -59,7 +59,7 @@ func (r *publishRun) previewTrackedResolution(ctx context.Context, doc *document
 		return pg, nil
 	}
 
-	log.Info().Msgf("%s would be published as a new page %q", file, meta.Title)
+	logctx.From(ctx).Info().Msgf("%s would be published as a new page %q", file, meta.Title)
 
 	return nil, nil
 }
@@ -120,13 +120,203 @@ func resolveTrackedPage(
 	}
 
 	if pg.Title != meta.Title {
-		log.Info().Msgf(
+		logctx.From(ctx).Info().Msgf(
 			"%s was published as %q and is now %q; retitling page %s rather than creating a second one",
 			file, pg.Title, meta.Title, pg.ID,
 		)
 	}
 
 	return pg, nil
+}
+
+// titleHeldError refuses a document a title that still names the page of
+// another document of the run: one that publishes the page under a new
+// title, or one that keeps the title.
+type titleHeldError struct {
+	space, title string
+	page         *confluence.PageInfo
+	// holder is the document the page is recorded for, and retitled the
+	// title it now declares; empty when it keeps the title.
+	holder   input
+	retitled string
+	// hint says to suggest --title-append-generated-hash; see hashSeparates.
+	hint bool
+}
+
+func (e *titleHeldError) Error() string {
+	if e.retitled == "" {
+		return titleTaken(e.holder.file, e.title, e.space, e.hint).Error()
+	}
+
+	return fmt.Sprintf(
+		"the title %q belongs to page %s until %s, which publishes that page, has retitled it %q",
+		e.title, e.page.ID, e.holder.file, e.retitled,
+	)
+}
+
+// titleTaken refuses a title that previous publishes in the space, suggesting
+// --title-append-generated-hash when hint says it would tell the two apart.
+func titleTaken(previous, title, space string, hint bool) error {
+	remedy := "rename one of them"
+	if hint {
+		remedy += ", or use --title-append-generated-hash"
+	}
+
+	return fmt.Errorf(
+		"%s already publishes %q in space %q, and a space holds one page of a title: %s",
+		previous, title, space, remedy,
+	)
+}
+
+// titleHeld returns, as the error refusing it, the other document of the run
+// that the page the document's title finds is recorded for, when that one
+// publishes content of the same space and type; nil when there is none.
+//
+// When that document now declares another title, the lookup cannot tell its
+// page from this document's own until it has retitled it: publishing to it
+// would put two documents on one page and leave the title without one. When
+// it still declares the title, the page is its whichever of the two comes
+// first. Either way it has its turn first. A page recorded for a document
+// gone from the run belongs to the document of the run that has its content
+// under another name, and to whichever takes the title when none has.
+func (r *publishRun) titleHeld(
+	ctx context.Context, file, key string, meta *metadata.Meta,
+) (*titleHeldError, error) {
+	// A compile asks nothing of Confluence.
+	if r.config.Mode.CompileOnly || r.tracker == nil || meta == nil {
+		return nil, nil
+	}
+
+	// Memoised, and the question resolving the page asks next.
+	pg, err := r.api.FindPage(ctx, meta.Space, meta.Title, confluence.ContentType(meta.Type))
+	if err != nil {
+		return nil, fmt.Errorf("error while finding page %q: %w", meta.Title, err)
+	}
+	if pg = r.carrying(pg, meta.Title); pg == nil {
+		return nil, nil
+	}
+
+	recorded, err := r.tracker.RecordedFor(ctx, meta.Space, pg.ID)
+	if err != nil {
+		return nil, fmt.Errorf("unable to read page mapping for page %s: %w", pg.ID, err)
+	}
+
+	// The documents of the run the page is recorded for, this one included,
+	// each once and in the order of their keys.
+	own := manifest.Key(key)
+	var holders []input
+	for _, path := range recorded {
+		holder, ok := input{file: file, key: key}, path == own
+		if !ok {
+			holder, ok = r.titles.keyed(path)
+		}
+		if !ok {
+			holder, ok, err = r.renamedFrom(ctx, meta, path, pg.ID)
+			if err != nil {
+				return nil, err
+			}
+		}
+		// A holder that publishes nothing leaves the page to be found by its
+		// title.
+		if !ok || holder.file != file && r.publishedAs(holder, meta) == nil ||
+			slices.ContainsFunc(holders, func(in input) bool { return in.file == holder.file }) {
+			continue
+		}
+		holders = append(holders, holder)
+	}
+
+	if len(holders) > 1 {
+		return nil, &titleSharedError{
+			space: meta.Space, title: meta.Title, page: pg.ID,
+			one: holders[0].file, other: holders[1].file,
+		}
+	}
+	if len(holders) == 0 || holders[0].file == file {
+		return nil, nil
+	}
+
+	holder := holders[0]
+	declared := r.publishedAs(holder, meta)
+	held := &titleHeldError{
+		space: meta.Space, title: meta.Title, page: pg, holder: holder,
+		hint: r.hashSeparates(hashedTitle(declared), hashedTitle(meta)),
+	}
+	if !strings.EqualFold(declared.Title, pg.Title) {
+		held.retitled = declared.Title
+	}
+
+	return held, nil
+}
+
+// publishedAs returns what holder declares when it publishes content of
+// meta's space and type under a title, and nil when it does not.
+func (r *publishRun) publishedAs(holder input, meta *metadata.Meta) *metadata.Meta {
+	declared := r.titles.readAhead(holder).meta
+	if declared == nil || !declared.Publish() || declared.Title == "" ||
+		!strings.EqualFold(declared.Space, meta.Space) || declared.Type != meta.Type {
+		return nil
+	}
+
+	return declared
+}
+
+// titleSharedError refuses a title whose page is recorded for two documents
+// of the run: two runs each published one of them to it, and nothing says
+// which of the two the page is.
+type titleSharedError struct {
+	space, title, page string
+	one, other         string
+}
+
+func (e *titleSharedError) Error() string {
+	return fmt.Sprintf(
+		"page %s, which the title %q finds in space %q, is recorded for both %s and %s, "+
+			"and which of them publishes it cannot be told: remove the one it is not from a run, "+
+			"which forgets its record, and add it back under another title",
+		e.page, e.title, e.space, e.one, e.other,
+	)
+}
+
+// renamedFrom returns the document of the run declaring meta's title that
+// has the content recorded, a key gone from the run, published to the page:
+// that document under a new name, as resolveRenamedFile finds it at its turn.
+func (r *publishRun) renamedFrom(
+	ctx context.Context, meta *metadata.Meta, recorded, pageID string,
+) (input, bool, error) {
+	for _, in := range r.titles.declaring(meta.Space, meta.Type, meta.Title) {
+		if _, own, err := r.tracker.Recorded(ctx, meta.Space, in.key); err != nil {
+			return input{}, false, fmt.Errorf("unable to read page mapping for %q: %w", in.key, err)
+		} else if own {
+			continue
+		}
+
+		// Indexed, so read ahead already.
+		previous, entry, ok, err := r.tracker.ResolveRenamedFor(
+			ctx, meta.Space, in.key, r.titles.readAhead(in).sourceHash,
+		)
+		if err != nil {
+			return input{}, false, fmt.Errorf("unable to check whether %q was renamed: %w", in.file, err)
+		}
+		if ok && previous == recorded && entry.PageID == pageID {
+			return in, true, nil
+		}
+	}
+
+	return input{}, false, nil
+}
+
+// carrying returns pg, found by title, unless a dry run has previewed the
+// document retitling it: a real run has written the new title by then, and
+// the lookup no longer finds the page.
+func (r *publishRun) carrying(pg *confluence.PageInfo, title string) *confluence.PageInfo {
+	if pg == nil {
+		return nil
+	}
+	if retitled, ok := r.previewTitles[pg.ID]; ok && !strings.EqualFold(retitled, title) {
+		return nil
+	}
+
+	return pg
 }
 
 // refreshStaleParents rewrites parent titles that no longer resolve to the
@@ -247,12 +437,12 @@ func refreshStaleParents(
 		}
 
 		if publisher != "" {
-			log.Info().Msgf(
+			logctx.From(ctx).Info().Msgf(
 				"parent %q is page %s, titled %q until %s retitles it; using it rather than creating an empty page",
 				title, pageID, renamed.Title, publisher,
 			)
 		} else {
-			log.Info().Msgf(
+			logctx.From(ctx).Info().Msgf(
 				"parent %q was renamed to %q; using it rather than creating a page under the old title",
 				title, renamed.Title,
 			)
@@ -410,7 +600,7 @@ func resolveRenamedFile(
 		return nil, tracker.Forget(ctx, meta.Space, previous)
 	}
 
-	log.Info().Msgf(
+	logctx.From(ctx).Info().Msgf(
 		"%s has the content %s published as page %s; treating it as a rename rather than a new page",
 		file, previous, pg.ID,
 	)
@@ -440,9 +630,13 @@ func resolveRenamedFile(
 // A directory only documents lie in is recorded under its key in
 // directoryKeys, in their scope; any other by its path.
 //
-// Only a page mark created is recorded: it writes nothing to a directory's
-// page, so one that was there before it is somebody else's, and --on-orphan
-// must never be offered it.
+// Only a page mark created is recorded: one that was there before it is
+// somebody else's, and --on-orphan must never be offered it.
+//
+// Each is recorded under the title in recordAs, one per directory, rather
+// than the title its page carries: what the directory was called is what
+// tells, on a later run, that its title has changed; see
+// retitleDirectoryPages. A nil recordAs records the titles in parents.
 func recordDirectoryPages(
 	ctx context.Context,
 	tracker *manifest.Store,
@@ -451,7 +645,7 @@ func recordDirectoryPages(
 	hierarchy *page.Hierarchy,
 	directoryKeys map[string]string,
 	file, space string,
-	parents []string,
+	parents, recordAs []string,
 ) error {
 	directories := hierarchy.Directories(file)
 	if len(directories) == 0 || len(parents) < len(directories) {
@@ -461,6 +655,9 @@ func recordDirectoryPages(
 	// One parent per directory, at the end of the chain: whatever --parents
 	// put above them comes first.
 	titles := parents[len(parents)-len(directories):]
+	if len(recordAs) != len(directories) {
+		recordAs = titles
+	}
 
 	for i, key := range directories {
 		// A directory holding a document of its own has that document's entry
@@ -477,11 +674,7 @@ func recordDirectoryPages(
 				continue
 			}
 
-			recorded := key
-			if documents, ok := directoryKeys[key]; ok {
-				recorded = documents
-			}
-
+			recorded := directoryEntryKey(directoryKeys, key)
 			own, err := ownDirectoryPage(ctx, tracker, created, space, recorded, directory.ID)
 			if err != nil {
 				return fmt.Errorf("unable to look up directory page for %q: %w", key, err)
@@ -492,7 +685,7 @@ func recordDirectoryPages(
 
 			if err := tracker.Record(
 				ctx,
-				space, recorded, directory.ID, directory.Title, page.DirectoryHash(recorded),
+				space, recorded, directory.ID, recordAs[i], page.DirectoryHash(recorded),
 			); err != nil {
 				return fmt.Errorf("unable to record directory page for %q: %w", key, err)
 			}
@@ -502,6 +695,17 @@ func recordDirectoryPages(
 	}
 
 	return nil
+}
+
+// directoryEntryKey is the manifest key a directory's page is recorded
+// under: its key in directoryKeys, in their scope, if only documents lie in
+// it, and its path otherwise.
+func directoryEntryKey(directoryKeys map[string]string, key string) string {
+	if documents, ok := directoryKeys[key]; ok {
+		return documents
+	}
+
+	return key
 }
 
 // ownDirectoryPage reports whether the page found for a directory is one mark
@@ -533,6 +737,155 @@ func ownDirectoryPage(
 	return false, tracker.Forget(ctx, space, key)
 }
 
+// resolveParents brings the parents a document declares up to date before
+// its ancestry is resolved: refreshStaleParents follows the ones renamed in
+// Confluence, then retitleDirectoryPages renames the pages of directories
+// whose own title has changed.
+func (r *publishRun) resolveParents(ctx context.Context, doc *document) error {
+	// What the document declares, before a directory's page is followed to
+	// the title it carries.
+	declared := slices.Clone(doc.meta.Parents)
+
+	if err := refreshStaleParents(ctx, r.tracker, r.api, doc.meta, r.titles, doc.warnings); err != nil {
+		return err
+	}
+
+	return r.retitleDirectoryPages(ctx, doc, declared)
+}
+
+// retitleDirectoryPages renames the pages recorded for the directories a
+// document sits under whose titles have changed, and sets
+// doc.directoryTitles.
+//
+// A directory's page is found by its title, so a new title finds nothing: a
+// second page would be made under it and the old one left empty, out of
+// --on-orphan's reach. A directory with a document of its own is left to
+// that document. A directory recorded under the title it declares is left
+// alone too, so a page renamed in Confluence stays followed.
+func (r *publishRun) retitleDirectoryPages(ctx context.Context, doc *document, declared []string) error {
+	if r.tracker == nil || r.hierarchy == nil || doc.meta.DeclaredParents {
+		return nil
+	}
+
+	directories := r.hierarchy.Directories(doc.file)
+	if len(directories) == 0 || len(declared) < len(directories) {
+		return nil
+	}
+
+	offset := len(declared) - len(directories)
+	doc.directoryTitles = declared[offset:]
+
+	for i, key := range directories {
+		if r.hierarchy.HasIndex(key) {
+			continue
+		}
+
+		recorded := directoryEntryKey(r.directoryKeys, key)
+		kept, err := r.retitleDirectoryPage(ctx, doc, recorded, offset+i, doc.directoryTitles[i])
+		if err != nil {
+			return fmt.Errorf("unable to retitle the page of directory %q: %w", key, err)
+		}
+		if kept != "" {
+			doc.directoryTitles[i] = kept
+		}
+	}
+
+	return nil
+}
+
+// retitleDirectoryPage gives the page recorded under key the title its
+// directory now declares, the parent meta.Parents[i] stands for, and returns
+// the title to record it under instead, if any.
+//
+// A title another page carries is not taken: the directory stays on its
+// page under the old title and is tried again on the next run. A dry run
+// renames nothing.
+func (r *publishRun) retitleDirectoryPage(ctx context.Context, doc *document, key string, i int, title string) (string, error) {
+	meta := doc.meta
+
+	entry, ok, err := r.tracker.Recorded(ctx, meta.Space, key)
+	if err != nil || !ok || entry.PageID == "" || entry.Title == "" || entry.Title == title {
+		return "", err
+	}
+
+	// A page recorded for a document too is that document's to title.
+	holders, err := r.tracker.RecordedFor(ctx, meta.Space, entry.PageID)
+	if err != nil || len(holders) != 1 {
+		return "", err
+	}
+
+	pg, inSpace, err := recordedPage(ctx, r.api, meta.Space, entry.PageID)
+	if errors.Is(err, confluence.ErrNotFound) {
+		return "", nil
+	}
+	if err != nil || !inSpace || pg.Title == title {
+		return "", err
+	}
+
+	existing, err := r.api.FindPage(ctx, meta.Space, title, confluence.ContentPage)
+	if err != nil {
+		return "", fmt.Errorf("unable to look up %q: %w", title, err)
+	}
+	if existing = r.carrying(existing, title); existing != nil && existing.ID != pg.ID {
+		doc.warnings.Add(report.WarningPlacement,
+			"page %s, the page of directory %s, keeps the title %q: page %s already carries the title %q",
+			pg.ID, key, pg.Title, existing.ID, title,
+		)
+		meta.Parents[i] = pg.Title
+
+		return entry.Title, nil
+	}
+
+	if r.config.Mode.DryRun {
+		if r.previewTitles[pg.ID] != title {
+			logctx.From(ctx).Info().Msgf(
+				"page %s of directory %s would be retitled from %q to %q", pg.ID, key, pg.Title, title,
+			)
+			r.previewTitles[pg.ID] = title
+		}
+		r.checker.NotePublishes(meta.Space, title)
+		meta.Parents[i] = pg.Title
+
+		return "", nil
+	}
+
+	pg, err = r.api.GetPageByIDExpanded(ctx, pg.ID, "ancestors,version,body.storage")
+	if err != nil {
+		return "", fmt.Errorf("unable to read page %s: %w", pg.ID, err)
+	}
+	previous := pg.Title
+	if err := page.Retitle(ctx, r.api, pg, title); err != nil {
+		return "", err
+	}
+	logctx.From(ctx).Info().Msgf(
+		"directory %s is now titled %q; renamed its page %s from %q", key, title, pg.ID, previous,
+	)
+	meta.Parents[i] = title
+
+	return "", r.placeDirectoryPage(ctx, doc, pg, i)
+}
+
+// placeDirectoryPage moves a renamed directory page under the page its chain
+// now names above it, made if need be, when it is not there already: a
+// hashed title changes with the --parents above it.
+func (r *publishRun) placeDirectoryPage(ctx context.Context, doc *document, pg *confluence.PageInfo, i int) error {
+	if i == 0 {
+		return nil
+	}
+
+	parent, err := page.EnsureAncestry(ctx, r.api, doc.meta.Space, doc.meta.Parents[:i], r.ancestryOptions(doc))
+	if err != nil {
+		return err
+	}
+	for _, ancestor := range pg.Ancestors {
+		if ancestor.ID == parent.ID {
+			return nil
+		}
+	}
+
+	return page.EnsurePageUnderParent(ctx, r.api, pg, parent.ID)
+}
+
 // recordPublished records in the manifest the page a document was published
 // to, and the version --no-overwrite compares against on the next run.
 //
@@ -552,7 +905,7 @@ func (r *publishRun) recordPublished(ctx context.Context, doc *document, target 
 	}
 
 	if r.hierarchy != nil && !meta.DeclaredParents {
-		if err := recordDirectoryPages(ctx, r.tracker, r.createdParents, target, r.hierarchy, r.directoryKeys, file, meta.Space, meta.Parents); err != nil {
+		if err := recordDirectoryPages(ctx, r.tracker, r.createdParents, target, r.hierarchy, r.directoryKeys, file, meta.Space, meta.Parents, doc.directoryTitles); err != nil {
 			return err
 		}
 	}

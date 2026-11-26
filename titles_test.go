@@ -68,6 +68,31 @@ func TestTitleLengthLimit(t *testing.T) {
 		require.NoError(t, err)
 		assert.Nil(t, created, "the parent is not created")
 	})
+
+	// 250 letters fit; " - " and the 8 of the hash take the title past 255.
+	t.Run("hashed folder", func(t *testing.T) {
+		folder := strings.Repeat("f", 250)
+		document := strings.Replace(markdownWithTitle("Child"),
+			"<!-- Parent: Parent -->", "<!-- Parent: Parent -->\n<!-- Folder: "+folder+" -->", 1)
+
+		for _, dryRun := range []bool{true, false} {
+			server, api := docsSpace(t)
+			file := writeFile(t, t.TempDir(), "doc.md", document)
+
+			config := trackingConfig(server, file)
+			config.Page.FolderTitleAppendGeneratedHash = true
+			config.Mode.DryRun = dryRun
+			err := Run(context.Background(), config)
+			require.Error(t, err, "dry run: %v", dryRun)
+			assert.Contains(t, err.Error(), "folder title")
+			assert.Contains(t, err.Error(), "is 261 characters long")
+			assert.Empty(t, server.Folders(), "the folder is not created")
+
+			published, err := api.FindPage(context.Background(), "DOCS", "Child", "page")
+			require.NoError(t, err)
+			assert.Nil(t, published)
+		}
+	})
 }
 
 // TestHeadersDifferingOnlyInCaseKeepThePage: headers that differ from the

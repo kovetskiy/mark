@@ -491,3 +491,149 @@ func TestRootFolderLookupIgnoresASameTitledNestedFolder(t *testing.T) {
 	require.NotNil(t, parent)
 	assert.Equal(t, atRoot.ID, parent.ID)
 }
+
+// hashedOptions are the options of a run with --folder-title-append-generated-hash,
+// each with a cache of its own.
+func hashedOptions(dryRun bool) page.AncestryOptions {
+	return page.AncestryOptions{DryRun: dryRun, FolderCache: page.NewFolderCache(), FolderTitleAppendGeneratedHash: true}
+}
+
+// TestFolderTitleAppendGeneratedHash: Confluence holds folder titles unique
+// across a space, so a "Guides" declared under a second parent is refused for
+// the one under the first. With the hash, each folder created carries where it
+// sits in its title, and the next run finds it there.
+func TestFolderTitleAppendGeneratedHash(t *testing.T) {
+	ctx := t.Context()
+	api, server := newAPI(t)
+	root := server.AddPage("DOCS", "Root", "page", "")
+	manuals := server.AddFolder("DOCS", "Manuals", root.ID, "page")
+	server.AddFolder("DOCS", "Guides", manuals.ID, "folder")
+
+	declared := []string{"Handbook", "Guides"}
+
+	_, err := page.EnsureFolderAncestry(ctx, api, "DOCS", declared, &root.ID, page.AncestryOptions{FolderCache: page.NewFolderCache()})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "--folder-title-append-generated-hash")
+
+	preview, err := page.EnsureFolderAncestry(ctx, api, "DOCS", declared, &root.ID, hashedOptions(true))
+	require.NoError(t, err)
+	require.NotNil(t, preview)
+
+	first, err := page.EnsureFolderAncestry(ctx, api, "DOCS", declared, &root.ID, hashedOptions(false))
+	require.NoError(t, err)
+	require.NotNil(t, first)
+	assert.Regexp(t, `^Guides - [0-9a-f]{8}$`, first.Title)
+	assert.Equal(t, first.Title, preview.Title, "a dry run should name the folder the real run creates")
+
+	before := len(server.Folders())
+
+	again, err := page.EnsureFolderAncestry(ctx, api, "DOCS", declared, &root.ID, hashedOptions(false))
+	require.NoError(t, err)
+	require.NotNil(t, again)
+	assert.Equal(t, first.ID, again.ID)
+	assert.Len(t, server.Folders(), before, "the second run should create nothing")
+}
+
+// TestFolderTitleAppendGeneratedHashKeepsExistingFolders: turning the hash on
+// must not build a second tree beside the one already there, even with no
+// record of it, as when another repository's run created it.
+func TestFolderTitleAppendGeneratedHashKeepsExistingFolders(t *testing.T) {
+	ctx := t.Context()
+	api, server := newAPI(t)
+	root := server.AddPage("DOCS", "Root", "page", "")
+	manuals := server.AddFolder("DOCS", "Manuals", root.ID, "page")
+	guides := server.AddFolder("DOCS", "Guides", manuals.ID, "folder")
+
+	parent, err := page.EnsureFolderAncestry(ctx, api, "DOCS", []string{"Manuals", "Guides"}, &root.ID, hashedOptions(false))
+	require.NoError(t, err)
+	require.NotNil(t, parent)
+	assert.Equal(t, guides.ID, parent.ID)
+	assert.Len(t, server.Folders(), 2, "nothing should have been created")
+}
+
+// TestFolderTitleAppendGeneratedHashPreviewUnderAMissingParent: a dry run whose
+// Parent chain is not there yet stops before the folders, and still has to name
+// the folder a real run creates once it has made the missing page.
+func TestFolderTitleAppendGeneratedHashPreviewUnderAMissingParent(t *testing.T) {
+	ctx := t.Context()
+	api, server := newAPI(t)
+	server.AddPage("DOCS", "Root", "page", "")
+
+	folders, parents := []string{"Guides"}, []string{"Root", "Missing"}
+
+	preview, err := page.EnsureMixedAncestry(ctx, api, "DOCS", folders, parents, hashedOptions(true))
+	require.NoError(t, err)
+	require.NotNil(t, preview)
+
+	created, err := page.EnsureMixedAncestry(ctx, api, "DOCS", folders, parents, hashedOptions(false))
+	require.NoError(t, err)
+	require.NotNil(t, created)
+	assert.Regexp(t, `^Guides - [0-9a-f]{8}$`, created.Title)
+	assert.Equal(t, created.Title, preview.Title)
+}
+
+// TestFolderTitleAppendGeneratedHashIgnoresCase: Confluence takes "Guides" and
+// "guides" for one folder, so two documents spelling it differently share it
+// rather than the second creating another.
+func TestFolderTitleAppendGeneratedHashIgnoresCase(t *testing.T) {
+	ctx := t.Context()
+	api, server := newAPI(t)
+	root := server.AddPage("DOCS", "Root", "page", "")
+
+	options := hashedOptions(false)
+	first, err := page.EnsureMixedAncestry(ctx, api, "DOCS", []string{"Guides"}, []string{"Root"}, options)
+	require.NoError(t, err)
+	require.NotNil(t, first)
+
+	second, err := page.EnsureMixedAncestry(ctx, api, "docs", []string{"guides"}, []string{"root"}, options)
+	require.NoError(t, err)
+	require.NotNil(t, second)
+
+	assert.Equal(t, first.ID, second.ID)
+	assert.Len(t, server.Folders(), 1)
+	assert.Equal(t, root.ID, server.Folders()[0].ParentID)
+}
+
+// folderRecord is a page.FolderTracker kept in a map, as the manifest keeps it
+// from run to run.
+type folderRecord map[string]string
+
+func (r folderRecord) RecordFolder(_ context.Context, _, path, id string) error {
+	r[path] = id
+	return nil
+}
+
+func (r folderRecord) LookupFolder(_ context.Context, _, path string) (string, bool, error) {
+	id, ok := r[path]
+	return id, ok, nil
+}
+
+// TestFolderTitleAppendGeneratedHashFollowsTheHash: two parent chains that end
+// at one page hash a folder beneath it differently. Neither the run's cache
+// nor the --track-pages record may hand the second the folder the first
+// created, or where a page lands depends on which file went first.
+func TestFolderTitleAppendGeneratedHashFollowsTheHash(t *testing.T) {
+	want := page.FolderTitles("DOCS", []string{"Root"}, []string{"Guides"}, true)[0]
+
+	for _, tracked := range []bool{false, true} {
+		ctx := t.Context()
+		api, server := newAPI(t)
+		top := server.AddPage("DOCS", "Top", "page", "")
+		server.AddPage("DOCS", "Root", "page", top.ID)
+
+		options := hashedOptions(false)
+		if tracked {
+			options.Folders = folderRecord{}
+		}
+		_, err := page.EnsureMixedAncestry(ctx, api, "DOCS", []string{"Guides"}, []string{"Top", "Root"}, options)
+		require.NoError(t, err)
+
+		if tracked {
+			options.FolderCache = page.NewFolderCache()
+		}
+		short, err := page.EnsureMixedAncestry(ctx, api, "DOCS", []string{"Guides"}, []string{"Root"}, options)
+		require.NoError(t, err)
+		require.NotNil(t, short)
+		assert.Equal(t, want, short.Title, "tracked: %v", tracked)
+	}
+}

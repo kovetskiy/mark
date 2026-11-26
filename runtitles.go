@@ -1,14 +1,16 @@
 package mark
 
 import (
+	"context"
 	"strings"
 
 	"github.com/kovetskiy/mark/v17/fingerprint"
+	"github.com/kovetskiy/mark/v17/internal/logctx"
 	"github.com/kovetskiy/mark/v17/internal/similar"
 	"github.com/kovetskiy/mark/v17/metadata"
 	"github.com/kovetskiy/mark/v17/page"
 	"github.com/kovetskiy/mark/v17/report"
-	"github.com/rs/zerolog/log"
+	"github.com/rs/zerolog"
 )
 
 // runTitles records which of the run's own documents declare which title, so a
@@ -20,6 +22,8 @@ import (
 // metadata parsed once a run however often it is asked about. Its own turn
 // reads it again: that read is the one reporting its warnings.
 type runTitles struct {
+	// log is the run's logger; nil is the global one.
+	log       *zerolog.Logger
 	config    PublishConfig
 	inputs    []input
 	hierarchy *page.Hierarchy
@@ -29,6 +33,9 @@ type runTitles struct {
 
 	// ahead holds each read ahead by file.
 	ahead map[string]*readAhead
+
+	// run indexes the run's inputs by name and manifest key.
+	run *runInputs
 
 	// warningsFor gives a document's collector, for a title declared by more
 	// than one; nil only logs. warned holds the titles already said so about.
@@ -65,7 +72,7 @@ func (r *runTitles) readAhead(in input) *readAhead {
 	if source, markdown, _, err := in.read(); err == nil {
 		ahead.sourceHash = fingerprint.SHA1(string(source))
 
-		meta, _, err := documentMeta(r.config, in.file, markdown, r.hierarchy, nil)
+		meta, _, err := documentMeta(r.context(), r.config, in.file, markdown, r.hierarchy, nil)
 		if err == nil && meta != nil {
 			ahead.meta = meta
 		}
@@ -90,7 +97,7 @@ func (r *runTitles) textOf(in input) similar.Text {
 	ahead.textRead = true
 
 	if _, markdown, _, err := in.read(); err == nil {
-		if _, markdown, err := documentMeta(r.config, in.file, markdown, r.hierarchy, nil); err == nil {
+		if _, markdown, err := documentMeta(r.context(), r.config, in.file, markdown, r.hierarchy, nil); err == nil {
 			ahead.text = similar.Shingles(similar.MarkdownWords(string(markdown)))
 		}
 	}
@@ -112,7 +119,7 @@ func (r *runTitles) index() {
 		r.documents[key] = append(r.documents[key], in)
 	}
 
-	log.Debug().Msgf("indexed %d title(s) declared by the run's documents", len(r.documents))
+	logctx.From(r.context()).Debug().Msgf("indexed %d title(s) declared by the run's documents", len(r.documents))
 }
 
 // declaredBy returns the one document of the run that publishes content of
@@ -137,6 +144,20 @@ func (r *runTitles) declaring(space, kind, title string) []input {
 	}
 
 	return r.documents[runTitleKey(space, kind, title)]
+}
+
+// keyed returns the document of the run the manifest keys by key.
+func (r *runTitles) keyed(key string) (input, bool) {
+	if r == nil || r.run == nil {
+		return input{}, false
+	}
+
+	file, ok := r.run.byKey[key]
+	if !ok {
+		return input{}, false
+	}
+
+	return r.run.named(file), true
 }
 
 // warnAmbiguous says, when more than one of the run's documents declare the
@@ -186,4 +207,14 @@ func (r *runTitles) warnAmbiguous(space, title string, warnings *report.Warnings
 			title, len(documents), declarers,
 		)
 	}
+}
+
+// context carries the run's logger, for what runTitles reads; with none it is
+// context.Background.
+func (r *runTitles) context() context.Context {
+	if r.log == nil {
+		return context.Background()
+	}
+
+	return r.log.WithContext(context.Background())
 }

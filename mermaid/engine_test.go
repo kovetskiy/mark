@@ -75,6 +75,29 @@ func TestChoosingChromeSaysNothing(t *testing.T) {
 	assert.Empty(t, logged)
 }
 
+// TestEngineStartLogsToTheLoggerItWasMadeWith: the renderer starts on the first
+// diagram, under a context the engine makes rather than the run's, and still
+// logs to the logger the run gave NewEngineContext. merman is used since it
+// logs before it looks for its binary, so the test needs neither installed.
+func TestEngineStartLogsToTheLoggerItWasMadeWith(t *testing.T) {
+	var global, own bytes.Buffer
+
+	restore := log.Logger
+	log.Logger = zerolog.New(&global)
+	t.Cleanup(func() { log.Logger = restore })
+
+	ctx := zerolog.New(&own).WithContext(t.Context())
+
+	engine, err := NewEngineContext(ctx, EngineMerman)
+	require.NoError(t, err)
+	t.Cleanup(engine.Close)
+
+	_, _ = engine.Render(ctx, "d", []byte("graph TD;\n A-->B;"), Options{Output: imageformat.SVG, Scale: 1.0})
+
+	assert.Contains(t, own.String(), "Setting up Mermaid renderer (merman)")
+	assert.Empty(t, global.String())
+}
+
 // TestEngineStartsOnlyWhenUsed: a run that draws no diagram launches nothing.
 func TestEngineStartsOnlyWhenUsed(t *testing.T) {
 	engine, _ := useEngine(t, EngineChrome)
@@ -221,20 +244,20 @@ func TestVersionFloor(t *testing.T) {
 	for _, version := range []string{"0.7.0", "0.8.0-alpha.6", "0.9.1", "0.9.2-rc.1"} {
 		require.Negative(t, semver.Compare("v"+version, floor),
 			"%s is only a useful fixture while it is older than %s", version, MinimumMermanVersion)
-		require.Error(t, checkMermanVersion(version))
+		require.Error(t, checkMermanVersion(context.Background(), version))
 	}
 
 	for _, version := range []string{MinimumMermanVersion, "0.9.3", "0.10.0", "1.0.0", "v0.9.2"} {
 		require.GreaterOrEqual(t, semver.Compare("v"+strings.TrimPrefix(version, "v"), floor), 0,
 			"%s is only a useful fixture while it is at least %s", version, MinimumMermanVersion)
-		require.NoError(t, checkMermanVersion(version))
+		require.NoError(t, checkMermanVersion(context.Background(), version))
 	}
 
 	// Not a refusal: a version nobody can parse is more likely somebody's own
 	// build than an old release, and declining to publish over a version string
 	// would be the wrong way round.
-	assert.NoError(t, checkMermanVersion(""))
-	assert.NoError(t, checkMermanVersion("built-from-source"))
+	assert.NoError(t, checkMermanVersion(context.Background(), ""))
+	assert.NoError(t, checkMermanVersion(context.Background(), "built-from-source"))
 }
 
 // TestBothEnginesDrawTheSameDiagram runs what mark actually does through each

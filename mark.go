@@ -25,6 +25,7 @@ import (
 	"github.com/kovetskiy/mark/v17/includes"
 	"github.com/kovetskiy/mark/v17/internal/fspath"
 	"github.com/kovetskiy/mark/v17/internal/globpattern"
+	"github.com/kovetskiy/mark/v17/internal/logctx"
 	"github.com/kovetskiy/mark/v17/internal/mdsource"
 	"github.com/kovetskiy/mark/v17/internal/rendercheck"
 	"github.com/kovetskiy/mark/v17/manifest"
@@ -34,7 +35,6 @@ import (
 	"github.com/kovetskiy/mark/v17/page"
 	"github.com/kovetskiy/mark/v17/report"
 	"github.com/kovetskiy/mark/v17/stdlib"
-	"github.com/rs/zerolog/log"
 )
 
 // Config is everything Run needs: the publish settings each document is
@@ -211,7 +211,10 @@ type PageConfig struct {
 	TitleFromH1              bool
 	TitleFromFilename        bool
 	TitleAppendGeneratedHash bool
-	ContentAppearance        metadata.Appearance
+	// FolderTitleAppendGeneratedHash is TitleAppendGeneratedHash for the
+	// folders a run creates; see page.AncestryOptions.
+	FolderTitleAppendGeneratedHash bool
+	ContentAppearance              metadata.Appearance
 }
 
 // UpdateConfig is how a page is written once it is found.
@@ -572,8 +575,8 @@ type resources struct {
 
 // newResources creates them for the mermaid engine kind names, starting
 // nothing yet.
-func newResources(kind mermaid.EngineKind) (*resources, error) {
-	engine, err := mermaid.NewEngine(kind)
+func newResources(ctx context.Context, kind mermaid.EngineKind) (*resources, error) {
+	engine, err := mermaid.NewEngineContext(ctx, kind)
 	if err != nil {
 		return nil, err
 	}
@@ -639,7 +642,7 @@ const attachmentRootSetting = "Rendering.AttachmentRoot (--attachment-root)"
 // and a directory of that name is in the working directory, where a relative
 // path root is looked for: the keyword holds each document to its own
 // directory, which is not what someone naming that directory meant.
-func (r RenderingConfig) warnAttachmentRoot() {
+func (r RenderingConfig) warnAttachmentRoot(ctx context.Context) {
 	if r.AttachmentRoot != attachment.BoundaryDocument {
 		return
 	}
@@ -649,7 +652,7 @@ func (r RenderingConfig) warnAttachmentRoot() {
 		return
 	}
 
-	log.Warn().Msgf(
+	logctx.From(ctx).Warn().Msgf(
 		"%s %q holds each document to its own directory, not to the directory %q here; name that directory %q",
 		attachmentRootSetting, string(attachment.BoundaryDocument), string(attachment.BoundaryDocument),
 		"."+string(filepath.Separator)+string(attachment.BoundaryDocument),
@@ -923,7 +926,7 @@ func Run(ctx context.Context, config Config) (err error) {
 			"it names the page manifest's properties, and nothing else keeps one")
 	}
 
-	if err := config.checkDocuments(); err != nil {
+	if err := config.checkDocuments(ctx); err != nil {
 		return err
 	}
 
@@ -950,14 +953,14 @@ func Run(ctx context.Context, config Config) (err error) {
 		if len(files) == 0 {
 			msg := "no files matched"
 			if config.CI {
-				log.Warn().Msg(msg)
+				logctx.From(ctx).Warn().Msg(msg)
 			} else {
 				return errors.New(msg)
 			}
 		}
 	}
 
-	if err := config.checkUnscopedOrphans(onOrphan, files); err != nil {
+	if err := config.checkUnscopedOrphans(ctx, onOrphan, files); err != nil {
 		return err
 	}
 
@@ -1046,7 +1049,7 @@ func Run(ctx context.Context, config Config) (err error) {
 				return
 			}
 
-			log.Error().Err(writeErr).Msg("unable to write the run report")
+			logctx.From(ctx).Error().Err(writeErr).Msg("unable to write the run report")
 		}
 	}()
 
@@ -1075,7 +1078,7 @@ func Run(ctx context.Context, config Config) (err error) {
 			// The mapping is keyed on a source path within a space, and neither
 			// is known when publishing straight to a page id. Better said once
 			// than discovered later as a manifest with holes in it.
-			log.Warn().Msg(
+			logctx.From(ctx).Warn().Msg(
 				"--track-pages has no effect together with a page id: " +
 					"the mapping is per space and per file, and neither applies here",
 			)
@@ -1112,7 +1115,7 @@ func Run(ctx context.Context, config Config) (err error) {
 		// context, has already written everything unless it failed, and this
 		// one then sends nothing.
 		if err := tracker.Save(context.WithoutCancel(ctx)); err != nil {
-			log.Error().Err(err).Msg("unable to save page manifest")
+			logctx.From(ctx).Error().Err(err).Msg("unable to save page manifest")
 
 			// Only when the explicit save did not already fail: that one is
 			// in the report, and this is the same failure a second time.
@@ -1222,7 +1225,8 @@ func Run(ctx context.Context, config Config) (err error) {
 	urlsAreReport := config.Report.Output != nil && outputFormat == report.FormatURL
 	// Read only once a parent is missing.
 	pub.titles = &runTitles{
-		config: config.PublishConfig, inputs: inputs, hierarchy: hierarchy,
+		log:    logctx.From(ctx),
+		config: config.PublishConfig, inputs: inputs, run: run, hierarchy: hierarchy,
 		warningsFor: pub.warningsFor,
 	}
 	if tracker != nil && config.Tracking.RenameSimilarity > 0 && config.DocumentScope != "" && len(documents) > 0 {
@@ -1257,25 +1261,57 @@ func Run(ctx context.Context, config Config) (err error) {
 		return fileErr
 	}
 
-	for _, in := range inputs {
+	// turned holds the documents that have had their turn, in order or ahead
+	// of it.
+	turned := map[string]bool{}
+
+	// publish is one document's turn, returning what the run stops with.
+	var publish func(in input) error
+	publish = func(in input) error {
 		file := in.file
+		turned[file] = true
 
 		if err := ctx.Err(); err != nil {
 			return err
 		}
 
-		log.Info().Msgf("processing %s", file)
+		logctx.From(ctx).Info().Msgf("processing %s", file)
 
 		target, placement, err := pub.processFile(ctx, in)
+
+		// A title that still names the page of a document retitling it is
+		// free once that document has published, so it goes first. One that
+		// has had its turn and still holds the title leaves this one refused.
+		// So does the document the page is recorded for when it keeps the
+		// title: it goes first, and this one is then refused the title.
+		var held *titleHeldError
+		if errors.As(err, &held) && !turned[held.holder.file] {
+			if held.retitled == "" {
+				logctx.From(ctx).Info().Msgf(
+					"page %s, which the title %q finds, is recorded for %s; publishing it first",
+					held.page.ID, held.title, held.holder.file,
+				)
+			} else {
+				logctx.From(ctx).Info().Msgf("%s; publishing it first", held)
+			}
+
+			pub.yielded[file] = true
+			stop := publish(held.holder)
+			delete(pub.yielded, file)
+			if stop != nil {
+				return stop
+			}
+
+			logctx.From(ctx).Info().Msgf("processing %s", file)
+
+			target, placement, err = pub.processFile(ctx, in)
+		}
+
 		if placement != nil {
 			ordered = append(ordered, *placement)
 		}
 		if err != nil {
-			if stop := fail(file, err); stop != nil {
-				return stop
-			}
-
-			continue
+			return fail(file, err)
 		}
 
 		if target != nil {
@@ -1293,10 +1329,10 @@ func Run(ctx context.Context, config Config) (err error) {
 				// Already said where the decision was made, with the reason.
 
 			case report.StatusUnchanged:
-				log.Info().Msgf("page is already up to date: %s", url)
+				logctx.From(ctx).Info().Msgf("page is already up to date: %s", url)
 
 			default:
-				log.Info().Msgf("page successfully updated: %s", url)
+				logctx.From(ctx).Info().Msgf("page successfully updated: %s", url)
 			}
 
 			// The other formats describe the whole run at the end, where a
@@ -1319,12 +1355,24 @@ func Run(ctx context.Context, config Config) (err error) {
 				}
 			}
 		}
+
+		return nil
+	}
+
+	for _, in := range inputs {
+		if turned[in.file] {
+			continue
+		}
+
+		if err := publish(in); err != nil {
+			return err
+		}
 	}
 
 	// Everything exists now, so the documents that were waiting on a page this
 	// run created can be published again with their links resolved.
 	if waiting := deferrals.Files(); len(waiting) > 0 && !failed.any() {
-		log.Info().Msgf(
+		logctx.From(ctx).Info().Msgf(
 			"%d document(s) linked to pages created in this run; publishing them again",
 			len(waiting),
 		)
@@ -1339,7 +1387,7 @@ func Run(ctx context.Context, config Config) (err error) {
 				return err
 			}
 
-			log.Info().Msgf("processing %s again", file)
+			logctx.From(ctx).Info().Msgf("processing %s again", file)
 
 			if _, _, err := lastLook.processFile(ctx, pub.inputs.named(file)); err != nil {
 				// Over what the first pass recorded: the document published
@@ -1367,7 +1415,7 @@ func Run(ctx context.Context, config Config) (err error) {
 		pub.warnMissingLinks(missingLinks)
 	} else {
 		for _, item := range missingPages {
-			log.Warn().Msg(item)
+			logctx.From(ctx).Warn().Msg(item)
 		}
 	}
 
@@ -1420,7 +1468,7 @@ func Run(ctx context.Context, config Config) (err error) {
 		// The files are the more useful complaint; a failed manifest write is
 		// secondary and must not displace it.
 		if saveErr != nil {
-			log.Error().Err(saveErr).Msg("page manifest was not saved")
+			logctx.From(ctx).Error().Err(saveErr).Msg("page manifest was not saved")
 		}
 
 		// Not a failure of its own: it sums up the ones recorded against
@@ -1503,7 +1551,7 @@ func stepPast(ctx context.Context, continueOnError bool, file string, err error)
 		return false
 	}
 
-	log.Error().Err(err).Msgf("processing %s", file)
+	logctx.From(ctx).Error().Err(err).Msgf("processing %s", file)
 
 	return true
 }
@@ -1520,6 +1568,12 @@ func stepPast(ctx context.Context, continueOnError bool, file string, err error)
 // confluence.API remembers of the pages it looked up; see confluence.NewAPI.
 // A long-lived program makes a new one of each for each batch rather than
 // holding them open.
+//
+// A space holds one page of a title, so a Publisher refuses a file whose
+// space, type and title another file it published has, as Run does. A file
+// published again, under the same title or a new one, is not refused, and one
+// that fails before reaching a page keeps the title it held before; a file
+// renamed between two publishes is another file to it, and is.
 //
 // A Publisher sees one file at a time, never the run's whole list, so it does
 // none of what Run does across files, and PublishConfig has no setting for any
@@ -1563,9 +1617,9 @@ func newPublisher(
 ) (*Publisher, error) {
 	// Here rather than in prepare, which Validate shares, so that a run says
 	// it once.
-	config.Rendering.warnAttachmentRoot()
+	config.Rendering.warnAttachmentRoot(ctx)
 
-	res, err := newResources(config.Rendering.MermaidEngine)
+	res, err := newResources(ctx, config.Rendering.MermaidEngine)
 	if err != nil {
 		return nil, err
 	}
@@ -1608,6 +1662,9 @@ func (p *Publisher) publish(ctx context.Context, in input) (*confluence.PageInfo
 
 	target, _, err := p.run.processFile(ctx, in)
 	if err != nil {
+		// A run publishes each file once, so only a Publisher, which may be
+		// handed the file again or another of its title, gives the claim up.
+		p.run.releaseClaim()
 		return target, err
 	}
 
@@ -1617,7 +1674,7 @@ func (p *Publisher) publish(ctx context.Context, in input) (*confluence.PageInfo
 	}
 
 	for _, item := range missing {
-		log.Warn().Msg(item)
+		logctx.From(ctx).Warn().Msg(item)
 	}
 
 	if p.run.config.Links.CheckLinksWarnOnly {
@@ -1683,6 +1740,10 @@ func newPublishRun(
 		pageHeader:       pageHeader,
 		checker:          page.NewLinkChecker(checks),
 		globalProperties: globalProperties,
+		titleClaims:      map[string]titleHolder{},
+		claimedTitles:    map[string]string{},
+		yielded:          map[string]bool{},
+		previewTitles:    map[string]string{},
 	}, nil
 }
 
@@ -1818,9 +1879,10 @@ func declaredRestrictions(r *metadata.Restrictions) []confluence.PageRestriction
 //
 // What the metadata ignored is added to warnings; nil only logs it.
 func documentMeta(
-	config PublishConfig, file string, markdown []byte, hierarchy *page.Hierarchy, warnings *report.Warnings,
+	ctx context.Context, config PublishConfig, file string, markdown []byte, hierarchy *page.Hierarchy, warnings *report.Warnings,
 ) (*metadata.Meta, []byte, error) {
 	return readDocumentMeta(hierarchy, markdown, metadata.ExtractOptions{
+		Context:                  ctx,
 		Filename:                 file,
 		Warnings:                 warnings,
 		Space:                    config.Page.Space,
@@ -1884,7 +1946,7 @@ func readDocumentMeta(hierarchy *page.Hierarchy, markdown []byte, opts metadata.
 			// Only now, with the parents final: hashed before they were, two
 			// documents of one title in different directories hashed the same,
 			// and the hash was the very thing meant to tell them apart.
-			metadata.AppendGeneratedHash(meta)
+			metadata.AppendGeneratedHashContext(opts.Context, meta)
 		}
 	}
 
@@ -1929,6 +1991,24 @@ type publishRun struct {
 
 	// pageFile is the file published to Page.PageID, once there is one.
 	pageFile string
+
+	// titleClaims names the document publishing each title, by runTitleKey,
+	// and claimedTitles the title each document holds, by absPath.
+	titleClaims   map[string]titleHolder
+	claimedTitles map[string]string
+
+	// pendingClaim is the title claim of the document in hand until it
+	// reaches its page.
+	pendingClaim *titleClaim
+
+	// yielded holds the documents waiting for the one retitling the page
+	// their title finds, which the run publishes ahead of its turn.
+	yielded map[string]bool
+
+	// previewTitles holds, in a dry run, the title each page a previewed
+	// document retitles carries by then, by page id: what a real run's
+	// update has written by the time the next document looks the title up.
+	previewTitles map[string]string
 
 	// warnings holds each document's warnings for the run's report: a second
 	// pass keeps what only the first found, such as a comment it dropped, and
@@ -1982,6 +2062,10 @@ type document struct {
 	// warnings are what was wrong with the document but did not stop it,
 	// for its line of the report.
 	warnings *report.Warnings
+	// directoryTitles are the titles to record the pages of the
+	// document's directories under, one per directory; see
+	// retitleDirectoryPages.
+	directoryTitles []string
 }
 
 // destination is the page a document publishes to.
@@ -2021,7 +2105,7 @@ func (r *publishRun) processFile(ctx context.Context, in input) (*confluence.Pag
 
 	r.users.ctx = ctx
 
-	doc, err := r.readDocument(in)
+	doc, err := r.readDocument(ctx, in)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -2038,6 +2122,10 @@ func (r *publishRun) processFile(ctx context.Context, in input) (*confluence.Pag
 	}
 
 	if err := r.validate(doc); err != nil {
+		return nil, nil, err
+	}
+
+	if err := r.claimTitle(ctx, doc); err != nil {
 		return nil, nil, err
 	}
 
@@ -2059,6 +2147,10 @@ func (r *publishRun) processFile(ctx context.Context, in input) (*confluence.Pag
 	// moves its page under them: a page that is left alone is left where it
 	// is as well.
 	if kept, err := r.leaveDriftedInPlace(ctx, doc); kept != nil || err != nil {
+		if kept != nil {
+			// Left alone, the page is still the document's.
+			r.claimPage(doc.file)
+		}
 		return kept, nil, err
 	}
 
@@ -2089,7 +2181,7 @@ func (r *publishRun) processFile(ctx context.Context, in input) (*confluence.Pag
 		return nil, nil, err
 	}
 
-	versionMessage, shouldUpdatePage := r.changeCheck(doc, dest, html)
+	versionMessage, shouldUpdatePage := r.changeCheck(ctx, doc, dest, html)
 
 	// Only fetch the old body and inline comments when we know the page will
 	// actually be updated. This avoids unnecessary API round-trips for no-op
@@ -2160,10 +2252,106 @@ func (r *publishRun) processFile(ctx context.Context, in input) (*confluence.Pag
 	return target, placement, nil
 }
 
+// claimTitle records that doc publishes its title in its space, and refuses
+// a title another document got to first: the two name one page, and the
+// second would overwrite the first and move it under its own parents. A
+// document that is not synchronized, or publishes to a page id, names none.
+// Titles are compared as Confluence compares them, without regard to case,
+// and a page and a blog post of one title are two pieces of content.
+//
+// A document holds the title it was last published under: one published
+// again under another title leaves the first to whichever document takes it.
+//
+// First is not only a matter of order. With --track-pages, a title whose page
+// is recorded for another document of the run waits for that one, whether it
+// keeps the title or gives it up: the error names it, and the run gives it its
+// turn before this one is asked again.
+func (r *publishRun) claimTitle(ctx context.Context, doc *document) error {
+	meta := doc.meta
+	if meta == nil || meta.Title == "" {
+		return nil
+	}
+
+	key, name := runTitleKey(meta.Space, meta.Type, meta.Title), absPath(doc.file)
+	holder := titleHolder{file: doc.file, hashed: hashedTitle(meta)}
+	if previous, taken := r.titleClaims[key]; taken && absPath(previous.file) != name {
+		return titleTaken(previous.file, meta.Title, meta.Space, r.hashSeparates(previous.hashed, holder.hashed))
+	}
+
+	// A holder waiting on this document cannot go first: the two swapped
+	// titles, and each takes the page its title finds.
+	held, err := r.titleHeld(ctx, doc.file, doc.key, meta)
+	if err != nil {
+		return err
+	}
+	if held != nil && (held.retitled == "" || !r.yielded[held.holder.file]) {
+		return held
+	}
+
+	r.pendingClaim = nil
+	if had, ok := r.claimedTitles[name]; !ok || had != key {
+		r.pendingClaim = &titleClaim{key: key, holder: holder}
+		if ok {
+			r.pendingClaim.gaveUp, r.pendingClaim.held = had, r.titleClaims[had]
+			delete(r.titleClaims, had)
+		}
+	}
+	r.titleClaims[key], r.claimedTitles[name] = holder, key
+
+	return nil
+}
+
+// titleClaim is a title a document claimed and has not yet published under,
+// and the title it gave up for it, with what it held that title as.
+type titleClaim struct {
+	key, gaveUp  string
+	holder, held titleHolder
+}
+
+// titleHolder is the document holding a title, and the title
+// --title-append-generated-hash gives it.
+type titleHolder struct {
+	file, hashed string
+}
+
+// hashedTitle is the title --title-append-generated-hash would give meta,
+// whether or not the run asks for it.
+func hashedTitle(meta *metadata.Meta) string {
+	return metadata.CaseFoldedHashTitle(meta.Parents, meta.Space, meta.Title)
+}
+
+// hashSeparates reports whether --title-append-generated-hash would tell
+// apart two documents of one title, given the titles it gives them: not when
+// it is already on, nor when they share what it hashes.
+func (r *publishRun) hashSeparates(one, other string) bool {
+	return !r.config.Page.TitleAppendGeneratedHash && !strings.EqualFold(one, other)
+}
+
+// releaseClaim undoes the claim of a document that failed before it reached
+// a page: its page, if it has one, still carries the title it gave up, and
+// the title it claimed names nothing of it.
+func (r *publishRun) releaseClaim() {
+	c := r.pendingClaim
+	if c == nil {
+		return
+	}
+	r.pendingClaim = nil
+
+	name := absPath(c.holder.file)
+	delete(r.titleClaims, c.key)
+	if c.gaveUp == "" {
+		delete(r.claimedTitles, name)
+
+		return
+	}
+	r.titleClaims[c.gaveUp], r.claimedTitles[name] = c.held, c.gaveUp
+}
+
 // claimPage records file as the one publishing to Page.PageID, once it has
 // reached the page. A file that failed before then leaves the page to the next
 // one; a dry run claims at the same point a real run does.
 func (r *publishRun) claimPage(file string) {
+	r.pendingClaim = nil
 	if r.config.Page.PageID != "" && r.pageFile == "" {
 		r.pageFile = absPath(file)
 	}
@@ -2181,7 +2369,7 @@ func absPath(file string) string {
 }
 
 // readDocument reads a file and settles the metadata it publishes under.
-func (r *publishRun) readDocument(in input) (*document, error) {
+func (r *publishRun) readDocument(ctx context.Context, in input) (*document, error) {
 	file := in.file
 
 	// Every file the document names is read through its root, so the root
@@ -2205,19 +2393,9 @@ func (r *publishRun) readDocument(in input) (*document, error) {
 
 	read := markdown
 
-	meta, markdown, err := documentMeta(r.config, file, markdown, r.hierarchy, warnings)
+	meta, markdown, err := documentMeta(ctx, r.config, file, markdown, r.hierarchy, warnings)
 	if err != nil {
 		return nil, err
-	}
-
-	if meta != nil {
-		if previous, taken := r.hierarchy.Claim(meta.Space, meta.Title, file); taken {
-			return nil, fmt.Errorf(
-				"%s already publishes %q in space %q, and a space holds one page of a title: "+
-					"rename one of them, or use --title-append-generated-hash",
-				previous, meta.Title, meta.Space,
-			)
-		}
 	}
 
 	if r.config.Page.PageID != "" && meta != nil {
@@ -2321,7 +2499,7 @@ func (r *publishRun) leaveUnsynchronized(ctx context.Context, doc *document) (bo
 		return false, nil
 	}
 
-	log.Info().Msgf("%s is not synchronized; leaving it alone", file)
+	logctx.From(ctx).Info().Msgf("%s is not synchronized; leaving it alone", file)
 	r.addPage(doc, report.Page{
 		File: file, Status: report.StatusSkipped,
 		Reason: report.ReasonNotSynchronized,
@@ -2370,7 +2548,7 @@ func (r *publishRun) validate(doc *document) error {
 		)
 	}
 
-	return checkTitleLengths(meta)
+	return checkTitleLengths(meta, r.config.Page.FolderTitleAppendGeneratedHash)
 }
 
 // linkResolver builds the resolver the document's links are rewritten
@@ -2485,6 +2663,8 @@ func (r *publishRun) ancestryOptions(doc *document) page.AncestryOptions {
 		Folders:     r.ancestryTracker,
 		Created:     func(created *confluence.PageInfo) { r.createdParents[created.ID] = true },
 		Warnings:    doc.warnings,
+
+		FolderTitleAppendGeneratedHash: r.config.Page.FolderTitleAppendGeneratedHash,
 	}
 }
 
@@ -2510,7 +2690,7 @@ func (r *publishRun) previewLocation(ctx context.Context, doc *document) (pagePr
 	// Confluence is looked for under its old title and the page is
 	// reported moved on every preview while the real run leaves it be.
 	// It only reads, and a dry run's manifest store saves nothing.
-	if err := refreshStaleParents(ctx, r.tracker, r.api, meta, r.titles, doc.warnings); err != nil {
+	if err := r.resolveParents(ctx, doc); err != nil {
 		return found, err
 	}
 
@@ -2518,6 +2698,9 @@ func (r *publishRun) previewLocation(ctx context.Context, doc *document) (pagePr
 	if err != nil {
 		return found, fmt.Errorf("unable to resolve page location: %w", err)
 	}
+
+	// A page a previewed document has retitled no longer carries the title.
+	pg = r.carrying(pg, meta.Title)
 
 	if pg == nil {
 		// The title found nothing, which is where a real run consults
@@ -2614,7 +2797,7 @@ func (r *publishRun) preview(ctx context.Context, doc *document) error {
 
 		if drift != "" {
 			status, reason = report.StatusSkipped, drift
-			log.Warn().Msgf("%s: page %q would be left alone: %s", file, previewed.Title, reason)
+			logctx.From(ctx).Warn().Msgf("%s: page %q would be left alone: %s", file, previewed.Title, reason)
 		}
 	}
 
@@ -2679,6 +2862,13 @@ func (r *publishRun) preview(ctx context.Context, doc *document) error {
 		PageID: target.ID, URL: url,
 	})
 
+	// The real run's update retitles the page, freeing its title for a
+	// document that waited on this one.
+	if config.Mode.DryRun && previewed != nil && meta != nil && status != report.StatusSkipped &&
+		!strings.EqualFold(previewed.Title, meta.Title) {
+		r.previewTitles[previewed.ID] = meta.Title
+	}
+
 	return nil
 }
 
@@ -2704,7 +2894,8 @@ func (r *publishRun) previewBody(
 			return "", "", "", err
 		}
 		if attachments != nil {
-			cfg.ResolveAttachment = attachments.links.Resolve
+			links := attachments.links
+			cfg.ResolveAttachment = func(target string) string { return links.ResolveContext(ctx, target) }
 		}
 	}
 
@@ -2812,7 +3003,7 @@ func (r *publishRun) resolveDocumentPage(ctx context.Context, doc *document) (*d
 	// leaves this document pointing at a name nothing carries any more.
 	// Do this before resolution, so ancestry is walked against titles that
 	// exist rather than creating an empty page under the old one.
-	if err := refreshStaleParents(ctx, r.tracker, api, meta, r.titles, doc.warnings); err != nil {
+	if err := r.resolveParents(ctx, doc); err != nil {
 		return nil, err
 	}
 
@@ -2843,6 +3034,11 @@ func (r *publishRun) resolveDocumentPage(ctx context.Context, doc *document) (*d
 			pg.Title = meta.Title
 			dest.titleChanged = true
 		}
+	} else if pg.Title != meta.Title && strings.EqualFold(pg.Title, meta.Title) {
+		// The title lookup ignores case, so the page it found may carry
+		// another casing of the title than the document now writes.
+		pg.Title = meta.Title
+		dest.titleChanged = true
 	}
 
 	if pg == nil {
@@ -2969,7 +3165,7 @@ func (r *publishRun) compile(ctx context.Context, doc *document, target *conflue
 
 	attachmentLinks := attachment.NewResolver(attaches)
 
-	cfg.ResolveAttachment = attachmentLinks.Resolve
+	cfg.ResolveAttachment = func(target string) string { return attachmentLinks.ResolveContext(ctx, target) }
 
 	html, inlineAttachments, err := markdown.CompileMarkdown(ctx, doc.markdown, r.std, file, cfg)
 	if err != nil {
@@ -3036,7 +3232,7 @@ func (r *publishRun) preserveComments(ctx context.Context, doc *document, dest *
 		return "", fmt.Errorf("unable to retrieve inline comments: %w", err)
 	}
 
-	html, err = comments.MergeWithWarnings(html, pg.Body.Storage.Value, inlineComments, doc.warnings)
+	html, err = comments.MergeWithWarningsContext(ctx, html, pg.Body.Storage.Value, inlineComments, doc.warnings)
 	if err != nil {
 		return "", fmt.Errorf("unable to merge inline comments: %w", err)
 	}
@@ -3112,7 +3308,7 @@ func (r *publishRun) applySettings(ctx context.Context, doc *document, dest *des
 	}
 
 	if r.config.Update.EditLock {
-		log.Info().Msgf(
+		logctx.From(ctx).Info().Msgf(
 			`edit locked on page %q by the authenticated user to prevent manual edits`,
 			target.Title,
 		)
@@ -3272,7 +3468,7 @@ func (c RenderingConfig) documentConfig(ctx context.Context, res *resources, doc
 	meta := doc.meta
 
 	if c.DropH1 {
-		log.Info().Msg("the leading H1 heading will be excluded from the Confluence output")
+		logctx.From(ctx).Info().Msg("the leading H1 heading will be excluded from the Confluence output")
 	}
 
 	imageAlign, err := getImageAlign(c.ImageAlign, meta)

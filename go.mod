@@ -4,13 +4,13 @@ go 1.27.3
 
 require (
 	github.com/BurntSushi/toml v1.6.0
-	github.com/bmatcuk/doublestar/v4 v4.10.4
-	github.com/chromedp/cdproto v0.160.7
+	github.com/bmatcuk/doublestar/v4 v4.10.7
+	github.com/chromedp/cdproto v0.160.10
 	github.com/chromedp/chromedp v0.24.0
 	github.com/d2lang/d2 v0.9.0
-	github.com/d2lang/mathjax-go v0.1.0
+	github.com/d2lang/mathjax-go v0.1.1
 	github.com/d2lang/util-go v0.2.0
-	github.com/dreampuf/mermaid.go v0.7.0
+	github.com/dreampuf/mermaid.go v0.7.1
 	github.com/rs/zerolog v1.35.1
 	github.com/stretchr/testify v1.12.1
 	github.com/urfave/cli-altsrc/v3 v3.1.0
@@ -31,7 +31,7 @@ require (
 	github.com/d2lang/dagro v0.2.1 // indirect
 	github.com/d2lang/rough-go v0.2.0 // indirect
 	github.com/dlclark/regexp2/v2 v2.8.4 // indirect
-	github.com/go-json-experiment/json v0.0.0-20260820222146-c27c302e5fc3 // indirect
+	github.com/go-json-experiment/json v1.27.2 // indirect
 	github.com/go-text/typesetting v0.3.5 // indirect
 	github.com/lucasb-eyer/go-colorful v1.4.1 // indirect
 	github.com/mattn/go-colorable v0.1.16 // indirect
@@ -39,8 +39,8 @@ require (
 	github.com/mazznoer/csscolorparser v0.1.8 // indirect
 	github.com/rivo/uniseg v0.4.7 // indirect
 	github.com/yuin/goldmark v1.8.7 // indirect
-	golang.org/x/exp v0.0.0-20261011100332-faecfb24eb49 // indirect
-	golang.org/x/image v0.47.0 // indirect
+	golang.org/x/exp v0.0.0-20261124000051-d6646c509b6d // indirect
+	golang.org/x/image v0.48.0 // indirect
 	golang.org/x/sys v0.50.0 // indirect
 	golang.org/x/term v0.48.0 // indirect
 	golang.org/x/xerrors v0.0.0-20240903120638-7835f813f4da // indirect

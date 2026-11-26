@@ -72,8 +72,8 @@ import (
 	"github.com/bmatcuk/doublestar/v4"
 	"github.com/kovetskiy/mark/v17/confluence"
 	"github.com/kovetskiy/mark/v17/internal/globpattern"
+	"github.com/kovetskiy/mark/v17/internal/logctx"
 	"github.com/kovetskiy/mark/v17/report"
-	"github.com/rs/zerolog/log"
 )
 
 // Key normalises a path or glob into the form the mapping is keyed by.
@@ -949,10 +949,17 @@ func (state *spaceState) normaliseKeys() {
 
 // buildIndexes derives the reverse, fingerprint and title lookups from the
 // loaded entries.
+//
+// Of several paths naming one page, byPage keeps the one that wrote it last,
+// as Record leaves it, and the first in order of a tie: the entries are read
+// from maps, and which path stands for a page must not change from one load of
+// the same manifest to the next.
 func (state *spaceState) buildIndexes() {
 	for i := range state.shards {
 		for path, entry := range state.shards[i].pages {
-			state.byPage[entry.PageID] = path
+			if owner, ok := state.byPage[entry.PageID]; !ok || laterOwner(path, entry, owner, state) {
+				state.byPage[entry.PageID] = path
+			}
 			state.indexHash(path, entry.Hash)
 			if entry.Title == "" {
 				continue
@@ -964,6 +971,17 @@ func (state *spaceState) buildIndexes() {
 			state.titles[entry.Title] = entry.PageID
 		}
 	}
+}
+
+// laterOwner reports whether path, recorded with entry, stands for a page
+// before owner: it wrote a later version, or the same one and sorts first.
+func laterOwner(path string, entry Entry, owner string, state *spaceState) bool {
+	held := state.shards[shardFor(owner)].pages[owner]
+	if entry.Version != held.Version {
+		return entry.Version > held.Version
+	}
+
+	return path < owner
 }
 
 // indexHash notes that path is now recorded with hash.
@@ -1085,7 +1103,7 @@ func (s *Store) attachLatePage(ctx context.Context, spaceKey string, state *spac
 	}
 	for _, property := range properties {
 		if isManifestKey(s.prefix, property.Key) {
-			log.Warn().Msgf(
+			logctx.From(ctx).Warn().Msgf(
 				"manifest page %q of space %q already holds a page mapping this run did not read; "+
 					"the mapping of this run is not saved",
 				s.manifestPage, spaceKey,
@@ -1098,7 +1116,7 @@ func (s *Store) attachLatePage(ctx context.Context, spaceKey string, state *spac
 	state.contentID, state.backend = contentID, backend
 	state.untracked = false
 
-	log.Info().Msgf("manifest page %q now exists in space %q; the page mapping is saved there", s.manifestPage, spaceKey)
+	logctx.From(ctx).Info().Msgf("manifest page %q now exists in space %q; the page mapping is saved there", s.manifestPage, spaceKey)
 
 	return true, nil
 }
@@ -1163,13 +1181,13 @@ func (state *spaceState) writeMapping(
 ) (bool, error) {
 	if err := state.writeProperty(ctx, api, key, value, existing); err != nil {
 		if errors.Is(err, confluence.ErrPropertyUnseen) {
-			log.Warn().Err(err).Msgf(
+			logctx.From(ctx).Warn().Err(err).Msgf(
 				"%s for space %q was not saved", what, spaceKey,
 			)
 			return false, nil
 		}
 		if errors.Is(err, confluence.ErrPropertyConflict) {
-			log.Warn().Msgf(
+			logctx.From(ctx).Warn().Msgf(
 				"%s for space %q was updated by a concurrent run; it was not saved",
 				what, spaceKey,
 			)
@@ -1230,7 +1248,7 @@ func (s *Store) load(ctx context.Context, spaceKey string) (*spaceState, error) 
 		state.contentID, state.backend, err = s.pageManifest(ctx, spaceKey)
 		var missing *MissingPageError
 		if s.manifestPageOptional && errors.As(err, &missing) {
-			log.Warn().Msgf(
+			logctx.From(ctx).Warn().Msgf(
 				"manifest page %q is not a page in space %q: publishing there untracked; "+
 					"the page mapping is saved only if this run publishes that page",
 				s.manifestPage, spaceKey,
@@ -1269,7 +1287,7 @@ func (s *Store) load(ctx context.Context, spaceKey string) (*spaceState, error) 
 			state.folderProperty = &properties[i]
 			var doc folderDocument
 			if err := json.Unmarshal(properties[i].Value, &doc); err != nil {
-				log.Warn().Err(err).Msgf(
+				logctx.From(ctx).Warn().Err(err).Msgf(
 					"ignoring unreadable %s property of space %q; folders are no longer tracked",
 					FolderPropertyKeyFor(s.prefix), spaceKey,
 				)
@@ -1283,7 +1301,7 @@ func (s *Store) load(ctx context.Context, spaceKey string) (*spaceState, error) 
 			state.parentProperty = &properties[i]
 			var doc parentDocument
 			if err := json.Unmarshal(properties[i].Value, &doc); err != nil {
-				log.Warn().Err(err).Msgf(
+				logctx.From(ctx).Warn().Err(err).Msgf(
 					"ignoring unreadable %s property of space %q; parents are no longer tracked",
 					ParentPropertyKeyFor(s.prefix), spaceKey,
 				)
@@ -1306,14 +1324,14 @@ func (s *Store) load(ctx context.Context, spaceKey string) (*spaceState, error) 
 			// would let a corrupted property block publishing, where carrying on
 			// merely costs the rename protection for the paths it held until the
 			// next write repairs it.
-			log.Warn().Err(err).Msgf(
+			logctx.From(ctx).Warn().Err(err).Msgf(
 				"ignoring unreadable %s property of space %q; those pages are no longer tracked",
 				properties[i].Key, spaceKey,
 			)
 			continue
 		}
 		if doc.Version > formatVersion {
-			log.Warn().Msgf(
+			logctx.From(ctx).Warn().Msgf(
 				"%s property of space %q was written by a newer mark (format %d); ignoring it",
 				properties[i].Key, spaceKey, doc.Version,
 			)
@@ -1388,7 +1406,7 @@ func (s *Store) Record(ctx context.Context, spaceKey, path, pageID, title, hash 
 			// follows it. Left recorded, the old path would read as an orphan
 			// whose page is the very one just published -- and --on-orphan
 			// delete would trash it.
-			log.Info().Msgf("%s moved to %s; page %s follows it", owner, path, pageID)
+			logctx.From(ctx).Info().Msgf("%s moved to %s; page %s follows it", owner, path, pageID)
 			delete(state.shards[shardFor(owner)].pages, owner)
 			state.shards[shardFor(owner)].dirty = true
 		} else {
@@ -1572,17 +1590,29 @@ func matches(pattern, path string) bool {
 // is a second document claiming the page, which is a conflict to report and
 // not a move to follow.
 func (s *Store) movedOwner(state *spaceState, path, pageID string) (Entry, bool) {
-	owner, ok := state.byPage[pageID]
-	if !ok || owner == path {
-		return Entry{}, false
-	}
-
-	entry, recorded := state.shards[shardFor(owner)].pages[owner]
-	if !recorded || entry.PageID != pageID || !s.gone(state, path, owner, entry) {
+	owner, entry, ok := ownerOf(state, pageID)
+	if !ok || owner == path || !s.gone(state, path, owner, entry) {
 		return Entry{}, false
 	}
 
 	return entry, true
+}
+
+// ownerOf returns the path whose entry names the page, and that entry.
+// byPage keeps a path that has since recorded another page, so the entry is
+// asked as well.
+func ownerOf(state *spaceState, pageID string) (string, Entry, bool) {
+	owner, ok := state.byPage[pageID]
+	if !ok {
+		return "", Entry{}, false
+	}
+
+	entry, recorded := state.shards[shardFor(owner)].pages[owner]
+	if !recorded || entry.PageID != pageID {
+		return "", Entry{}, false
+	}
+
+	return owner, entry, true
 }
 
 // gone reports whether candidate's entry is one path could have moved or been
@@ -1714,7 +1744,7 @@ func (s *Store) resolveRenamed(ctx context.Context, spaceKey, path, hash string)
 
 	if count != 1 {
 		if count > 1 {
-			log.Info().Msgf(
+			logctx.From(ctx).Info().Msgf(
 				"%d unpublished documents in space %q share this document's content; "+
 					"not treating any of them as its previous name",
 				count, spaceKey,
@@ -1765,6 +1795,34 @@ func (s *Store) RenameSources(ctx context.Context, spaceKey, path string) (map[s
 // document before its turn: seen counts what the run published.
 func (s *Store) Recorded(ctx context.Context, spaceKey, path string) (Entry, bool, error) {
 	return s.lookup(ctx, spaceKey, path, false)
+}
+
+// RecordedFor returns, sorted, every path whose entry names the page. It
+// marks nothing as seen.
+//
+// Two runs can each record a document for one page, so there may be more than
+// one; the reverse index keeps only one of them, and reading it alone would
+// answer for whichever that is.
+func (s *Store) RecordedFor(ctx context.Context, spaceKey, pageID string) ([]string, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	state, err := s.load(ctx, spaceKey)
+	if err != nil {
+		return nil, err
+	}
+
+	var paths []string
+	for i := range state.shards {
+		for path, entry := range state.shards[i].pages {
+			if entry.PageID == pageID {
+				paths = append(paths, path)
+			}
+		}
+	}
+	sort.Strings(paths)
+
+	return paths, nil
 }
 
 // Forget drops a recorded path: one whose page no longer exists, or an orphan
@@ -1949,6 +2007,12 @@ type Orphan struct {
 // another document published this run or another path still records. See
 // Orphans.
 func (s *Store) OrphanEntries(spaceKey string) []Orphan {
+	return s.OrphanEntriesContext(context.Background(), spaceKey)
+}
+
+// OrphanEntriesContext is OrphanEntries logging to the zerolog logger ctx
+// carries; OrphanEntries logs to the global one.
+func (s *Store) OrphanEntriesContext(ctx context.Context, spaceKey string) []Orphan {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -1959,7 +2023,7 @@ func (s *Store) OrphanEntries(spaceKey string) []Orphan {
 	}
 
 	var orphans []Orphan
-	for _, path := range s.orphans(spaceKey) {
+	for _, path := range s.orphans(ctx, spaceKey) {
 		orphans = append(orphans, Orphan{
 			Path:  path,
 			Entry: state.shards[shardFor(path)].pages[path],
@@ -2074,12 +2138,12 @@ func (s *Store) Orphans(spaceKey string) []string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	return s.orphans(s.loadedKey(spaceKey))
+	return s.orphans(context.Background(), s.loadedKey(spaceKey))
 }
 
 // orphans is Orphans without the lock, for callers that already hold it. It
 // forgets the same stale entries Orphans does.
-func (s *Store) orphans(spaceKey string) []string {
+func (s *Store) orphans(ctx context.Context, spaceKey string) []string {
 	state, ok := s.spaces[spaceKey]
 	// An untracked space has no earlier mapping for a page to be missing from.
 	if !ok || state.untracked {
@@ -2105,7 +2169,7 @@ func (s *Store) orphans(spaceKey string) []string {
 			// The page went to another space with its document, which records
 			// it there: nothing is left behind here to remove.
 			if other, ok := s.recordedElsewhere(spaceKey, path, entry.PageID); ok {
-				log.Info().Msgf(
+				logctx.From(ctx).Info().Msgf(
 					"%s now publishes to space %q, where its page %s is; space %q no longer tracks it",
 					path, other, entry.PageID, spaceKey,
 				)
@@ -2133,12 +2197,12 @@ func (s *Store) orphans(spaceKey string) []string {
 			if holder, ok := held[entry.PageID]; claimed || ok {
 				if !s.runFiles[path] {
 					if claimed {
-						log.Info().Msgf(
+						logctx.From(ctx).Info().Msgf(
 							"%s is gone and its page %s is now published by %s; forgetting it",
 							path, entry.PageID, state.byPage[entry.PageID],
 						)
 					} else {
-						log.Info().Msgf(
+						logctx.From(ctx).Info().Msgf(
 							"%s is gone and its page %s is still tracked under %s; forgetting it",
 							path, entry.PageID, holder,
 						)
@@ -2154,7 +2218,7 @@ func (s *Store) orphans(spaceKey string) []string {
 
 	if len(left) > 0 {
 		sort.Strings(left)
-		log.Info().Msgf(
+		logctx.From(ctx).Info().Msgf(
 			"space %q: %d tracked page(s) recorded under %q, the pattern given to --partial, "+
 				"are left to the run publishing them all, since on a partial checkout "+
 				"their files' absence says nothing; name the paths a change touched with --files-from: %s",
@@ -2370,12 +2434,12 @@ func (s *Store) saveShard(ctx context.Context, spaceKey string, state *spaceStat
 	if errors.Is(err, confluence.ErrPropertyUnseen) {
 		// Not known to be another run's doing: the shard may have been there
 		// all along, and its pages published as though untracked.
-		log.Warn().Err(err).Msgf(
+		logctx.From(ctx).Warn().Err(err).Msgf(
 			"manifest shard %s of space %q was read again; saving this run's mappings over it",
 			key, spaceKey,
 		)
 	} else {
-		log.Info().Msgf(
+		logctx.From(ctx).Info().Msgf(
 			"manifest shard %s of space %q was saved by another run meanwhile; saving this run's mappings over it",
 			key, spaceKey,
 		)
@@ -2427,7 +2491,7 @@ func (s *Store) writeShard(ctx context.Context, spaceKey string, state *spaceSta
 		// Said while there is still room to act. Confluence's own limit
 		// is not knowable from here, so this is a heads-up rather than a
 		// refusal, and the write is attempted regardless.
-		log.Warn().Msgf(
+		logctx.From(ctx).Warn().Msgf(
 			"manifest shard %s of space %q is %d bytes and holds %d pages; "+
 				"it may be approaching the property size Confluence will accept",
 			PropertyKeyFor(state.prefix, index), spaceKey, len(value), len(sh.pages),

@@ -56,11 +56,24 @@ func warnStrandedBodies(written, compiled []byte, doc ast.Node, warnings *report
 			run++
 		}
 
+		quoted := shortened(strings.TrimSpace(string(opening)), openingLineLimit)
+
+		// A '???' body has to be indented: no closing line takes level lines.
+		if opening[0] == '?' {
+			warnings.AddAt(lineOf(line), report.WarningAdmonitionBody,
+				"the lines after %q are not indented, so they are published after the admonition and not in it; "+
+					"indent them under it",
+				quoted,
+			)
+
+			continue
+		}
+
 		closing := string(opening[:run])
 		warnings.AddAt(lineOf(line), report.WarningAdmonitionBody,
 			"the lines after %q are not indented and no line of %q ends them, so they are published after "+
 				"the admonition and not in it; indent them under it, or end them with a line of %q",
-			shortened(strings.TrimSpace(string(opening)), openingLineLimit), closing, closing,
+			quoted, closing, closing,
 		)
 	}
 }

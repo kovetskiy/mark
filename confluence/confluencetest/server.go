@@ -2312,6 +2312,11 @@ func (s *Server) childPages(w http.ResponseWriter, r *http.Request, parentID str
 // directChildren answers the v2 listing of a page's or a folder's children of
 // every type. Only pages and folders exist in this fake; the type field is
 // what a caller telling them apart relies on.
+//
+// Each route knows only its own parents, so a folder's id under /pages is a
+// 404 as much as one that names nothing. The tree's order is given only with
+// sort=child-position; otherwise the children come by id, which is how a
+// caller that forgets to ask finds out.
 func (s *Server) directChildren(w http.ResponseWriter, r *http.Request, collection, parentID string) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -2323,6 +2328,10 @@ func (s *Server) directChildren(w http.ResponseWriter, r *http.Request, collecti
 
 	if collection == "folders" && s.folderByID(parentID) == nil {
 		writeJSON(w, http.StatusNotFound, map[string]any{"message": "no such folder"})
+		return
+	}
+	if _, ok := s.pages[parentID]; collection == "pages" && !ok {
+		writeJSON(w, http.StatusNotFound, map[string]any{"message": "no such page"})
 		return
 	}
 
@@ -2341,6 +2350,13 @@ func (s *Server) directChildren(w http.ResponseWriter, r *http.Request, collecti
 				"id": f.ID, "type": "folder", "title": f.Title,
 			})
 		}
+	}
+	if r.URL.Query().Get("sort") != "child-position" {
+		sort.SliceStable(children, func(i, j int) bool {
+			a, _ := strconv.Atoi(children[i]["id"].(string))
+			b, _ := strconv.Atoi(children[j]["id"].(string))
+			return a < b
+		})
 	}
 
 	results, next := cursorPage(r, children)
@@ -2824,10 +2840,10 @@ func (s *Server) createFolder(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Confluence rejects a second folder with the same title under one parent,
-	// which is what makes a stranded reference visible rather than silent.
+	// Confluence rejects a second folder with the same title anywhere in the
+	// space, not only under the same parent.
 	for _, f := range s.folders {
-		if strings.EqualFold(f.Title, payload.Title) && f.ParentID == payload.ParentID && f.SpaceID == payload.SpaceID {
+		if strings.EqualFold(f.Title, payload.Title) && f.SpaceID == payload.SpaceID {
 			writeJSON(w, http.StatusBadRequest,
 				map[string]any{"message": "A folder exists with the same title"})
 			return
@@ -3046,6 +3062,15 @@ func (s *Server) contentV2ByID(w http.ResponseWriter, r *http.Request, id, pageT
 	switch r.Method {
 	case http.MethodGet:
 		writeJSON(w, http.StatusOK, s.contentJSONV2(p, r.URL.Query().Get("body-format") != ""))
+
+	case http.MethodDelete:
+		// v2 moves a current page to the trash; mark never asks it to purge.
+		if p.Trashed {
+			writeJSON(w, http.StatusNotFound, map[string]any{"message": "no content with id " + id})
+			return
+		}
+		p.Trashed = true
+		w.WriteHeader(http.StatusNoContent)
 
 	case http.MethodPut:
 		// The trash is read with its status, and is not written to.

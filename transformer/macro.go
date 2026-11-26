@@ -2,13 +2,14 @@ package transformer
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"slices"
 	"text/template"
 
 	"github.com/kovetskiy/mark/v17/attachment"
+	"github.com/kovetskiy/mark/v17/internal/logctx"
 	"github.com/kovetskiy/mark/v17/macro"
-	"github.com/rs/zerolog/log"
 	"github.com/yuin/goldmark/v2/ast"
 	"github.com/yuin/goldmark/v2/parser"
 	"github.com/yuin/goldmark/v2/text"
@@ -124,6 +125,9 @@ type MacroTransformer struct {
 	Root      attachment.Root
 	Templates *template.Template
 	Err       error
+	// Context is the context the transformer expands in, whose zerolog
+	// logger it logs to; nil is context.Background.
+	Context context.Context
 }
 
 // NewMacroTransformer creates a new MacroTransformer instance.
@@ -144,6 +148,15 @@ func (t *MacroTransformer) GetError() error {
 	return t.Err
 }
 
+// context is t.Context, or context.Background for a transformer given none.
+func (t *MacroTransformer) context() context.Context {
+	if t.Context == nil {
+		return context.Background()
+	}
+
+	return t.Context
+}
+
 // Transform implements the parser.ASTTransformer interface.
 func (t *MacroTransformer) Transform(doc *ast.Document, reader text.Reader, pc parser.Context) {
 	t.TransformWithModified(doc, reader, pc)
@@ -161,10 +174,10 @@ func (t *MacroTransformer) TransformWithModified(doc *ast.Document, reader text.
 	var extractedMacros []macro.Macro
 
 	for _, target := range targets {
-		macros, _, err := macro.ExtractMacrosIn(t.Root, t.BaseDir, t.IncludePath, target.raw, t.Templates)
+		macros, _, err := macro.ExtractMacrosInContext(t.context(), t.Root, t.BaseDir, t.IncludePath, target.raw, t.Templates)
 		if err != nil {
 			t.Err = err
-			log.Error().
+			logctx.From(t.context()).Error().
 				Str("file", t.FilePath).
 				Int("line", target.line).
 				Err(err).
@@ -225,7 +238,7 @@ func (t *MacroTransformer) TransformWithModified(doc *ast.Document, reader text.
 			expanded, err := m.Apply(item.val)
 			if err != nil {
 				t.Err = err
-				log.Error().
+				logctx.From(t.context()).Error().
 					Str("file", t.FilePath).
 					Int("line", item.lineNum).
 					Err(err).
@@ -239,7 +252,7 @@ func (t *MacroTransformer) TransformWithModified(doc *ast.Document, reader text.
 			subDoc, err := parseExpansion(item.node, expanded)
 			if err != nil {
 				t.Err = fmt.Errorf("unable to apply macro %q: %w", m.Regexp.String(), err)
-				log.Error().
+				logctx.From(t.context()).Error().
 					Str("file", t.FilePath).
 					Int("line", item.lineNum).
 					Err(err).

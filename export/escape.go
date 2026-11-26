@@ -194,7 +194,7 @@ var (
 	lineRule       = regexp.MustCompile(`^(?:=+|-+|(?:-[ \t]*){3,}|(?:_[ \t]*){3,})[ \t]*$`)
 	lineOrdered    = regexp.MustCompile(`^([0-9]{1,9})([.)])(?:[ \t]|$)`)
 	lineDefinition = regexp.MustCompile(`^:(?:[ \t]|$)`)
-	lineAdmonition = regexp.MustCompile(`^!!!`)
+	lineAdmonition = regexp.MustCompile(`^(?:!!!|\?\?\?)`)
 	lineBlockquote = regexp.MustCompile(`^>`)
 	// A GFM table's delimiter row, which makes the line before it a header
 	// row and the paragraph a table: nothing but pipes, colons, dashes and

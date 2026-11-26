@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/kovetskiy/mark/v17/internal/logctx"
 	"github.com/rs/zerolog/log"
 )
 
@@ -140,7 +141,7 @@ func checkRedirect(next func(req *http.Request, via []*http.Request) error) func
 		}
 
 		if leaves && err == nil {
-			log.Warn().
+			logctx.From(req.Context()).Warn().
 				Str("requested", serverOf(via[0].URL)).
 				Str("redirected_to", serverOf(req.URL)).
 				Msg("a redirect led to another server than the one requested, " +
@@ -398,7 +399,7 @@ func (t *retryTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 
 		wait := backoffFor(attempt, retryAfter, time.Now())
 
-		event := log.Warn().
+		event := logctx.From(req.Context()).Warn().
 			Str("method", req.Method).
 			Str("url", req.URL.Redacted()).
 			Int("attempt", attempt).

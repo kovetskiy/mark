@@ -509,3 +509,104 @@ func TestAnArchivedPageIsRead(t *testing.T) {
 		})
 	}
 }
+
+// A scoped token is refused v1's DELETE /content, so through the gateway a
+// page or blog post is trashed through v2.
+func TestGatewayDeletePage(t *testing.T) {
+	for _, pageType := range []string{"page", "blogpost"} {
+		t.Run(pageType, func(t *testing.T) {
+			api, server := newGatewayAPI(t)
+			page := server.AddPage("DOCS", "Gone", pageType, "")
+
+			require.NoError(t, api.DeletePage(context.Background(), page.ID))
+
+			got := server.Page(page.ID)
+			require.NotNil(t, got, "the page must be trashed, not purged")
+			assert.True(t, got.Trashed)
+			assert.Equal(t, 0, server.CountRequests("DELETE", "/rest/api/content"),
+				"through the gateway v1 is not asked at all")
+		})
+	}
+}
+
+// A page already gone, purged or in the trash, is the outcome that was wanted.
+func TestGatewayDeleteAPageAlreadyGone(t *testing.T) {
+	api, server := newGatewayAPI(t)
+	trashed := server.AddPage("DOCS", "Trashed", "page", "")
+	server.TrashPage(trashed.ID)
+
+	require.NoError(t, api.DeletePage(context.Background(), trashed.ID))
+	require.NoError(t, api.DeletePage(context.Background(), "424242"))
+}
+
+// v2 answers 404 to a delete it refuses, so a page that reads back live is
+// not taken for one already gone; one that reads back trashed is.
+func TestGatewayDeleteAnswered404(t *testing.T) {
+	api, server := newGatewayAPI(t)
+	page := server.AddPage("DOCS", "Kept", "page", "")
+	server.SetFail(func(r *http.Request) (int, string, bool) {
+		if strings.Contains(r.URL.Path, "/rest/api/") {
+			return http.StatusUnauthorized, `{"code":401,"message":"Unauthorized; scope does not match"}`, true
+		}
+		if r.Method == http.MethodDelete {
+			return http.StatusNotFound, `{"errors":[{"status":404,"title":"Not Found"}]}`, true
+		}
+		return 0, "", false
+	})
+
+	_, err := api.GetPageByID(context.Background(), page.ID)
+	require.NoError(t, err)
+
+	err = api.DeletePage(context.Background(), page.ID)
+	require.Error(t, err)
+	assert.NotErrorIs(t, err, confluence.ErrNotFound)
+	assert.False(t, server.Page(page.ID).Trashed)
+
+	server.TrashPage(page.ID)
+	require.NoError(t, api.DeletePage(context.Background(), page.ID))
+}
+
+func TestGatewayGetChildPages(t *testing.T) {
+	api, server := newGatewayAPI(t)
+	parent := server.AddPage("DOCS", "Parent", "page", "")
+	child := server.AddPage("DOCS", "Child", "page", parent.ID)
+	server.AddFolder("DOCS", "Folder", parent.ID, "page")
+
+	children, err := api.GetChildPages(context.Background(), parent.ID)
+	require.NoError(t, err)
+	require.Len(t, children, 1, "folders are not pages")
+	assert.Equal(t, child.ID, children[0].ID)
+	assert.Equal(t, "Child", children[0].Title)
+	assert.Equal(t, 0, server.CountRequests("GET", "/rest/api/content"))
+}
+
+// The children come in the order of the tree, as v1 gives them, for the
+// ordering of siblings and the check after a move.
+func TestGatewayGetChildPagesInTreeOrder(t *testing.T) {
+	api, server := newGatewayAPI(t)
+	parent := server.AddPage("DOCS", "Parent", "page", "")
+	first := server.AddPage("DOCS", "First", "page", parent.ID)
+	second := server.AddPage("DOCS", "Second", "page", parent.ID)
+	server.MovePage(first.ID, parent.ID)
+
+	children, err := api.GetChildPages(context.Background(), parent.ID)
+	require.NoError(t, err)
+	require.Len(t, children, 2)
+	assert.Equal(t, []string{second.ID, first.ID}, []string{children[0].ID, children[1].ID})
+}
+
+// A page can sit in a folder, which v2 lists under its own route, and a
+// parent that is gone is reported, not read as childless.
+func TestGatewayGetChildPagesOfAFolder(t *testing.T) {
+	api, server := newGatewayAPI(t)
+	folder := server.AddFolder("DOCS", "Folder", "", "")
+	child := server.AddPage("DOCS", "Child", "page", folder.ID)
+
+	children, err := api.GetChildPages(context.Background(), folder.ID)
+	require.NoError(t, err)
+	require.Len(t, children, 1)
+	assert.Equal(t, child.ID, children[0].ID)
+
+	_, err = api.GetChildPages(context.Background(), "424242")
+	require.ErrorIs(t, err, confluence.ErrNotFound)
+}

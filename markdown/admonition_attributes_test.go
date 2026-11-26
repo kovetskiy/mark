@@ -23,3 +23,19 @@ func TestAdmonitionAttributesEndTheOpeningLine(t *testing.T) {
 	assert.NotContains(t, out, "data-k", "the block is taken, not published as text")
 	assert.Contains(t, out, "<p>body</p>")
 }
+
+// TestAdmonitionTitleHoldsABrace: a quoted title that ends the opening line,
+// or the line up to its attributes, is read to its last quote, a "{" in it
+// included.
+func TestAdmonitionTitleHoldsABrace(t *testing.T) {
+	for source, want := range map[string]string{
+		"!!! note \"Config {env}\"\n    body\n":      "<p><strong>Config {env}</strong></p>\n<p>body</p>",
+		"!!! note \"Config {env}\" {.x}\n    body\n": "<p><strong>Config {env}</strong></p>\n<p>body</p>",
+		"!!! note \"say \"hi\"\"\n    body\n":        "<p><strong>say &#34;hi&#34;</strong></p>\n<p>body</p>",
+	} {
+		out := compileDoc(t, source, "mkdocsadmonitions")
+
+		assert.Contains(t, out, want, "%q", source)
+		assert.True(t, wellFormed(t, out), out)
+	}
+}

@@ -6,8 +6,8 @@ import (
 	"sort"
 
 	"github.com/kovetskiy/mark/v17/confluence"
+	"github.com/kovetskiy/mark/v17/internal/logctx"
 	"github.com/kovetskiy/mark/v17/report"
-	"github.com/rs/zerolog/log"
 )
 
 // Ordered is a page a document asked to be placed at a particular position
@@ -104,7 +104,7 @@ func orderUnder(ctx context.Context, api *confluence.API, dryRun bool, parentID 
 			// Published under a different parent than the one it is listed
 			// under, or created moments ago and not yet visible. Either way
 			// there is nothing to compare it against.
-			log.Debug().Msgf("page %q is not listed under %s; leaving its position alone", p.Title, parentID)
+			logctx.From(ctx).Debug().Msgf("page %q is not listed under %s; leaving its position alone", p.Title, parentID)
 			return nil
 		}
 		current = append(current, at)
@@ -146,11 +146,11 @@ func orderUnder(ctx context.Context, api *confluence.API, dryRun bool, parentID 
 		}
 
 		if dryRun {
-			log.Info().Msgf("page %q would be moved %s %q", wanted[i].Title, where, neighbour.Title)
+			logctx.From(ctx).Info().Msgf("page %q would be moved %s %q", wanted[i].Title, where, neighbour.Title)
 			continue
 		}
 
-		log.Info().Msgf("moving page %q %s %q", wanted[i].Title, where, neighbour.Title)
+		logctx.From(ctx).Info().Msgf("moving page %q %s %q", wanted[i].Title, where, neighbour.Title)
 
 		var err error
 		if before {

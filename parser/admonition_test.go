@@ -137,12 +137,211 @@ func TestAdmonitionParser(t *testing.T) {
 			source: "> !!! note \"in quote\"\n>     q\n",
 			want:   []string{`note:"in quote":q`},
 		},
+		{
+			name:   "collapsed",
+			source: "??? note \"Title\"\n    body\n",
+			want:   []string{`note:"Title":body`},
+		},
+		{
+			name:   "collapsed, open by default",
+			source: "???+ tip \"Title\"\n    body\n",
+			want:   []string{`tip:"Title":body`},
+		},
+		{
+			name:   "collapsed without a title",
+			source: "??? warning\n    body\n",
+			want:   []string{`warning::body`},
+		},
+		{
+			name:   "collapsed closed by its own run",
+			source: "??? note \"c\"\n    a\n???\n\nafter\n",
+			want:   []string{`note:"c":a`},
+		},
+		{
+			// A closing run is made of the character that opened the block.
+			name:   "a run of the other character does not close",
+			source: "??? note \"c\"\n    a\n!!!\n\n    b\n",
+			want:   []string{"note:\"c\":a\n!!!"},
+		},
+		{
+			name:   "bang run does not close on question marks",
+			source: "!!! note \"c\"\n    a\n???\n",
+			want:   []string{"note:\"c\":a\n???"},
+		},
+		{
+			name:   "bare question marks are text",
+			source: "???\n\n???+\n\n?? note\n",
+			want:   nil,
+		},
+		{
+			name:   "question marks opening prose are text",
+			source: "??? what is this\n\npara\n??? what is\ncont\n\n???? really sure\n",
+			want:   nil,
+		},
+		{
+			name:   "one word of prose before an unindented line is text",
+			source: "??? Really?\nThis is prose.\n\n??? what\nnext\n\n??? what\n\nnext para\n\n??? what\n",
+			want:   nil,
+		},
+		{
+			name:   "a titled or attributed opener with no body ahead is text",
+			source: "??? note \"T\"\n\nPara one.\n\n??? note {.a}\nPara two.\n\n??? tip \"Last\"\n",
+			want:   nil,
+		},
+		{
+			name:   "a bare class opens when an indented body follows, blank lines or not",
+			source: "??? FAQ\n    answer\n\n??? tip\n\n\n    spaced\n",
+			want:   []string{"FAQ::answer", "tip::spaced"},
+		},
+		{
+			name:   "a bare class opens an empty block that closes straight away",
+			source: "??? note\n???\n",
+			want:   []string{"note::"},
+		},
+		{
+			name:   "a class that is not a word is text",
+			source: "??? \"T\"\n    x\n\n??? ?\n    x\n\n??? +note\n    x\n\n??? note\"T\"\n    x\n",
+			want:   nil,
+		},
+		{
+			name:   "a title is one closed quoted string",
+			source: "??? what \"is\" this\n    x\n\n??? note \"T\n    x\n\n??? note \"T\" tail\n    x\n\n??? note \"T\" {.a}\n    x\n",
+			want:   []string{`note:"T":x`},
+		},
+		{
+			name:   "a tab ends no class, as with !!!",
+			source: "??? note\t\"T\"\n    x\n",
+			want:   nil,
+		},
+		{
+			name:   "a tab that ends the line is a blank like a space",
+			source: "??? note\t\n    x\n\n!!! tip\t\n    y\n\n???+ info \"T\"\t \n    z\n",
+			want:   []string{"note::x", "tip::y", `info:"T":z`},
+		},
+		{
+			name:   "an unknown bare class in a list is prose",
+			source: "- ??? what\n  is this about\n",
+		},
+		{
+			// MkDocs has no "warn" type, and renders none of it.
+			name:   "warn in a list is prose",
+			source: "- ??? warn\n      a\n",
+		},
+		{
+			name:   "an unknown bare class in a blockquote is prose",
+			source: "> ??? why\n> would this be\n",
+		},
+		{
+			name:   "an unknown bare class in an admonition is prose",
+			source: "!!! note\n    ??? huh\n    more prose here\n!!!\n",
+			want:   []string{"note::??? huh\nmore prose here"},
+		},
+		{
+			name:   "a known class in a list opens",
+			source: "- ??? note\n      a\n",
+			want:   []string{"note::a"},
+		},
+		{
+			name:   "a quoted title in a list opens",
+			source: "- ??? what \"T\"\n      a\n",
+			want:   []string{`what:"T":a`},
+		},
+		{
+			name:   "a brace in a quoted title stays in it",
+			source: "??? note \"Config {env}\"\n    a\n",
+			want:   []string{`note:"Config {env}":a`},
+		},
+		{
+			// MkDocs reads `"(.*?)" *$`: the title runs to the last quote.
+			name:   "a title runs to the last quote on the line",
+			source: "??? note \"say \"hi\" now\"  \n    a\n\n??? tip \"C:\\\"\n    b\n\n??? info \"a\" {.x} b\"\n    c\n",
+			want:   []string{`note:"say "hi" now":a`, `tip:"C:\":b`, `info:"a" {.x} b":c`},
+		},
+		{
+			name:   "a title with quotes before attributes",
+			source: "??? note \"say \"hi\"\" {.x}\n    a\n\n??? tip \"T\" {data-x=\"y\"}\n    b\n",
+			want:   []string{`note:"say "hi"":a`, `tip:"T":b`},
+		},
+		{
+			name:   "attributes followed by prose are a sentence",
+			source: "??? note {see below} for the reasons\n    a\n",
+		},
+		{
+			name:   "collapsed with attributes and no title",
+			source: "??? note {.x}\n    a\n",
+			want:   []string{"note::a"},
+		},
+		{
+			// goldmark's ParseAttributes refuses an empty name, which would
+			// leave the block in the hidden body as text.
+			name:   "an attribute block goldmark refuses is a sentence",
+			source: "??? note {#}\n    x\n\n??? note {.}\n    x\n\n??? tip \"T\" {#}\n    x\n",
+		},
+		{
+			name:   "nested collapsed in a panel",
+			source: "!!! note \"outer\"\n    a\n\n    ??? tip \"inner\"\n        b\n\n    c\n",
+			want:   []string{`note:"outer":a`, `  tip:"inner":b`},
+		},
+		{
+			name:   "collapsed sibling straight after",
+			source: "??? info \"one\"\n    a\n???+ warning \"two\"\n    b\n",
+			want:   []string{`info:"one":a`, `warning:"two":b`},
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			assert.Equal(t, tt.want, admonitions(t, tt.source))
 		})
+	}
+}
+
+func TestAdmonitionCollapsedFlag(t *testing.T) {
+	md := parser.New(
+		cparser.NewAdmonitionParser().ParserOptions(nil)...,
+	)
+
+	for source, want := range map[string]bool{
+		"??? note\n    b\n":  true,
+		"???+ note\n    b\n": false,
+		"!!! note\n    b\n":  false,
+	} {
+		doc := md.Parse([]byte(source))
+		admonition, ok := doc.FirstChild().(*cparser.Admonition)
+		require.True(t, ok, source)
+		assert.Equal(t, want, admonition.Collapsed, source)
+		assert.Equal(t, "note", string(admonition.AdmonitionClass), source)
+	}
+}
+
+// TestAdmonitionOnlyOpensAtLineStart pins where an opening run is recognised:
+// at the start of a block, after at most three spaces, and after the prefix of
+// a list item or blockquote has been stripped. Anywhere else it is text. The
+// collapsed markers are held to exactly what "!!!" is.
+func TestAdmonitionOnlyOpensAtLineStart(t *testing.T) {
+	for _, marker := range []string{"!!!", "???", "???+"} {
+		tests := []struct {
+			name   string
+			source string
+			want   []string
+		}{
+			{"mid-line after text", "a " + marker + " note \"T\"\n    b\n", nil},
+			{"mid-line, no title", "text " + marker + " note\n", nil},
+			{"directly after a word", "what" + marker + "\n", nil},
+			{"one space", " " + marker + " note\n    b\n", []string{"note::b"}},
+			{"three spaces", "   " + marker + " note\n    b\n", []string{"note::b"}},
+			{"four spaces is code", "    " + marker + " note\n    b\n", nil},
+			{"tab is code", "\t" + marker + " note\n\tb\n", nil},
+			{"blockquote", "> " + marker + " note\n>     b\n", []string{"note::b"}},
+			{"list item", "- " + marker + " note\n      b\n", []string{"note::b"}},
+			{"list item, not enough indent", "- x\n" + marker + " note\n    b\n", []string{"note::b"}},
+		}
+
+		for _, tt := range tests {
+			t.Run(marker+" "+tt.name, func(t *testing.T) {
+				assert.Equal(t, tt.want, admonitions(t, tt.source))
+			})
+		}
 	}
 }
 
@@ -628,12 +827,19 @@ func TestAdmonitionBodyIsIndentedOrClosed(t *testing.T) {
 			want:   []string{"Blockquote", "  !note", "  Paragraph:quoted", "Paragraph:after"},
 		},
 		{
+			// A "{" in a quoted title that ends the line is the title's, and
+			// the line after it is level with it.
+			name:   "a brace in the title, then no run",
+			source: "!!! note \"Use {name}\"\nnext\n\nafter\n\n## Heading\n",
+			want:   []string{"!note", "Paragraph:next", "Paragraph:after", "Heading:Heading"},
+		},
+		{
 			// The "{" that is no attribute block starts a paragraph on the
 			// opening line, which the next line goes on lazily; the
 			// admonition ends with that paragraph.
 			name:   "a paragraph on the opening line, then no run",
-			source: "!!! note \"Use {name}\"\nnext\n\nafter\n\n## Heading\n",
-			want:   []string{"!note", "  Paragraph:{name}\"\nnext", "Paragraph:after", "Heading:Heading"},
+			source: "!!! note Use {name}\nnext\n\nafter\n\n## Heading\n",
+			want:   []string{"!note", "  Paragraph:{name}\nnext", "Paragraph:after", "Heading:Heading"},
 		},
 		{
 			// w4 goes on the paragraph of the inner indented body, and w5
@@ -728,8 +934,16 @@ func TestAdmonitionStrandedBodyIsRecorded(t *testing.T) {
 			lines:  []int{1},
 		},
 		{name: "the outer of two with one run", source: "!!! note\na\n!!! tip\nb\n!!!\nc\n", lines: []int{1}},
+		{name: "collapsed, in a list item", source: "- ??? note \"T\"\n  prose\n", lines: []int{1}},
+		{name: "collapsed, in a blockquote", source: "> ??? note \"T\"\n> body\n", lines: []int{1}},
+		{name: "collapsed, in an indented body", source: "!!! note\n    ??? tip \"T\"\n    a\n", lines: []int{2}},
+		{name: "open, in a list item", source: "- ???+ note\n  prose\n", lines: []int{1}},
 
 		{name: "nothing after it", source: "!!! note \"T\"\n"},
+		{name: "collapsed, a blank line, then text", source: "- ??? note \"T\"\n\n  text\n"},
+		{name: "collapsed, indented body", source: "- ??? note \"T\"\n      body\n  after\n"},
+		{name: "collapsed, a run that closes it straight after", source: "- ??? note \"T\"\n  ???\n"},
+		{name: "collapsed, a line indented less than it", source: "  ??? note \"T\"\n      body\nafter\n"},
 		{name: "blank lines after it", source: "!!! note \"T\"\n\n"},
 		{name: "a blank line, then text", source: "!!! note \"T\"\n\ntext\n"},
 		{name: "the next list item after it", source: "- !!! note\n- next\n"},

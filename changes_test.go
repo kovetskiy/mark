@@ -557,6 +557,8 @@ func TestDryRunChangesOnlyReportsAFolderMoveUnderAParentToBeCreated(t *testing.T
 			"<!-- Folder: Manuals -->\n<!-- Title: Doc -->\n\nBody.\n")
 	before := len(nonGET(server))
 
+	// The new Manuals needs the hash, as the old one holds the title in the space.
+	config.Page.FolderTitleAppendGeneratedHash = true
 	out := previewOf(t, config, "json")
 
 	assert.Equal(t, report.StatusWouldUpdate, decodeReport(t, []byte(out)).Pages[0].Status)

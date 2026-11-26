@@ -11,7 +11,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/rs/zerolog/log"
+	"github.com/kovetskiy/mark/v17/internal/logctx"
 )
 
 // unavailableError marks a write Confluence may or may not have carried out:
@@ -102,7 +102,7 @@ func retryUnavailable[T any](
 	}
 
 	adopt := func(result T, err error) (T, error) {
-		log.Warn().Err(err).Msgf("Confluence did %s, though it answered otherwise", what)
+		logctx.From(ctx).Warn().Err(err).Msgf("Confluence did %s, though it answered otherwise", what)
 		return result, nil
 	}
 
@@ -139,7 +139,7 @@ func retryUnavailable[T any](
 			return result, err
 		}
 
-		log.Warn().Err(err).Int("attempt", attempt).Msgf("unable to %s, retrying", what)
+		logctx.From(ctx).Warn().Err(err).Int("attempt", attempt).Msgf("unable to %s, retrying", what)
 	}
 }
 

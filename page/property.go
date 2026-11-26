@@ -8,7 +8,7 @@ import (
 	"sort"
 
 	"github.com/kovetskiy/mark/v17/confluence"
-	"github.com/rs/zerolog/log"
+	"github.com/kovetskiy/mark/v17/internal/logctx"
 	"go.yaml.in/yaml/v3"
 )
 
@@ -94,7 +94,7 @@ func ApplyProperties(ctx context.Context, api *confluence.API, pageID string, pr
 			continue
 		}
 
-		log.Info().Msgf("setting property %q of page %s", key, pageID)
+		logctx.From(ctx).Info().Msgf("setting property %q of page %s", key, pageID)
 		if err := api.SetContentProperty(ctx, pageID, key, value, current[key]); err != nil {
 			return err
 		}

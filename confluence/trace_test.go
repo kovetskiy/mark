@@ -25,7 +25,7 @@ func traced(t *testing.T, format string, args ...any) string {
 		zerolog.SetGlobalLevel(previousLevel)
 	})
 
-	(&tracer{"rest:"}).Printf(format, args...)
+	(&tracer{prefix: "rest:"}).Printf(format, args...)
 
 	return buffer.String()
 }

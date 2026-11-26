@@ -57,6 +57,7 @@ tests, which take minutes. There is currently no `-short` skip.
 | `internal/goldmarktest` | a goldmark parser and renderer built together, for tests |
 | `internal/htmlblock` | an HTML block's lines without its closing line, as goldmark v1 gave them |
 | `internal/lazy` | the start-on-first-use, discard and close of a run's browser and mermaid engine; Close cancels a start in flight |
+| `internal/logctx` | `From`, the zerolog logger a context carries or else the global one, and `Tracing`, whether it logs at trace |
 | `internal/mdsource` | the raw Markdown before goldmark: where the code is, `<!-- ac:ignore -->` regions, CRLF and BOM normalisation |
 | `internal/rendercheck` | the rendering settings' rules (scales, image alignment, feature names) that `mark.Config` validation and the publish flag checks share |
 | `internal/syntax` | what publishing and export must read alike: heading ids and attribute blocks, anchor keys, the `page#anchor` split, code block info strings and language aliases, admonition markers, the elements whose text is literal |
@@ -216,6 +217,8 @@ picture that needs them, and are closed by whoever created them.
 holds no context: every `confluence.API` method that makes a request takes `ctx context.Context` first, and so
 does everything above it that makes one later (`manifest.Store`,
 `page.LinkChecker.MissingPages`, the ancestry trackers, `stdlib.New`).
+The context also carries the run's logger, which `logctx.From` finds, and the client
+decides per request from it whether to dump the request (`client.tracer`).
 `markdown.CompileMarkdown` takes one for the diagrams and formulas it draws; goldmark
 renders without one, so the renderers that draw them are given it when built.
 `page.LinkChecker` keeps its pending links and answers behind a mutex and copies
@@ -224,7 +227,7 @@ in `page/check_test.go` races it). A document's `report.Warnings` and the
 `report.Report` take their own locks (`TestWarningsConcurrentAccess`,
 `TestReportSetWarningsConcurrentAccess`). What still assumes one file at a time is the
 rest of `publishRun` in `mark.go`: `runUsers` swaps its `ctx` for each file, and
-`runTitles` (its `warned` set included), `pageFile`, `createdParents` and the `warnings` map of each
+`runTitles` (its `warned` set included), `pageFile`, `createdParents`, `titleClaims`, `claimedTitles`, `pendingClaim`, `yielded`, `previewTitles` and the `warnings` map of each
 document's collector carry no lock. The manifest store calls the function
 `SetWarningsFor` gives it with its own lock held, so that function must not call back
 into the store. Anything that introduces concurrency across files has to make those
@@ -272,7 +275,9 @@ which lines are code, HTML or a list item is goldmark's call alone.
 them on documents `internal/admonitiongen` writes from a fixed seed, and on
 `parser/testdata/admonition-master.json`, the trees the parser gave such documents before
 a level body had to end at a closing run; `FuzzAdmonitionDocuments` is the same for as
-long as it is left running.
+long as it is left running. `???` openings are written only with `Options.Collapsed`,
+which `All()` leaves out so that a seed still names the document it named, and are read
+as a corpus of their own.
 
 Coverage is uneven, and where it is thin matters more than the number. Measured with
 `go test -cover ./...`: `markdown/` 84%, `renderer/` 69%, `confluence/` 84%, `stdlib/` 68%,
@@ -294,7 +299,13 @@ the API is untestable.
 - Conventional-commit subjects: `feat(scope):`, `fix(scope):`, `refactor(scope):`,
   `build(deps):`. The release changelog excludes `docs:` and `test:`.
 - Errors wrap with `%w` and read bottom-up: `fmt.Errorf("unable to compile markdown: %w", err)`.
-- Logging is `zerolog` via the package-level `log`; user-facing results go to
+- Logging is `zerolog` through `logctx.From(ctx)` (`internal/logctx`): the logger a
+  library caller put in the context, or the global `log` without one. Only `util/` and
+  `cmd/mark`, which set the global logger up, log through `log` directly. An exported
+  function that logs takes a `ctx`; one that did not gets a `FooContext` form beside it,
+  and `Foo` calls that with `context.Background()`, so v17 callers keep compiling. A
+  type configured through fields gets a `Context` field instead. User-facing
+  results go to
   `PublishConfig.output()`, and the run report to `Config.reportOutput()`, never directly to `os.Stdout`.
 - Suppress a linter only with a reason attached: `//nolint:gosec // G401: ...`.
   The two existing suppressions (SHA-1 as a content fingerprint, opt-in TLS skip) are

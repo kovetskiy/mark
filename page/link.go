@@ -13,11 +13,11 @@ import (
 
 	"github.com/kovetskiy/mark/v17/attachment"
 	"github.com/kovetskiy/mark/v17/confluence"
+	"github.com/kovetskiy/mark/v17/internal/logctx"
 	"github.com/kovetskiy/mark/v17/internal/mdsource"
 	"github.com/kovetskiy/mark/v17/internal/syntax"
 	"github.com/kovetskiy/mark/v17/metadata"
 	"github.com/kovetskiy/mark/v17/report"
-	"github.com/rs/zerolog/log"
 )
 
 // LinkFiles is where a relative link's target is looked for and read.
@@ -217,7 +217,7 @@ func (r *LinkResolver) Resolve(ctx context.Context, target, text string) (string
 	}
 
 	if why != nil && why.noFile && len(r.CheckOnlyDirs) > 0 {
-		if found, absent := findLinkTarget(attachment.Root{}, r.CheckOnlyDirs, filename); absent == nil {
+		if found, absent := findLinkTarget(ctx, attachment.Root{}, r.CheckOnlyDirs, filename); absent == nil {
 			// Passes the check, and is still a relative path no page can
 			// follow, so it is said in the report rather than only logged.
 			r.Warnings.Add(report.WarningSourceOnlyLink,
@@ -239,7 +239,7 @@ func (r *LinkResolver) Resolve(ctx context.Context, target, text string) (string
 			// The page is not there yet, and this run is about to create it.
 			// Saying so now would be complaining about something that has not
 			// finished happening.
-			log.Debug().Msgf("link %q waits for %s", target, why.reason)
+			logctx.From(ctx).Debug().Msgf("link %q waits for %s", target, why.reason)
 			r.Deferrals.Note(r.SourceFile)
 
 		case r.checking():
@@ -346,7 +346,7 @@ func resolveLink(
 	}
 
 	if len(link.filename) > 0 {
-		found, why := findLinkTarget(files, bases, link.filename)
+		found, why := findLinkTarget(ctx, files, bases, link.filename)
 		if why != nil {
 			return "", why, nil
 		}
@@ -360,13 +360,13 @@ func resolveLink(
 			// and is not worth stopping the run for.
 			published, err := declaresPage(files, found, opts)
 			if err != nil {
-				log.Debug().Err(err).Msgf("Ignoring link to file %q: it cannot be read", found)
+				logctx.From(ctx).Debug().Err(err).Msgf("Ignoring link to file %q: it cannot be read", found)
 
 				return "", nil, nil
 			}
 
 			if !published {
-				log.Debug().Msgf("Ignoring link to file %q: not a Markdown file", found)
+				logctx.From(ctx).Debug().Msgf("Ignoring link to file %q: not a Markdown file", found)
 
 				return "", nil, nil
 			}
@@ -380,7 +380,7 @@ func resolveLink(
 		contentType := http.DetectContentType(linkContents)
 		// Check if the MIME type starts with "text/"
 		if !strings.HasPrefix(contentType, "text/") {
-			log.Debug().Msgf("Ignoring link to file %q: detected content type %v", found, contentType)
+			logctx.From(ctx).Debug().Msgf("Ignoring link to file %q: detected content type %v", found, contentType)
 			return "", &unresolved{reason: fmt.Sprintf("it is not a text file (%s)", contentType)}, nil
 		}
 
@@ -391,9 +391,10 @@ func resolveLink(
 		// The headers say whether the file is a document mark publishes,
 		// and as which page.
 		opts.Filename = found
+		opts.Context = ctx
 		linkMeta, linkBody, err := readMeta(linkContents, opts)
 		if err != nil {
-			log.Error().
+			logctx.From(ctx).Error().
 				Err(err).
 				Msgf(
 					"unable to extract metadata from %q; ignoring the relative link",
@@ -407,7 +408,7 @@ func resolveLink(
 			return "", &unresolved{reason: "it has no mark metadata, so it is never published"}, nil
 		}
 
-		log.Trace().
+		logctx.From(ctx).Trace().
 			Msgf(
 				"extracted metadata: space=%s title=%s",
 				linkMeta.Space,
@@ -478,7 +479,7 @@ func resolveLink(
 // browser would read the URL a destination is: "my%20page.md" is how VS Code and
 // GitHub spell "my page.md". As written comes first so that a file whose name
 // really contains a "%" still resolves to itself.
-func findLinkTarget(files LinkFiles, bases []string, name string) (string, *unresolved) {
+func findLinkTarget(ctx context.Context, files LinkFiles, bases []string, name string) (string, *unresolved) {
 	var directory bool
 
 	names := []string{name}
@@ -490,7 +491,7 @@ func findLinkTarget(files LinkFiles, bases []string, name string) (string, *unre
 		for _, n := range names {
 			candidate := filepath.Join(base, n)
 
-			log.Trace().Msgf("filepath: %s", candidate)
+			logctx.From(ctx).Trace().Msgf("filepath: %s", candidate)
 			stat, err := files.Stat(candidate)
 			if err != nil {
 				// Not a file on disk here, or unreadable. Swallowing err is

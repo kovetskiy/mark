@@ -22,7 +22,8 @@ import (
 	"github.com/kovetskiy/mark/v17/chrome"
 	"github.com/kovetskiy/mark/v17/imageformat"
 	"github.com/kovetskiy/mark/v17/internal/lazy"
-	"github.com/rs/zerolog/log"
+	"github.com/kovetskiy/mark/v17/internal/logctx"
+	"github.com/rs/zerolog"
 	"golang.org/x/mod/semver"
 	"golang.org/x/net/html"
 )
@@ -55,6 +56,11 @@ const (
 type Engine struct {
 	kind EngineKind
 
+	// logger is the one NewEngineContext's ctx carried, nil for the global
+	// one. The renderer starts on the first diagram, under a context of its
+	// own that Close cancels, so it is handed the logger from here.
+	logger *zerolog.Logger
+
 	once     sync.Once
 	renderer *lazy.Lazy[mermaid.Renderer]
 
@@ -69,6 +75,13 @@ var ErrNoEngine = errors.New("no mermaid engine to render with")
 // NewEngine returns an Engine of the kind named, EngineChrome when empty,
 // without starting it.
 func NewEngine(kind EngineKind) (*Engine, error) {
+	return NewEngineContext(context.Background(), kind)
+}
+
+// NewEngineContext is NewEngine logging to the zerolog logger ctx carries, as
+// does the renderer it starts on the first diagram; NewEngine logs to the
+// global one.
+func NewEngineContext(ctx context.Context, kind EngineKind) (*Engine, error) {
 	if err := CheckEngine(kind); err != nil {
 		return nil, err
 	}
@@ -78,13 +91,13 @@ func NewEngine(kind EngineKind) (*Engine, error) {
 		kind = EngineChrome
 
 	case EngineMerman:
-		log.Warn().Msg(
+		logctx.From(ctx).Warn().Msg(
 			"the merman render engine is experimental: it is not mermaid.js, " +
 				"so a diagram may be drawn differently or not at all",
 		)
 	}
 
-	return &Engine{kind: kind}, nil
+	return &Engine{kind: kind, logger: logctx.Carried(ctx)}, nil
 }
 
 // renderers returns the engine's lazy renderer, making it on first use so that
@@ -175,11 +188,15 @@ func (b *browserEngine) Cancel() {
 // start launches the renderer of e's kind, to live as long as life, which
 // Close cancels.
 func (e *Engine) start(life context.Context) (mermaid.Renderer, error) {
+	if e.logger != nil {
+		life = e.logger.WithContext(life)
+	}
+
 	if e.kind == EngineMerman {
 		return startMerman(life)
 	}
 
-	log.Debug().Msg("Setting up Mermaid renderer")
+	logctx.From(life).Debug().Msg("Setting up Mermaid renderer")
 
 	// The context governs the engine's whole lifetime rather than just its
 	// startup, so it deliberately carries no deadline, which would close the
@@ -225,7 +242,7 @@ func (e *Engine) start(life context.Context) (mermaid.Renderer, error) {
 	// Chrome's own, and not on the Renderer interface: merman starts no browser,
 	// so it has nothing that can crash between diagrams.
 	engine.SetTargetCrashedHandler(func(err error) {
-		log.Error().Err(err).Msg("Chrome crashed while rendering Mermaid diagrams")
+		logctx.From(life).Error().Err(err).Msg("Chrome crashed while rendering Mermaid diagrams")
 	})
 
 	return &browserEngine{RenderEngine: engine, release: cancel}, nil
@@ -258,16 +275,16 @@ var MinimumMermanVersion = strings.TrimSpace(minimumMermanVersion)
 // word rather than refused: it is more likely a build of its own than an old
 // release, and refusing to publish over a version string nobody can parse would
 // be the wrong way round.
-func checkMermanVersion(version string) error {
+func checkMermanVersion(ctx context.Context, version string) error {
 	if version == "" {
-		log.Warn().Msg("merman did not say which version it is; drawing with it anyway")
+		logctx.From(ctx).Warn().Msg("merman did not say which version it is; drawing with it anyway")
 
 		return nil
 	}
 
 	reported := "v" + strings.TrimPrefix(version, "v")
 	if !semver.IsValid(reported) {
-		log.Warn().Msgf("merman reports version %q, which is not a version mark can compare; drawing with it anyway", version)
+		logctx.From(ctx).Warn().Msgf("merman reports version %q, which is not a version mark can compare; drawing with it anyway", version)
 
 		return nil
 	}
@@ -288,7 +305,7 @@ func checkMermanVersion(version string) error {
 // built, so a merman that is missing or too old is reported here -- naming the
 // setting that asked for it -- rather than as a diagram that would not draw.
 func startMerman(life context.Context) (mermaid.Renderer, error) {
-	log.Debug().Msg("Setting up Mermaid renderer (merman)")
+	logctx.From(life).Debug().Msg("Setting up Mermaid renderer (merman)")
 
 	engine, err := mermaid.NewMermanEngine(life)
 	if err != nil {
@@ -297,13 +314,13 @@ func startMerman(life context.Context) (mermaid.Renderer, error) {
 		)
 	}
 
-	if err := checkMermanVersion(engine.Version()); err != nil {
+	if err := checkMermanVersion(life, engine.Version()); err != nil {
 		engine.Cancel()
 
 		return nil, err
 	}
 
-	log.Debug().Msgf("merman %s, drawing mermaid %s", engine.Version(), engine.MermaidVersion())
+	logctx.From(life).Debug().Msgf("merman %s, drawing mermaid %s", engine.Version(), engine.MermaidVersion())
 
 	engine.SetRenderTimeout(renderTimeout)
 
@@ -363,7 +380,7 @@ func (e *Engine) render(ctx context.Context, title string, once func(ctx context
 			if errors.Is(err, errClosed) || attempt >= renderAttempts {
 				return err
 			}
-			log.Warn().Err(err).Msgf("Mermaid render engine died on %q, retrying with a new browser", title)
+			logctx.From(ctx).Warn().Err(err).Msgf("Mermaid render engine died on %q, retrying with a new browser", title)
 
 		case errors.Is(err, chrome.ErrRasterRefused), errors.Is(err, chrome.ErrNetworkUnavailable):
 			// Refused before the capture was asked for, so the browser never saw
@@ -583,7 +600,7 @@ func (e *Engine) Render(ctx context.Context, title string, diagram []byte, optio
 }
 
 func (e *Engine) renderPNGAttachment(ctx context.Context, title string, mermaidDiagram []byte, scale float64) (attachment.Attachment, error) {
-	log.Debug().Msgf("Rendering: %q", title)
+	logctx.From(ctx).Debug().Msgf("Rendering: %q", title)
 
 	scale, err := normaliseScale(scale)
 	if err != nil {
@@ -602,7 +619,7 @@ func (e *Engine) renderPNGAttachment(ctx context.Context, title string, mermaidD
 	mermaidBytes := slices.Concat(mermaidDiagram, scaleAsBytes)
 
 	checkSum, err := attachment.GetChecksum(bytes.NewReader(mermaidBytes))
-	log.Debug().Msgf("Checksum: %q -> %s", title, checkSum)
+	logctx.From(ctx).Debug().Msgf("Checksum: %q -> %s", title, checkSum)
 
 	if err != nil {
 		return attachment.Attachment{}, err
@@ -626,7 +643,7 @@ func (e *Engine) renderPNGAttachment(ctx context.Context, title string, mermaidD
 }
 
 func (e *Engine) renderSVGAttachment(ctx context.Context, title string, mermaidDiagram []byte, bundle bool, scale float64) (attachment.Attachment, error) {
-	log.Debug().Msgf("Rendering SVG (bundle=%v): %q", bundle, title)
+	logctx.From(ctx).Debug().Msgf("Rendering SVG (bundle=%v): %q", bundle, title)
 
 	scale, err := normaliseScale(scale)
 	if err != nil {
@@ -645,7 +662,7 @@ func (e *Engine) renderSVGAttachment(ctx context.Context, title string, mermaidD
 	checksumInput := slices.Concat(mermaidDiagram, []byte{boolByte(bundle)})
 
 	checkSum, err := attachment.GetChecksum(bytes.NewReader(checksumInput))
-	log.Debug().Msgf("Checksum: %q -> %s", title, checkSum)
+	logctx.From(ctx).Debug().Msgf("Checksum: %q -> %s", title, checkSum)
 
 	if err != nil {
 		return attachment.Attachment{}, err

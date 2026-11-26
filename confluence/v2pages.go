@@ -12,7 +12,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/rs/zerolog/log"
+	"github.com/kovetskiy/mark/v17/internal/logctx"
 )
 
 // This file is the v2 form of the page calls that mark otherwise makes against
@@ -209,7 +209,7 @@ func listV1[T any](
 func listV2[T any](ctx context.Context, api *API, path []string, query url.Values, describe string, notFoundEmpty bool) ([]T, error) {
 	var all []T
 
-	err := eachV2WithNotFound(ctx, api, path, query, describe, notFoundEmpty, func(result T) bool {
+	err := walkV2(ctx, api, path, query, describe, notFoundEmpty, func(result T) bool {
 		all = append(all, result)
 
 		return false
@@ -236,11 +236,20 @@ func eachV2[T any](
 	describe string,
 	visit func(result T) (stop bool),
 ) error {
-	return eachV2WithNotFound(ctx, api, path, query, describe, true, visit)
+	return walkV2(ctx, api, path, query, describe, true, visit)
 }
 
-// eachV2WithNotFound applies the caller's missing-collection policy while following cursors.
-func eachV2WithNotFound[T any](ctx context.Context, api *API, path []string, query url.Values, describe string, notFoundEmpty bool, visit func(T) bool) error {
+// walkV2 is eachV2, with a 404 on the first page read as an empty collection
+// only when notFoundEmpty is set.
+func walkV2[T any](
+	ctx context.Context,
+	api *API,
+	path []string,
+	query url.Values,
+	describe string,
+	notFoundEmpty bool,
+	visit func(result T) (stop bool),
+) error {
 	var cursor string
 
 	for {
@@ -407,6 +416,61 @@ func (api *API) collectionOfV2(ctx context.Context, id string) (string, error) {
 	return v2Collection(pageType), nil
 }
 
+// childPagesV2 is GetChildPages against v2. The parent may be a page or a
+// folder, which v2 lists under different routes, so a 404 from the page route
+// sends the request to the folder one. A 404 from both is a parent that is
+// gone, and is returned as v1 returns it rather than read as no children.
+func (api *API) childPagesV2(ctx context.Context, parentID string) ([]PageInfo, error) {
+	var pages []PageInfo
+	visit := func(id string, typ ContentType, title string) bool {
+		if typ == ContentPage {
+			pages = append(pages, PageInfo{ID: id, Type: ContentPage, Title: title})
+		}
+		return false
+	}
+
+	operation := "list child pages of " + parentID
+	err := api.walkDirectChildren(ctx, "pages", parentID, operation, false, visit)
+	if errors.Is(err, ErrNotFound) && len(pages) == 0 {
+		err = api.walkDirectChildren(ctx, "folders", parentID, operation, false, visit)
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	return pages, nil
+}
+
+// deletePageV2 is DeletePage against v2, which a token minted with
+// delete:page:confluence is allowed where v1's DELETE /content is not. Like
+// v1 without status=trashed, it moves the page to the trash.
+//
+// v2 answers 404 as well to a user or token that may not delete the page, so
+// a 404 counts as done only once the page reads back gone or in the trash.
+func (api *API) deletePageV2(ctx context.Context, contentID string) error {
+	collection, err := api.collectionOfV2(ctx, contentID)
+	if err == nil {
+		_, err = api.v2.do(ctx, nil, http.MethodDelete, []string{collection, contentID}, nil, nil, &struct{}{})
+		if errors.Is(err, ErrNotFound) {
+			if _, _, readErr := api.lookupContentV2(ctx, contentID, false); readErr == nil {
+				return fmt.Errorf(
+					"unable to delete content %s: Confluence answered 404 but the page is still there; "+
+						"the token may lack delete:page:confluence, or the user permission to delete it",
+					contentID,
+				)
+			} else if !errors.Is(readErr, ErrNotFound) {
+				return requestError("delete content "+contentID, readErr)
+			}
+		}
+	}
+	if err != nil && !errors.Is(err, ErrNotFound) {
+		return requestError("delete content "+contentID, err)
+	}
+	api.forgetPage(contentID)
+
+	return nil
+}
+
 // getPageByIDV2 is GetPageByIDExpanded against v2.
 //
 // The expand list is honoured: v2 charges for both of the things it names, the
@@ -433,7 +497,7 @@ func (api *API) getPageByIDV2(ctx context.Context, pageID, expand string) (*Page
 	if strings.Contains(expand, "space") && content.SpaceID != "" {
 		key, err := api.spaceKeyV2(ctx, content.SpaceID)
 		if err != nil {
-			log.Warn().Msgf("unable to read the key of space %s, which page %s is in: %s", content.SpaceID, pageID, err)
+			logctx.From(ctx).Warn().Msgf("unable to read the key of space %s, which page %s is in: %s", content.SpaceID, pageID, err)
 		}
 		page.Space.Key = key
 	}

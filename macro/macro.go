@@ -2,6 +2,7 @@ package macro
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"regexp"
 	"slices"
@@ -12,8 +13,8 @@ import (
 
 	"github.com/kovetskiy/mark/v17/attachment"
 	"github.com/kovetskiy/mark/v17/includes"
+	"github.com/kovetskiy/mark/v17/internal/logctx"
 	"github.com/kovetskiy/mark/v17/internal/mdsource"
-	"github.com/rs/zerolog/log"
 	"go.yaml.in/yaml/v3"
 )
 
@@ -403,6 +404,19 @@ func ExtractMacrosIn(
 	contents []byte,
 	templates *template.Template,
 ) ([]Macro, []byte, error) {
+	return ExtractMacrosInContext(context.Background(), root, base, includePath, contents, templates)
+}
+
+// ExtractMacrosInContext is ExtractMacrosIn logging to the zerolog logger ctx
+// carries; ExtractMacrosIn logs to the global one.
+func ExtractMacrosInContext(
+	ctx context.Context,
+	root attachment.Root,
+	base string,
+	includePath string,
+	contents []byte,
+	templates *template.Template,
+) ([]Macro, []byte, error) {
 	var extracted []Macro
 	remaining := contents
 
@@ -497,7 +511,7 @@ func ExtractMacrosIn(
 
 		m.Config = dir.Config
 
-		log.Trace().
+		logctx.From(ctx).Trace().
 			Interface("vardump", map[string]any{
 				"expr":     dir.Expr,
 				"template": dir.Template,

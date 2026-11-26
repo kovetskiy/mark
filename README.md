@@ -199,6 +199,7 @@ OPTIONS:
    --parents-from-path                            place each page under a page named after every directory between the file pattern's root and the file itself. An index.md or README.md is the page for its own directory rather than a page inside it. A document that names its own Parent is left alone. [$MARK_PARENTS_FROM_PATH]
    --parents-from-path-root string                the directory --parents-from-path measures from. Taken from the --files pattern when not given, which is everything before its first wildcard. [$MARK_PARENTS_FROM_PATH_ROOT]
    --title-append-generated-hash                  appends a short hash generated from the path of the page (space, parents, and title) to the title [$MARK_TITLE_APPEND_GENERATED_HASH]
+   --folder-title-append-generated-hash           appends a short hash generated from the path of the folder (space, parents, and title) to the title of every folder mark creates. A folder that already exists under its plain title is still used. [$MARK_FOLDER_TITLE_APPEND_GENERATED_HASH]
    --minor-edit                                   don't send notifications while updating Confluence page. [$MARK_MINOR_EDIT]
    --watch                                        let the publishing account watch the pages mark creates or edits, as Confluence makes it (default: true, which leaves Confluence's own behaviour alone); --watch=false stops it watching them, though pages it watched already stay watched. [$MARK_WATCH]
    --version-message string                       add a message to the page version, to explain the edit (default: "") [$MARK_VERSION_MESSAGE]
@@ -394,9 +395,11 @@ pages with the v2 API, which needs:
 | `read:content.property:confluence`, `write:content.property:confluence` | the content appearance and emoji title of a page |
 | `read:page:confluence`, `write:page:confluence` | `--track-pages` with `--manifest-page`; without it the mapping is a space property, whose creation a scoped token is refused |
 | `read:folder:confluence`, `write:folder:confluence`, `read:hierarchical-content:confluence` | `Folder` headers: reading and creating folders, and finding one among its parent's direct children |
+| `read:hierarchical-content:confluence` | listing what is beneath a page or a folder: `--on-orphan archive` and `delete` checking that a page has no children first, `Order` headers, and `mark page` |
+| `delete:page:confluence`, `delete:blogpost:confluence` | `--on-orphan delete` and `mark page delete`: moving a page to the trash |
 
 Uploading attachments, applying `Label` headers, `--preserve-comments`,
-`--on-orphan`, `--watch=false`, page restrictions, mentions, moving a page among its siblings and
+`--on-orphan archive`, `--watch=false`, page restrictions, mentions, moving a page among its siblings and
 finding a folder left at the space root have no v2 endpoint and stay on v1. To use those with a scoped token, grant the
 classic scopes (`read:confluence-content.all`, `write:confluence-content`,
 `read:confluence-user`) alongside the granular ones.

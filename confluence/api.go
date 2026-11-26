@@ -19,8 +19,8 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/kovetskiy/mark/v17/internal/logctx"
 	"github.com/rs/zerolog"
-	"github.com/rs/zerolog/log"
 )
 
 type User struct {
@@ -530,6 +530,8 @@ type form struct {
 
 type tracer struct {
 	prefix string
+	// log is where the dumps go; nil is the global logger.
+	log *zerolog.Logger
 }
 
 func (tracer *tracer) Printf(format string, args ...any) {
@@ -543,7 +545,11 @@ func (tracer *tracer) Printf(format string, args ...any) {
 // Headers are redacted after the bound, so that a large body is not split
 // into lines and joined again only for most of it to be thrown away.
 func (tracer *tracer) write(message string) {
-	log.Trace().Msg(tracer.prefix + " " + redactHeaders(message))
+	l := tracer.log
+	if l == nil {
+		l = logctx.From(context.Background())
+	}
+	l.Trace().Msg(tracer.prefix + " " + redactHeaders(message))
 }
 
 // traceDumpLimit is how much of one request or response dump is traced.
@@ -682,19 +688,12 @@ func NewAPI(baseURL string, opts Options) *API {
 	// newHTTPClient.
 	httpClient := newHTTPClient(opts.InsecureSkipVerify, opts.HTTPClient)
 
-	trace := func(prefix string) string {
-		if zerolog.GlobalLevel() == zerolog.TraceLevel {
-			return prefix
-		}
-		return ""
-	}
-
 	username, password := opts.Username, opts.Password
 
 	return &API{
-		v1:            newAPIClient(baseURL, "/rest/api", httpClient, username, password, trace("rest:")),
-		v2:            newAPIClient(baseURL, "/api/v2", httpClient, username, password, trace("rest-v2:")),
-		site:          newClient(baseURL, httpClient, username, password, trace("site:")),
+		v1:            newAPIClient(baseURL, "/rest/api", httpClient, username, password, "rest:"),
+		v2:            newAPIClient(baseURL, "/api/v2", httpClient, username, password, "rest-v2:"),
+		site:          newClient(baseURL, httpClient, username, password, "site:"),
 		baseURL:       baseURL,
 		username:      username,
 		gateway:       isGatewayURL(baseURL),
@@ -753,7 +752,7 @@ func (api *API) FindRootPage(ctx context.Context, space string) (*PageInfo, erro
 		return nil, fmt.Errorf("can't obtain home page of space %q: %w", space, err)
 	}
 
-	log.Warn().Msgf(
+	logctx.From(ctx).Warn().Msgf(
 		"space %q has no home page; creating missing parents under its first listed root page",
 		space,
 	)
@@ -1638,7 +1637,9 @@ func (api *API) UpdatePage(ctx context.Context, page *PageInfo, content string, 
 	// it: the next caller is told the page does not exist and tries to create
 	// one, which Confluence rejects as a duplicate title. Dropping the entry
 	// costs one lookup and keeps the cache from asserting something untrue.
-	api.forgetMissesForTitle(page.Title, page.Type)
+	// And the other way round: a lookup of the title the page had found it,
+	// and the title is now free for another page.
+	api.forgetStaleTitles(page.ID, page.Title, page.Type)
 
 	// v2 keeps properties on an endpoint of their own, so they are written
 	// only once the content is. The version is bumped first: the new one
@@ -1742,7 +1743,7 @@ func (api *API) retryConflictingUpdate(
 		)
 	}
 
-	log.Debug().Msgf(
+	logctx.From(ctx).Debug().Msgf(
 		"update of page %q (%s) as version %d conflicted; retrying as version %d",
 		page.Title, page.ID, attempted, current+1,
 	)
@@ -1887,7 +1888,7 @@ func (api *API) confirmVersion(ctx context.Context, page *PageInfo, version int6
 		return err
 	}
 
-	log.Warn().Err(err).Msgf(
+	logctx.From(ctx).Warn().Err(err).Msgf(
 		"page %q (%s) is at version %d, the one the write created, so it was applied; "+
 			"something in front of Confluence answered it instead",
 		page.Title, page.ID, version,
@@ -1896,29 +1897,58 @@ func (api *API) confirmVersion(ctx context.Context, page *PageInfo, version int6
 	return nil
 }
 
-// forgetMissesForTitle drops cached "no such page" answers for a title.
+// forgetStaleTitles drops what the cache says of a title page id has just
+// been given, and of the titles it no longer carries, and the pages kept
+// with it among their ancestors under another title.
 //
 // The cache is keyed by title, and a lookup of a title before any page wore it
 // records a miss. An update that moves a page onto that title outlives the fact
 // the miss was recorded from: the next caller is told the page does not exist,
-// tries to create one, and Confluence rejects the duplicate title.
+// tries to create one, and Confluence rejects the duplicate title. A lookup
+// that found the page under the title it had would go on finding it there, and
+// a document taking that title would be published over it rather than to a
+// page of its own.
 //
-// Only misses are dropped. A cached page filed under a title it no longer
-// carries is a different and older question, and one this is not the place to
-// answer. The space is not part of the match because PageInfo does not carry
-// one; over-invalidating costs a lookup, and under-invalidating costs a failed
+// The space is not part of the match because PageInfo does not carry one;
+// over-invalidating costs a lookup, and under-invalidating costs a failed
 // publish.
-func (api *API) forgetMissesForTitle(title string, pageType ContentType) {
+func (api *API) forgetStaleTitles(id, title string, pageType ContentType) {
 	api.lazyInit()
 	api.pageCacheMutex.Lock()
 	defer api.pageCacheMutex.Unlock()
 
+	// A page kept under a title that differs only in case shares the new
+	// title's key, and would go on carrying the old spelling.
+	if entry, ok := api.pageCacheByID[id]; ok && entry != nil && entry.Title != title {
+		delete(api.pageCacheByID, id)
+	}
+
 	suffix := pageCacheKey("", title, pageType)
 	for key, entry := range api.pageCache {
-		if entry == nil && strings.HasSuffix(key, suffix) {
+		switch {
+		case entry == nil:
+			if strings.HasSuffix(key, suffix) {
+				delete(api.pageCache, key)
+			}
+		case entry.ID == id && entry.Title != title:
 			delete(api.pageCache, key)
+		case hasStaleAncestor(entry, id, title):
+			delete(api.pageCache, key)
+			delete(api.pageCacheByID, entry.ID)
 		}
 	}
+}
+
+// hasStaleAncestor reports whether pg is kept with page id among its
+// ancestors under a title other than title.
+func hasStaleAncestor(pg *PageInfo, id, title string) bool {
+	for _, ancestor := range pg.Ancestors {
+		if ancestor.ID == id {
+			return ancestor.Title != title
+		}
+	}
+
+	return false
 }
 
 func (api *API) AddPageLabels(ctx context.Context, page *PageInfo, newLabels []string) (*LabelInfo, error) {
@@ -2181,7 +2211,7 @@ func (api *API) Cloud(ctx context.Context) (bool, error) {
 
 	api.isCloudFlag, err = identifyCloud(user)
 	if err != nil {
-		log.Warn().Err(err).Msg("assuming Confluence Server or Data Center")
+		logctx.From(ctx).Warn().Err(err).Msg("assuming Confluence Server or Data Center")
 	}
 
 	return api.isCloudFlag, nil
@@ -2496,7 +2526,7 @@ func (api *API) eachDirectChild(
 	visit func(id string, typ ContentType, title string) (stop bool),
 ) error {
 	if isCloud, err := api.Cloud(ctx); err == nil && !isCloud {
-		log.Debug().Msgf(
+		logctx.From(ctx).Debug().Msgf(
 			"not listing the children of %s %s: Confluence Cloud was ruled out",
 			parentType, parentID,
 		)
@@ -2509,15 +2539,27 @@ func (api *API) eachDirectChild(
 		collection = "folders"
 	}
 
+	return api.walkDirectChildren(ctx, collection, parentID, operation, true, visit)
+}
+
+// walkDirectChildren reads the v2 direct-children listing of parentID in
+// collection ("pages" or "folders"), in the order of the tree: the listing's
+// default order is not documented to be that one.
+func (api *API) walkDirectChildren(
+	ctx context.Context,
+	collection, parentID, operation string,
+	notFoundEmpty bool,
+	visit func(id string, typ ContentType, title string) (stop bool),
+) error {
 	type child struct {
 		ID    string      `json:"id"`
 		Type  ContentType `json:"type"`
 		Title string      `json:"title"`
 	}
 
-	return eachV2(
+	return walkV2(
 		ctx, api, []string{collection, parentID, "direct-children"},
-		url.Values{"limit": {"100"}}, operation,
+		url.Values{"limit": {"100"}, "sort": {"child-position"}}, operation, notFoundEmpty,
 		func(c child) bool { return visit(c.ID, c.Type, c.Title) },
 	)
 }
@@ -2737,7 +2779,14 @@ func (api *API) CreatePageWithFolderParent(
 // Position is not requested explicitly: it exists as an extension field but is
 // absent whenever a branch has never been ordered by hand, and the sequence is
 // the part that matters here.
+//
+// Through the gateway this is the v2 direct-children listing, pages only, as a
+// scoped token is refused v1's.
 func (api *API) GetChildPages(ctx context.Context, parentID string) ([]PageInfo, error) {
+	if api.gateway {
+		return api.childPagesV2(ctx, parentID)
+	}
+
 	return listV1[PageInfo](
 		ctx, api, []string{"content", parentID, "child", "page"},
 		nil, 100, "list child pages of "+parentID, false, nil,
@@ -2779,6 +2828,10 @@ func (api *API) HasChildFolders(ctx context.Context, parentID string) (bool, err
 // make. A tool that removes pages because a file left a repository should leave
 // the last word to a person.
 func (api *API) DeletePage(ctx context.Context, contentID string) error {
+	if api.gateway {
+		return api.deletePageV2(ctx, contentID)
+	}
+
 	_, err := api.v1.do(ctx, nil, http.MethodDelete, []string{"content", contentID}, nil, nil, &struct{}{})
 	// 204 is the documented answer, though some versions send 200, and a page
 	// already gone is the outcome that was wanted anyway.
@@ -2865,7 +2918,7 @@ func (api *API) MoveContentAppend(ctx context.Context, contentID, targetID strin
 		return nil
 	}
 
-	log.Debug().Err(err).Msgf(
+	logctx.From(ctx).Debug().Err(err).Msgf(
 		"this Confluence moved neither through the content move endpoint nor "+
 			"movepage.action; reparenting %s under %s with an update instead",
 		api.describeContent(contentID), targetID,
@@ -3214,7 +3267,7 @@ func (api *API) reparentContent(ctx context.Context, contentID, parentID string)
 			return err
 		}
 
-		log.Debug().Msgf(
+		logctx.From(ctx).Debug().Msgf(
 			"move of page %q (%s) as version %d conflicted; retrying as version %d",
 			page.Title, page.ID, attempted, page.Version.Number+1,
 		)

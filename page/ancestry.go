@@ -4,12 +4,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"sync"
 
 	"github.com/kovetskiy/mark/v17/confluence"
+	"github.com/kovetskiy/mark/v17/internal/logctx"
+	"github.com/kovetskiy/mark/v17/metadata"
 	"github.com/kovetskiy/mark/v17/report"
-	"github.com/rs/zerolog/log"
 )
 
 // ParentInfo represents either a page or folder parent
@@ -70,8 +72,8 @@ func (c *FolderCache) lookup(space, contextID, title string) (string, bool) {
 	return id, ok
 }
 
-// resolveFolder finds the folder a title names, and may move one that an
-// earlier sync left at the space root.
+// resolveFolder finds the folder a title names, and with fromRoot may move one
+// that an earlier sync left at the space root.
 //
 // It takes dryRun because that move is a write, and it happens while the
 // ancestry is still being worked out -- long before the guard that decides
@@ -80,7 +82,7 @@ func (c *FolderCache) lookup(space, contextID, title string) (string, bool) {
 func resolveFolder(
 	ctx context.Context,
 	api *confluence.API,
-	dryRun bool,
+	dryRun, fromRoot bool,
 	space, title, underID string,
 	anchorPageID *string,
 ) (*confluence.FolderInfo, error) {
@@ -103,7 +105,7 @@ func resolveFolder(
 	}
 
 	// Top-level wiki folder may exist at space root from an earlier sync; move it under MARK_PARENTS.
-	if underAnchor {
+	if underAnchor && fromRoot {
 		folder, err = api.FindRootFolder(ctx, space, title)
 		if err != nil || folder == nil {
 			return folder, err
@@ -113,7 +115,7 @@ func resolveFolder(
 				// Reported rather than done, and the folder is given back as it
 				// actually is: saying where it would end up is the dry run's
 				// job, and moving it there is not.
-				log.Info().Msgf(
+				logctx.From(ctx).Info().Msgf(
 					"folder %q would be moved under the page named by --parents", title,
 				)
 
@@ -189,6 +191,11 @@ type AncestryOptions struct {
 	// Warnings collects what is worth saying about where the document's page
 	// was found; nil only logs it.
 	Warnings *report.Warnings
+	// FolderTitleAppendGeneratedHash creates each folder under its title with
+	// a short hash of where it sits, since Confluence holds folder titles
+	// unique across a space. A folder already there under its plain title is
+	// still used, and kept as it is.
+	FolderTitleAppendGeneratedHash bool
 }
 
 // ParentPathKey names a parent by the chain of titles leading to it.
@@ -204,7 +211,8 @@ func ParentPathKey(chain []string) string {
 
 // folderPathKey names a folder by the chain of titles leading to it, under the
 // anchor it hangs from. The anchor is part of the key because the same chain of
-// titles under a different anchor is a different folder.
+// titles under a different anchor is a different folder. The titles are those
+// FolderTitles creates, since a hash tells apart folders one anchor holds.
 func folderPathKey(anchorPageID *string, folders []string, upto int) string {
 	anchor := ""
 	if anchorPageID != nil {
@@ -213,8 +221,68 @@ func folderPathKey(anchorPageID *string, folders []string, upto int) string {
 	return anchor + "\x00" + strings.Join(folders[:upto+1], "\x00")
 }
 
+// FolderTitles are the titles the folders are created under, below the
+// parent pages titled parents in space. With hash each is its title with a
+// short hash of the space and the parent pages and folders above it, taken
+// as metadata.CaseFoldedHashTitle takes a page's: Confluence takes "Guides"
+// and "guides" for one folder, so they must hash alike or the second
+// spelling makes another.
+//
+// Exported so that a title can be checked before anything is created.
+func FolderTitles(space string, parents, folders []string, hash bool) []string {
+	titles := slices.Clone(folders)
+	if hash {
+		for i, title := range folders {
+			titles[i] = metadata.CaseFoldedHashTitle(slices.Concat(parents, folders[:i]), space, title)
+		}
+	}
+
+	return titles
+}
+
+// folderUnderID is the ID a folder is looked for and created under: the folder
+// before it, or else the anchor page; "" for the space root.
+func folderUnderID(parent *ParentInfo, anchorPageID *string) string {
+	switch {
+	case parent != nil:
+		return parent.ID
+	case anchorPageID != nil:
+		return *anchorPageID
+	default:
+		return ""
+	}
+}
+
+// findFolder is the folder the run cached under created, or else the one found
+// under that title, or else under title itself. Cached by created, as two
+// parent chains ending at one page hash a folder beneath it differently. Only
+// the plain title is looked for at the space root: no hashed folder was ever
+// created there.
+func findFolder(
+	ctx context.Context,
+	api *confluence.API,
+	options AncestryOptions,
+	space, title, created, underID string,
+	anchorPageID *string,
+) (*confluence.FolderInfo, error) {
+	if id, ok := options.FolderCache.lookup(space, underID, created); ok {
+		return api.GetFolderByID(ctx, id)
+	}
+
+	if created != title {
+		folder, err := resolveFolder(ctx, api, options.DryRun, false, space, created, underID, anchorPageID)
+		if err != nil || folder != nil {
+			return folder, err
+		}
+	}
+
+	return resolveFolder(ctx, api, options.DryRun, true, space, title, underID, anchorPageID)
+}
+
 // EnsureFolderAncestry creates the folder hierarchy and returns the final parent for page creation.
 // Top-level folders are created under anchorPageID (MARK_PARENTS page); nested folders nest under prior folders.
+// With options.FolderTitleAppendGeneratedHash, the hash covers the space and
+// the folders above.
 //
 // It reads options.DryRun, FolderCache and Folders.
 func EnsureFolderAncestry(
@@ -222,6 +290,19 @@ func EnsureFolderAncestry(
 	api *confluence.API,
 	space string,
 	folders []string,
+	anchorPageID *string,
+	options AncestryOptions,
+) (*ParentInfo, error) {
+	return ensureFolderAncestry(ctx, api, space, nil, folders, anchorPageID, options)
+}
+
+// ensureFolderAncestry is EnsureFolderAncestry for folders that hang from the
+// parent pages titled parents.
+func ensureFolderAncestry(
+	ctx context.Context,
+	api *confluence.API,
+	space string,
+	parents, folders []string,
 	anchorPageID *string,
 	options AncestryOptions,
 ) (*ParentInfo, error) {
@@ -235,26 +316,16 @@ func EnsureFolderAncestry(
 		return nil, fmt.Errorf("failed to get space ID for %q: %w", space, err)
 	}
 
+	created := FolderTitles(space, parents, folders, options.FolderTitleAppendGeneratedHash)
+
 	var parent *ParentInfo
 	rest := folders
 
 	// Find existing folders from the beginning of the hierarchy
 	for i, title := range folders {
-		var folder *confluence.FolderInfo
-		var err error
+		underID := folderUnderID(parent, anchorPageID)
 
-		underID := ""
-		if parent != nil {
-			underID = parent.ID
-		} else if anchorPageID != nil {
-			underID = *anchorPageID
-		}
-
-		if id, ok := options.FolderCache.lookup(space, underID, title); ok {
-			folder, err = api.GetFolderByID(ctx, id)
-		} else {
-			folder, err = resolveFolder(ctx, api, options.DryRun, space, title, underID, anchorPageID)
-		}
+		folder, err := findFolder(ctx, api, options, space, title, created[i], underID, anchorPageID)
 		if err != nil {
 			return nil, fmt.Errorf("error finding folder with title %q: %w", title, err)
 		}
@@ -264,7 +335,7 @@ func EnsureFolderAncestry(
 			// Confluence since the last run, in which case the folder recorded
 			// for this position is still the right one and creating another
 			// would split the hierarchy in two.
-			key := folderPathKey(anchorPageID, folders, i)
+			key := folderPathKey(anchorPageID, created, i)
 			id, ok, lookupErr := options.Folders.LookupFolder(ctx, space, key)
 			if lookupErr != nil {
 				return nil, fmt.Errorf("unable to check whether folder %q was renamed: %w", title, lookupErr)
@@ -303,7 +374,7 @@ func EnsureFolderAncestry(
 						"folder %q was recorded as %s, which is not in space %q; it is left alone", title, id, space)
 					folder = nil
 				default:
-					log.Info().Msgf(
+					logctx.From(ctx).Info().Msgf(
 						"folder %q was renamed to %q; using it rather than creating another",
 						title, folder.Title,
 					)
@@ -316,13 +387,13 @@ func EnsureFolderAncestry(
 		}
 
 		if options.Folders != nil {
-			if err := options.Folders.RecordFolder(ctx, space, folderPathKey(anchorPageID, folders, i), folder.ID); err != nil {
+			if err := options.Folders.RecordFolder(ctx, space, folderPathKey(anchorPageID, created, i), folder.ID); err != nil {
 				return nil, err
 			}
 		}
 
-		options.FolderCache.store(space, underID, title, folder.ID)
-		log.Debug().Msgf("folder %q exists: %s", title, folder.ID)
+		options.FolderCache.store(space, underID, created[i], folder.ID)
+		logctx.From(ctx).Debug().Msgf("folder %q exists: %s", title, folder.ID)
 
 		rest = folders[i:]
 		parent = &ParentInfo{
@@ -340,19 +411,21 @@ func EnsureFolderAncestry(
 		return parent, nil
 	}
 
-	log.Debug().Msgf(
+	// rest is the tail of folders that does not exist yet, so its offset
+	// within folders is what makes a recorded key match on the next run.
+	firstNew := len(folders) - len(rest)
+
+	logctx.From(ctx).Debug().Msgf(
 		"folders to be created: %s",
-		strings.Join(rest, ` > `),
+		strings.Join(created[firstNew:], ` > `),
 	)
 
 	if !options.DryRun {
-		// rest is the tail of folders that does not exist yet, so its offset
-		// within folders is what makes a recorded key match on the next run.
-		firstNew := len(folders) - len(rest)
 		for offset, title := range rest {
-			var folder *confluence.FolderInfo
-			var err error
+			underID := folderUnderID(parent, anchorPageID)
+			name := created[firstNew+offset]
 
+			underKind := confluence.ContentFolder
 			if parent == nil {
 				if anchorPageID == nil {
 					return nil, fmt.Errorf(
@@ -360,20 +433,12 @@ func EnsureFolderAncestry(
 						title,
 					)
 				}
-				folder, err = api.CreateFolder(ctx, spaceID, title, anchorPageID, confluence.ContentPage)
-			} else {
-				pid := parent.ID
-				folder, err = api.CreateFolder(ctx, spaceID, title, &pid, confluence.ContentFolder)
+				underKind = confluence.ContentPage
 			}
+
+			folder, err := api.CreateFolder(ctx, spaceID, name, &underID, underKind)
 			if err != nil {
 				createErr := err
-
-				underID := ""
-				if parent != nil {
-					underID = parent.ID
-				} else if anchorPageID != nil {
-					underID = *anchorPageID
-				}
 
 				// Another file in the same run may have created this folder
 				// already. Asked by looking for the folder rather than by
@@ -383,35 +448,30 @@ func EnsureFolderAncestry(
 				// hit into a hard failure. A create that failed for a real
 				// reason leaves nothing to find, and the original error is what
 				// gets reported.
-				if id, ok := options.FolderCache.lookup(space, underID, title); ok {
-					folder, err = api.GetFolderByID(ctx, id)
-				} else {
-					folder, err = resolveFolder(ctx, api, options.DryRun, space, title, underID, anchorPageID)
-				}
+				folder, err = findFolder(ctx, api, options, space, title, name, underID, anchorPageID)
 				if err != nil || folder == nil {
+					hint := ""
+					if !options.FolderTitleAppendGeneratedHash {
+						hint = " (if another folder in the space has this title, rename one of them, or use --folder-title-append-generated-hash)"
+					}
+
 					return nil, fmt.Errorf(
-						"error creating folder with title %q: %w",
-						title,
+						"error creating folder with title %q%s: %w",
+						name, hint,
 						createErr,
 					)
 				}
 
-				log.Info().Msgf(
+				logctx.From(ctx).Info().Msgf(
 					"folder %q already exists as %s; using it rather than creating another",
-					title, folder.ID,
+					name, folder.ID,
 				)
 			}
 
-			underID := ""
-			if parent != nil {
-				underID = parent.ID
-			} else if anchorPageID != nil {
-				underID = *anchorPageID
-			}
-			options.FolderCache.store(space, underID, title, folder.ID)
+			options.FolderCache.store(space, underID, name, folder.ID)
 
 			if options.Folders != nil {
-				key := folderPathKey(anchorPageID, folders, firstNew+offset)
+				key := folderPathKey(anchorPageID, created, firstNew+offset)
 				if err := options.Folders.RecordFolder(ctx, space, key, folder.ID); err != nil {
 					return nil, err
 				}
@@ -424,19 +484,16 @@ func EnsureFolderAncestry(
 			}
 		}
 	} else {
-		log.Info().Msgf(
+		logctx.From(ctx).Info().Msgf(
 			"skipping folder creation due to dry-run mode, need to create %d folders: %v",
 			len(rest),
-			rest,
+			created[firstNew:],
 		)
 		// For dry-run, simulate the final parent
-		if len(rest) > 0 {
-			finalTitle := rest[len(rest)-1]
-			parent = &ParentInfo{
-				ID:    dryRunFolderID,
-				Title: finalTitle,
-				Type:  confluence.ContentFolder,
-			}
+		parent = &ParentInfo{
+			ID:    dryRunFolderID,
+			Title: created[len(created)-1],
+			Type:  confluence.ContentFolder,
 		}
 	}
 
@@ -471,7 +528,7 @@ func EnsureMixedAncestry(
 		// creates the rest of the chain and new folders beneath it, so the
 		// folder parent is one that does not exist yet.
 		if options.DryRun && len(folders) > 0 && !strings.EqualFold(anchor.Title, pages[len(pages)-1]) {
-			log.Info().Msgf(
+			logctx.From(ctx).Info().Msgf(
 				"skipping folder creation due to dry-run mode: MARK_PARENTS chain %q is not there yet, so neither are folders %v",
 				strings.Join(pages, " > "), folders,
 			)
@@ -479,7 +536,7 @@ func EnsureMixedAncestry(
 			return &confluence.PageInfo{
 				ID:    dryRunFolderID,
 				Type:  "folder-parent",
-				Title: folders[len(folders)-1],
+				Title: FolderTitles(space, pages, folders, options.FolderTitleAppendGeneratedHash)[len(folders)-1],
 			}, nil
 		}
 	}
@@ -491,7 +548,7 @@ func EnsureMixedAncestry(
 		return EnsureAncestry(ctx, api, space, pages, options)
 	}
 
-	folderParent, err := EnsureFolderAncestry(ctx, api, space, folders, anchorPageID, options)
+	folderParent, err := ensureFolderAncestry(ctx, api, space, pages, folders, anchorPageID, options)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create folder hierarchy: %w", err)
 	}
@@ -533,7 +590,7 @@ func EnsureAncestry(
 			break
 		}
 
-		log.Debug().Msgf("parent page %q exists: %s", title, page.Links.Full)
+		logctx.From(ctx).Debug().Msgf("parent page %q exists: %s", title, page.Links.Full)
 
 		if options.Parents != nil {
 			if err := options.Parents.RecordParent(ctx, space, ParentPathKey(ancestry[:i+1]), page.ID); err != nil {
@@ -559,7 +616,7 @@ func EnsureAncestry(
 		return parent, nil
 	}
 
-	log.Debug().
+	logctx.From(ctx).Debug().
 		Msgf(
 			"empty pages under %q to be created: %s",
 			parent.Title,
@@ -590,7 +647,7 @@ func EnsureAncestry(
 			parent = page
 		}
 	} else {
-		log.Info().
+		logctx.From(ctx).Info().
 			Msgf(
 				"skipping page creation due to enabled dry-run mode, "+
 					"need to create %d pages: %v",
@@ -635,7 +692,7 @@ func ValidateAncestry(
 		// which is recoverable, where refusing outright was not.
 		homepage, err := api.FindHomePage(ctx, space)
 		if err != nil {
-			log.Debug().Err(err).Msgf(
+			logctx.From(ctx).Debug().Err(err).Msgf(
 				"no home page for space %q; cannot tell whether %q is it",
 				space, page.Title,
 			)
@@ -644,7 +701,7 @@ func ValidateAncestry(
 		}
 
 		if homepage != nil && page.ID == homepage.ID {
-			log.Debug().Msgf("page is homepage for space %q", space)
+			logctx.From(ctx).Debug().Msgf("page is homepage for space %q", space)
 			isHomepage = true
 		} else {
 			// The page sits at the root of its space and is not the homepage,

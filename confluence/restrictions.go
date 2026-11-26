@@ -9,7 +9,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/rs/zerolog/log"
+	"github.com/kovetskiy/mark/v17/internal/logctx"
 )
 
 // The operations a page can be restricted on.
@@ -405,7 +405,7 @@ func (api *API) getPageRestrictions(ctx context.Context, pageID string) (restric
 func (api *API) updatesRestrictedTo(ctx context.Context, pageID, user string) bool {
 	current, err := api.getPageRestrictions(ctx, pageID)
 	if err != nil {
-		log.Debug().Err(err).Msgf("unable to read the update restriction of page %s; setting it regardless", pageID)
+		logctx.From(ctx).Debug().Err(err).Msgf("unable to read the update restriction of page %s; setting it regardless", pageID)
 		return false
 	}
 

@@ -8,9 +8,9 @@ import (
 	"strings"
 
 	"github.com/kovetskiy/mark/v17/confluence"
+	"github.com/kovetskiy/mark/v17/internal/logctx"
 	"github.com/kovetskiy/mark/v17/metadata"
 	"github.com/kovetskiy/mark/v17/report"
-	"github.com/rs/zerolog/log"
 )
 
 // ResolvePage finds the page meta describes and its parent, creating the
@@ -94,7 +94,7 @@ func resolvePage(
 	}
 
 	if meta.Type == "blogpost" {
-		log.Info().
+		logctx.From(ctx).Info().
 			Msgf(
 				"blog post will be stored as: %s",
 				meta.Title,
@@ -109,7 +109,7 @@ func resolvePage(
 	// documents whose Parent headers never needed a home page at all.
 	homepage, err := api.FindHomePage(ctx, meta.Space)
 	if err != nil {
-		log.Debug().Err(err).Msgf(
+		logctx.From(ctx).Debug().Err(err).Msgf(
 			"no home page for space %q; publishing without comparing against one",
 			meta.Space,
 		)
@@ -138,7 +138,7 @@ func resolvePage(
 		// to meta.Folders would write into whatever spare capacity it has.
 		fullPath := slices.Concat(meta.Folders, meta.Parents, []string{meta.Title})
 
-		log.Debug().
+		logctx.From(ctx).Debug().
 			Msgf(
 				"resolving mixed hierarchy path: %s",
 				strings.Join(fullPath, ` > `),
@@ -185,7 +185,7 @@ func resolvePage(
 				// page currently sits under. Refusing the publish leaves the two
 				// disagreeing and does nothing about it, so the page is moved
 				// where the headers ask once the new parent is resolved.
-				log.Info().Msgf(
+				logctx.From(ctx).Info().Msgf(
 					"page %q is not where its headers say; it will be moved: %s",
 					meta.Title, err,
 				)
@@ -193,7 +193,7 @@ func resolvePage(
 			}
 
 			if existing == nil {
-				log.Warn().
+				logctx.From(ctx).Warn().
 					Msgf(
 						"page %q is not found ",
 						// Index ancestry, not meta.Parents: the home title is
@@ -205,7 +205,7 @@ func resolvePage(
 
 			path := slices.Concat(meta.Parents, []string{meta.Title})
 
-			log.Debug().
+			logctx.From(ctx).Debug().
 				Msgf(
 					"resolving page path: ??? > %s",
 					strings.Join(path, ` > `),
@@ -252,13 +252,13 @@ func resolvePage(
 	}
 
 	if len(displayPath) > 0 {
-		log.Info().Msgf(
+		logctx.From(ctx).Info().Msgf(
 			"page will be stored under path: %s > %s",
 			strings.Join(displayPath, ` > `),
 			meta.Title,
 		)
 	} else {
-		log.Info().Msgf(
+		logctx.From(ctx).Info().Msgf(
 			"page will be stored at space root: %s",
 			meta.Title,
 		)

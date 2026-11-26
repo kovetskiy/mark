@@ -16,11 +16,31 @@ mixed in the same document to create complex hierarchies.
 > [!NOTE]
 > Folder support is currently only available on Confluence Cloud and is not supported in Confluence Server / Data Center.
 
+A space holds one folder of a title, wherever it sits, so a `Guides` folder under
+one parent keeps Mark from creating a `Guides` folder under any other.
+`--folder-title-append-generated-hash` creates every folder under its title with
+a short hash of where it sits, as `--title-append-generated-hash` does for pages:
+`Guides - 3f9a1c2e`. The hash is taken over the space, the parents and the
+folders above it, and the folder's own title, the way a page's is (see
+[What the hash is taken over](#what-the-hash-is-taken-over)), so `Guides` and
+`guides` declared in two documents are one folder. The parents are those a
+document declares, so two documents whose chains differ but end at one page
+get a folder each. A folder already there under its plain title is still used
+and keeps its title, so turning the flag on leaves an existing tree as it is.
+
+A folder whose parents change is a folder of another hash: Mark creates it
+under its new title and moves the pages there, and the old folder is left
+behind, with `--track-pages` too. Folders are never orphans, so delete it by
+hand.
+
 `--parents` puts every page of the run under the pages it names, ahead of the
 parents a document declares itself: with `--parents "Engineering/Handbook"`, a
 document whose `Parent` is `Setup` ends up under Engineering > Handbook >
 Setup. The titles are separated by `/`, and `--parents-delimiter` sets another
-separator for titles that contain a slash.
+separator for titles that contain a slash. Each title is trimmed of the spaces
+around it, as a `Parent` header is, so `--parents "Engineering / Handbook"` names
+the same two pages, and an empty one, as in `Engineering//Handbook`, is
+skipped.
 
 ## Parents from the directory a file is in
 
@@ -75,8 +95,9 @@ own parents. Deriving parents from the path makes that likely rather than
 unlucky -- every directory tends to hold a README, and several will want an
 "Overview".
 
-Mark refuses before publishing the second one, comparing titles the way
-Confluence does, without regard to case:
+Mark refuses before publishing the second one, with or without
+`--parents-from-path`, comparing titles the way Confluence does, without regard
+to case:
 
 ```text
 docs/api/overview.md already publishes "Overview" in space "DOCS", and a space
@@ -91,6 +112,58 @@ different directories. The pages standing for directories are hashed the same
 way, whether a README stands for them or not, so `docs/api/guides` and
 `docs/sdk/guides` are two pages, and a directory's README is the very page the
 documents beside it sit under.
+
+Which of the two is the second depends on what mark knows of the page. With
+`--track-pages`, a page of that title recorded for one of the run's documents
+stays with that document as long as it declares the title: it publishes to its
+page, and a document that newly declares the title is the one refused, whichever
+of them the run comes to first. Without `--track-pages`, or when the page is
+recorded for no document of the run, the first document to declare the title
+publishes and the next is refused.
+
+A page and a blog post of one title are two pieces of content, and a document
+with `Synchronized: false` publishes nothing, so neither is refused. Without
+`--parents-from-path` the hash is taken over the parents the documents declare,
+and two documents declaring the same ones need different titles. The refusal
+suggests `--title-append-generated-hash` only where it would tell the two
+documents apart: not when it is already on, nor for two under the same parents.
+
+### What the hash is taken over
+
+The hash takes titles and the space key the way Confluence does, without regard
+to case, so `Parent: Handbook` and `Parent: handbook`, or `Space: DOCS` and
+`Space: docs`, give a page the same hash; the title keeps the case it was
+written in. It is taken over the trimmed title, so with `--title-from-filename`
+a file named `guide-.md` is published as `Guide - <hash>`, with the hash of
+`guide.md`, and with `--parents-from-path` a directory named `guide-` is too.
+
+> **Upgrading from v17.3.1 or earlier:** the hash used to be taken over the
+> parents, space key and title as written, case included. It now gives a
+> different hash to nearly every page -- any whose title, parents or space key
+> has an upper-case letter in it -- so the next run publishes each page under a
+> new title: a document titled `Doc` under `Parent` in `DOCS`, published as
+> `Doc - 1f761d56`, becomes `Doc - b00f6d06`. What happens to the pages
+> already there depends on `--track-pages`:
+>
+> * **Without it**, mark finds no page of the new title and creates one beside
+>   the old one, under the same parent. The old page is left as it was, with its
+>   history, comments and attachments, and nothing removes it: delete it by
+>   hand. With `--parents-from-path`, every directory's page is created again
+>   under its new title too, so the whole tree is published a second time
+>   beside the first.
+> * **With it**, each document's page is renamed in place: it keeps its id,
+>   history, comments and attachments, and links to it keep working. With
+>   `--parents-from-path`, so is every directory's page, whether its own
+>   `index.md` or `README.md` publishes it or not (see [Directories are
+>   remembered too](#directories-are-remembered-too)). Where another page
+>   already carries a directory's new title, the directory keeps its page
+>   under the old title, with a warning, until that title is free.
+>
+> `--dry-run` shows the new titles, and with `--track-pages` each rename,
+> before anything changes. A `--parents` title written with spaces around a
+> delimiter, and a title taken from a file or directory name that starts or
+> ends in `-` or `_`, change as well, being trimmed now before they are hashed
+> or looked up.
 
 ### Directories are remembered too
 
@@ -107,17 +180,25 @@ children is always left alone. So a directory and everything in it takes two
 runs to disappear: the documents first, then the page that held them.
 
 Only a page Mark created is remembered. A page that was already there under a
-directory's title is used as the directory's page, but Mark writes nothing to
-it and never treats it as an orphan, so it stays when the directory's documents
-go. That holds for a directory page Mark created while `--track-pages` was off,
-or in a run that published none of the directory's documents, too: nothing
-recorded it. A directory's page that is already in the page manifest stays
-remembered.
+directory's title is used as the directory's page, but Mark never writes to it
+or treats it as an orphan, so it stays when the directory's documents go. That
+holds for a directory page Mark created while `--track-pages` was off, or in a
+run that published none of the directory's documents, too: nothing recorded it.
+A directory's page that is already in the page manifest stays remembered.
 
 A directory holding its own `index.md` or `README.md` is not remembered this
 way, that document's own entry having the page already. Directories are
 remembered by their path as the run names it, so as with the files themselves,
 the working directory is part of what the manifest matches on.
+
+A remembered directory whose title changes keeps its page, renamed, as a
+document's page is: through its `.pages` file, or with
+`--title-append-generated-hash` through the `--parents` above it, in which case
+the page is also moved under the new parent, made first if need be. A page
+renamed in Confluence while the directory's title stays the same is followed
+instead, and keeps the title it was given there. When another page already
+carries the new title, the directory stays on the page it has, under its old
+title, with a warning, and the rename is tried again on the next run.
 
 ### Turning it on for pages that already exist
 
@@ -154,14 +235,44 @@ file, no commit. The record lives in Confluence.
 | file renamed | content fingerprint, matched against paths that stopped appearing |
 | parent page renamed | the page the declared parent chain resolved to last run, whatever it is called now |
 | parent and child retitled in one run | the run's own document publishing the parent's new title, and the page it published last time, before that document's turn to retitle it |
+| title given up by one document and taken by another in one run | the title still finds the first document's page, so that document is published first and retitles it, and the other gets a page of its own |
+| title of a recorded page declared by a second document | the page is recorded for a document of the run that still declares the title, so that document is published first and the second is refused |
 | folder renamed in Confluence | the recorded folder ID, reused rather than duplicated |
 | source file deleted | a recorded path absent from a run whose pattern covered it |
-| two files claiming one page | the reverse index, when the second one is recorded |
+| two files claiming one page | the reverse index, when the second one is recorded; a run of both is refused their title |
 | document changed `Space` | the same path recorded against another space |
 
 A retitle is written even under `--changes-only`. The content fingerprint would
 otherwise match, the update would be skipped, and the page would keep its old
-title indefinitely.
+title indefinitely. That holds for a title changed only in case, which the
+title lookup still finds the page by, with or without `--track-pages`.
+
+A document taking a title another document of the run gives up waits for that
+one: the document giving the title up is published ahead of its turn, and the
+report lists it there, before the one that waited. If it fails, or
+`--no-overwrite` leaves its page alone, the page keeps the title and the
+document taking it is refused rather than published over that page. Two
+documents that swap titles each publish to the page their new title finds. A
+dry run previews the documents in the same order, and counts a title as given
+up once it has previewed the document retitling its page.
+
+A document that keeps its title is published ahead of its turn in the same way,
+when another document of the run declares that title before it: the page stays
+with the document it is recorded for, and the other one is refused as a second
+document of the title. A file renamed since counts as the recorded document when
+its content is unchanged. One renamed and edited at once does not, even with
+`Tracking.RenameSimilarity` (see
+[Using mark from Go](library.md#renamed-and-edited-at-once)): that compares
+only documents whose title finds no page, and this one's finds the page it had,
+so whichever document declaring the title comes first publishes to it. A
+recorded file that is gone from the run, or that gives the title up, holds
+nothing, and the title goes to the document taking it.
+
+A page can be recorded for two documents, when two runs each published one of
+them under its title. While both are in a run, every document of it declaring
+that title is refused it, as nothing says which of the two the page is. Removing the document
+the page is not from one run, with the pattern that published it still covering
+its path, makes the record forget it; it can come back under another title.
 
 Renaming a file is the awkward case: the path is the key, so a rename is a miss,
 and when the title comes from the filename the title lookup misses too. What
@@ -342,6 +453,13 @@ mark publish --track-pages --on-orphan delete --files "docs/**/*.md"
 
 `delete` means the trash, which Confluence keeps recoverable. Mark never purges
 a page: that second step is left to a person.
+
+With a scoped API token, through the `api.atlassian.com` gateway, the page is
+trashed and its children listed through the v2 API: grant
+`delete:page:confluence` (and `delete:blogpost:confluence` for blog posts) and
+`read:hierarchical-content:confluence`, which `archive` needs as well for the
+check that a page has no children. See
+[Scoped API tokens](../README.md#scoped-api-tokens).
 
 A page somebody has already deleted or purged by hand counts as dealt with
 under `archive` and `delete`: Mark says it is already gone and stops tracking

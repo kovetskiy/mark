@@ -352,6 +352,17 @@ for a program that publishes as it renders. `Publisher.Publish` takes a file,
 and `Publisher.PublishDocument` a `Document`. A `Publisher` keeps no page
 manifest and writes no report, so a document's `Key` is not used: its page is
 found by its title in its space, as a file's is, and placed under its parents.
+A second file or document of a title the `Publisher` has already published in
+that space is refused, as a run refuses it (see
+[One page per title](page-tree.md#one-page-per-title)). It keeps no record of
+which document a page was published from, so the first to name a title has it;
+`Run` with `Tracking.TrackPages` leaves a recorded page to the file, or the
+`Document` of the `Key`, it is recorded for. The same file can be
+published again, under its title or a new one, which leaves the earlier title
+to another file. A file that fails before it reaches a page holds the title
+it had before, not the one it failed on. A file renamed in between is a
+second file of its title, and is refused until a new `Publisher` is made, as
+one is for each batch.
 Its relative links are looked for in its `FS`, or on disk around `Path`.
 
 A `Publisher` and the `confluence.API` it is given are meant for one batch.
@@ -359,6 +370,59 @@ The API remembers the pages it has looked up by title, a title that named no
 page included, for as long as it lives, and does not notice one that something
 else creates, retitles or removes in the meantime. A program that runs for long
 makes a new API and a new `Publisher` for each batch.
+
+## Logging
+
+mark logs to the zerolog logger in the context it is given, so a run, a
+`Publisher` call, an export or a `confluence.API` request logs wherever that
+logger writes, at its level:
+
+```go
+logger := zerolog.New(os.Stderr).Level(zerolog.InfoLevel)
+err := mark.Run(logger.WithContext(ctx), config)
+```
+
+With no logger in the context, mark logs to zerolog's global logger, `log.Logger`
+from `github.com/rs/zerolog/log`. zerolog's global level is `trace` until one is
+set, so a program that sets none gets all of mark's log, every request to
+Confluence and every compiled page included, where the command line's
+`--log-level` defaults to `info`. `mark.SetLogLevel` takes the names
+`--log-level` does:
+
+```go
+if err := mark.SetLogLevel("info"); err != nil {
+    return err
+}
+```
+
+The level is zerolog's global one, so it is the whole process's, the program's
+own zerolog logging included, and it applies to a logger in the context too:
+that logger logs nothing below its own level or the global one.
+`zerolog.SetGlobalLevel(zerolog.Disabled)` turns it all off. `trace` adds a
+dump of every request to Confluence, decided as each request is sent from the
+logger in its context, so the level reaches an API built before it was set.
+`WithContext` does not keep a disabled logger such as `zerolog.Nop()`, so a run
+is silenced with `zerolog.New(io.Discard)` instead. What a run reports, such as
+page URLs, goes to `Output`, not to the log.
+
+A program that calls mark's packages itself gives them the logger the same
+way. A function that logs and took no context has a `Context` form that takes
+one, and the form without logs to the global logger:
+
+* `includes.ProcessIncludesInContext`, for `ProcessIncludesIn`
+* `macro.ExtractMacrosInContext`, for `ExtractMacrosIn`
+* `metadata.AppendGeneratedHashContext`, for `AppendGeneratedHash`
+* `attachment.Resolver.ResolveContext`, for `Resolve`
+* `comments.MergeWithWarningsContext`, for `MergeWithWarnings`
+* `mermaid.NewEngineContext`, for `NewEngine`
+* `manifest.Store.OrphanEntriesContext`, for `OrphanEntries`
+
+`transformer.IncludeTransformer`, `transformer.MacroTransformer` and
+`metadata.ExtractOptions` take theirs in a `Context` field.
+
+A warning added to a nil `report.Warnings` still goes to the global logger.
+d2 diagrams log through d2's own logger and headless Chrome's errors through
+the standard library's `log`, so neither follows zerolog at all.
 
 ## Errors
 

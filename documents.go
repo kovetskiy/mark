@@ -17,10 +17,10 @@ import (
 
 	"github.com/kovetskiy/mark/v17/attachment"
 	"github.com/kovetskiy/mark/v17/confluence"
+	"github.com/kovetskiy/mark/v17/internal/logctx"
 	"github.com/kovetskiy/mark/v17/manifest"
 	"github.com/kovetskiy/mark/v17/page"
 	"github.com/kovetskiy/mark/v17/report"
-	"github.com/rs/zerolog/log"
 )
 
 // Document is a document to publish that is not read from a file: Markdown a
@@ -262,7 +262,7 @@ func (r *runInputs) has(file string) bool {
 // checkDocuments refuses what Documents and DocumentScope cannot be given:
 // settings that would do nothing while seeming to, before anything is
 // published.
-func (c Config) checkDocuments() error {
+func (c Config) checkDocuments(ctx context.Context) error {
 	for _, doc := range c.Documents {
 		if err := c.Rendering.checkDocumentRoot(doc); err != nil {
 			return err
@@ -297,7 +297,7 @@ func (c Config) checkDocuments() error {
 				return errors.New(msg)
 			}
 
-			log.Warn().Msg(msg)
+			logctx.From(ctx).Warn().Msg(msg)
 		}
 	}
 
@@ -311,7 +311,7 @@ func (c Config) checkDocuments() error {
 	}
 
 	if c.Tracking.Partial && c.DocumentScope == "" && !c.namesFiles() {
-		log.Warn().Msg("Tracking.Partial does nothing for Documents without a DocumentScope: " +
+		logctx.From(ctx).Warn().Msg("Tracking.Partial does nothing for Documents without a DocumentScope: " +
 			"they take part in no orphan handling and no renames, partial or not")
 	}
 
@@ -470,7 +470,7 @@ func (c Config) namesFiles() bool {
 // to know which run it belonged to, and such documents belong to none, so it
 // would have nothing to act on while saying it had looked. A pattern let
 // through by CI matching nothing is only warned about, as that is.
-func (c Config) checkUnscopedOrphans(onOrphan report.OnOrphan, files []string) error {
+func (c Config) checkUnscopedOrphans(ctx context.Context, onOrphan report.OnOrphan, files []string) error {
 	if onOrphan == report.OnOrphanReport || len(files) > 0 ||
 		len(c.Documents) == 0 || c.DocumentScope != "" {
 		return nil
@@ -482,7 +482,7 @@ func (c Config) checkUnscopedOrphans(onOrphan report.OnOrphan, files []string) e
 		onOrphan,
 	)
 	if c.namesFiles() {
-		log.Warn().Msg(msg)
+		logctx.From(ctx).Warn().Msg(msg)
 
 		return nil
 	}

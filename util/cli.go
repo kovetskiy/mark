@@ -359,13 +359,14 @@ func RunPublish(ctx context.Context, cmd *cli.Command) (err error) {
 	config := mark.Config{
 		PublishConfig: mark.PublishConfig{
 			Page: mark.PageConfig{
-				PageID:                   creds.PageID,
-				Space:                    cmd.String("space"),
-				Parents:                  parents,
-				TitleFromH1:              titleFromH1,
-				TitleFromFilename:        titleFromFilename,
-				TitleAppendGeneratedHash: cmd.Bool("title-append-generated-hash"),
-				ContentAppearance:        metadata.Appearance(cmd.String("content-appearance")),
+				PageID:                         creds.PageID,
+				Space:                          cmd.String("space"),
+				Parents:                        parents,
+				TitleFromH1:                    titleFromH1,
+				TitleFromFilename:              titleFromFilename,
+				TitleAppendGeneratedHash:       cmd.Bool("title-append-generated-hash"),
+				FolderTitleAppendGeneratedHash: cmd.Bool("folder-title-append-generated-hash"),
+				ContentAppearance:              metadata.Appearance(cmd.String("content-appearance")),
 			},
 			Mode: mark.ModeConfig{
 				CompileOnly: cmd.Bool("compile-only"),
@@ -624,28 +625,14 @@ func ConfigFilePath() string {
 }
 
 func SetLogLevel(cmd *cli.Command) error {
-	logLevel := cmd.String("log-level")
-	switch strings.ToUpper(logLevel) {
-	case "TRACE":
-		zerolog.SetGlobalLevel(zerolog.TraceLevel)
-	case "DEBUG":
-		zerolog.SetGlobalLevel(zerolog.DebugLevel)
-	case "INFO":
-		zerolog.SetGlobalLevel(zerolog.InfoLevel)
-	case "WARNING":
-		zerolog.SetGlobalLevel(zerolog.WarnLevel)
-	case "ERROR":
-		zerolog.SetGlobalLevel(zerolog.ErrorLevel)
-	case "FATAL":
-		zerolog.SetGlobalLevel(zerolog.FatalLevel)
-	default:
-		return fmt.Errorf("unknown log level: %s", logLevel)
-	}
-
-	return nil
+	return mark.SetLogLevel(cmd.String("log-level"))
 }
 
-// splitParents reads the --parents value, dropping empty fields.
+// splitParents reads the --parents value, trimming each field as a Parent
+// header is trimmed and dropping the empty ones.
+//
+// "Parent / Sub" names the pages "Parent" and "Sub": kept as written, the
+// spaces became part of the titles mark looks up, creates and hashes.
 //
 // A delimiter is a separator, not a parent. "/A/B" split to ["", "A", "B"] and
 // the guard downstream checks only element zero, so a leading delimiter
@@ -657,7 +644,7 @@ func splitParents(value, delimiter string) []string {
 	var parents []string
 
 	for _, parent := range strings.Split(value, delimiter) {
-		if parent != "" {
+		if parent = strings.TrimSpace(parent); parent != "" {
 			parents = append(parents, parent)
 		}
 	}

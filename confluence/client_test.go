@@ -1004,7 +1004,7 @@ func TestClientDoesNotTraceAnEmptyAnswerAsUnread(t *testing.T) {
 		zerolog.SetGlobalLevel(zerolog.TraceLevel)
 
 		c, _ := clientServer(t, "/rest/api", "user", "token", status, "application/json", "")
-		c.trace = &tracer{"rest:"}
+		c.trace = "rest:"
 
 		_, err := c.do(context.Background(), nil, http.MethodDelete, []string{"content", "1"}, nil, nil, &struct{}{})
 

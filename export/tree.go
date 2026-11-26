@@ -13,7 +13,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/kovetskiy/mark/v17/confluence"
-	"github.com/rs/zerolog/log"
+	"github.com/kovetskiy/mark/v17/internal/logctx"
 )
 
 // TreeDocument is the name of the file each page of a tree is written to,
@@ -257,7 +257,7 @@ func planSpace(ctx context.Context, api *confluence.API, l layout, space, dir st
 	switch {
 	case errors.Is(err, confluence.ErrNoHomePage):
 		home = nil
-		log.Warn().Msgf("space %s has no home page: its top-level pages are exported beside each other", space)
+		logctx.From(ctx).Warn().Msgf("space %s has no home page: its top-level pages are exported beside each other", space)
 	case err != nil:
 		return nil, fmt.Errorf("unable to find the home page of space %s: %w", space, err)
 	}
@@ -283,7 +283,7 @@ func planSpace(ctx context.Context, api *confluence.API, l layout, space, dir st
 			if root.ID == home.ID {
 				continue
 			}
-			log.Warn().Msgf(
+			logctx.From(ctx).Warn().Msgf(
 				"%q (%s) is at the top of space %s rather than beneath its home page: published back, it goes beneath the home page",
 				root.Title, root.ID, space,
 			)
@@ -401,7 +401,7 @@ func children(ctx context.Context, api *confluence.API, page confluence.Child) (
 				child.Title, child.ID, page.Title, page.ID,
 			)
 		default:
-			log.Warn().Msgf("skipping %s %q (%s): only pages are exported", child.Type, child.Title, child.ID)
+			logctx.From(ctx).Warn().Msgf("skipping %s %q (%s): only pages are exported", child.Type, child.Title, child.ID)
 		}
 	}
 

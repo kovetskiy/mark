@@ -184,6 +184,51 @@ func TestUpdatePageIncrementsVersion(t *testing.T) {
 	assert.Equal(t, "<p>new</p>", after.Body)
 }
 
+// TestUpdatePageFreesTheTitleThePageHad: a lookup of the old title found the
+// page, and after the page is retitled that title names none.
+func TestUpdatePageFreesTheTitleThePageHad(t *testing.T) {
+	api, server := newAPI(t)
+	server.AddPage("DOCS", "Before", "page", "")
+
+	page, err := api.FindPage(context.Background(), "DOCS", "Before", "page")
+	require.NoError(t, err)
+	require.NotNil(t, page)
+
+	page.Title = "After"
+	require.NoError(t, api.UpdatePage(context.Background(), page, "<p>new</p>", confluence.UpdateOptions{}))
+
+	old, err := api.FindPage(context.Background(), "DOCS", "before", "page")
+	require.NoError(t, err)
+	assert.Nil(t, old, "the title the page had is free")
+
+	renamed, err := api.FindPage(context.Background(), "DOCS", "After", "page")
+	require.NoError(t, err)
+	require.NotNil(t, renamed)
+	assert.Equal(t, page.ID, renamed.ID)
+}
+
+// TestUpdatePageForgetsTheTitleItsChildrenWereFoundUnder: a page found
+// before its parent was retitled names the parent's old title among its
+// ancestors, and is looked up again.
+func TestUpdatePageForgetsTheTitleItsChildrenWereFoundUnder(t *testing.T) {
+	api, server := newAPI(t)
+	parent := server.AddPage("DOCS", "Before", "page", "")
+	server.AddPage("DOCS", "Child", "page", parent.ID)
+
+	child, err := api.FindPage(context.Background(), "DOCS", "Child", "page")
+	require.NoError(t, err)
+	require.Equal(t, "Before", child.Ancestors[len(child.Ancestors)-1].Title)
+
+	page, err := api.FindPage(context.Background(), "DOCS", "Before", "page")
+	require.NoError(t, err)
+	page.Title = "After"
+	require.NoError(t, api.UpdatePage(context.Background(), page, "<p>new</p>", confluence.UpdateOptions{}))
+
+	child, err = api.FindPage(context.Background(), "DOCS", "Child", "page")
+	require.NoError(t, err)
+	assert.Equal(t, "After", child.Ancestors[len(child.Ancestors)-1].Title)
+}
+
 // TestUpdatePageWritesBothAppearanceProperties pins that the page width is
 // written to the draft property as well as the published one. Published alone
 // leaves the two disagreeing, and the editor takes the draft value, so the

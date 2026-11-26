@@ -13,6 +13,7 @@ import (
 
 	"github.com/kovetskiy/mark/v17/attachment"
 	"github.com/kovetskiy/mark/v17/includes"
+	"github.com/kovetskiy/mark/v17/internal/logctx"
 	"github.com/kovetskiy/mark/v17/internal/syntax"
 	"github.com/kovetskiy/mark/v17/macro"
 	cparser "github.com/kovetskiy/mark/v17/parser"
@@ -20,7 +21,6 @@ import (
 	"github.com/kovetskiy/mark/v17/report"
 	"github.com/kovetskiy/mark/v17/stdlib"
 	ctransformer "github.com/kovetskiy/mark/v17/transformer"
-	"github.com/rs/zerolog/log"
 	"github.com/yuin/goldmark/v2/ast"
 	"github.com/yuin/goldmark/v2/extension"
 	"github.com/yuin/goldmark/v2/parser"
@@ -50,8 +50,8 @@ type markdownExtension interface {
 // compileMarkdownWithExtension builds the goldmark converter around ext and
 // renders markdown with it, returning the page and the tree it was rendered
 // from.
-func compileMarkdownWithExtension(markdown []byte, ext markdownExtension, logMessage string) (string, ast.Node, error) {
-	log.Trace().Msgf(logMessage, string(markdown))
+func compileMarkdownWithExtension(ctx context.Context, markdown []byte, ext markdownExtension, logMessage string) (string, ast.Node, error) {
+	logctx.From(ctx).Trace().Msgf(logMessage, string(markdown))
 
 	p := parser.New(append(
 		[]parser.Option{
@@ -100,7 +100,7 @@ func compileMarkdownWithExtension(markdown []byte, ext markdownExtension, logMes
 	}
 
 	html := buf.Bytes()
-	log.Trace().Msgf("rendered markdown to html:\n%s", string(html))
+	logctx.From(ctx).Trace().Msgf("rendered markdown to html:\n%s", string(html))
 
 	return string(html), doc, nil
 }
@@ -156,6 +156,7 @@ const maxIncludePasses = 10
 // Draining them here means the AST never sees a directive, which is what
 // invariant 3 in AGENTS.md says should be true.
 func expandDirectives(
+	ctx context.Context,
 	path string,
 	opts Options,
 	markdown []byte,
@@ -170,14 +171,14 @@ func expandDirectives(
 
 		var err error
 
-		tmpl, markdown, err = expandIncludes(path, opts, markdown, tmpl)
+		tmpl, markdown, err = expandIncludes(ctx, path, opts, markdown, tmpl)
 		if err != nil {
 			return nil, nil, nil, err
 		}
 
 		var macros []macro.Macro
 
-		macros, markdown, err = macro.ExtractMacrosIn(opts.Root, filepath.Dir(path), opts.IncludePath, markdown, tmpl)
+		macros, markdown, err = macro.ExtractMacrosInContext(ctx, opts.Root, filepath.Dir(path), opts.IncludePath, markdown, tmpl)
 		if err != nil {
 			return nil, nil, nil, fmt.Errorf("unable to extract macros: %w", err)
 		}
@@ -365,6 +366,7 @@ func attachMacroFiles(path string, opts Options, names []string) ([]attachment.A
 // expandIncludes runs include expansion over the document until it settles,
 // which has to happen before goldmark ever sees the bytes.
 func expandIncludes(
+	ctx context.Context,
 	path string,
 	opts Options,
 	markdown []byte,
@@ -374,7 +376,8 @@ func expandIncludes(
 		var recurse bool
 		var err error
 
-		tmpl, markdown, recurse, err = includes.ProcessIncludesIn(
+		tmpl, markdown, recurse, err = includes.ProcessIncludesInContext(
+			ctx,
 			opts.Root,
 			filepath.Dir(path),
 			opts.IncludePath,
@@ -415,7 +418,7 @@ func CompileMarkdown(ctx context.Context, markdown []byte, stdlib *stdlib.Lib, p
 	// keep drawing on the stdlib itself.
 	written := markdown
 
-	_, markdown, macroFiles, err := expandDirectives(path, opts, markdown, tmpl)
+	_, markdown, macroFiles, err := expandDirectives(ctx, path, opts, markdown, tmpl)
 	if err != nil {
 		return "", nil, err
 	}
@@ -426,7 +429,7 @@ func CompileMarkdown(ctx context.Context, markdown []byte, stdlib *stdlib.Lib, p
 	}
 
 	ghAlertsExtension := newConfluenceExtension(ctx, stdlib, path, opts, tmpl)
-	htmlOutput, doc, err := compileMarkdownWithExtension(markdown, ghAlertsExtension, "rendering markdown with GitHub Alerts support:\n%s")
+	htmlOutput, doc, err := compileMarkdownWithExtension(ctx, markdown, ghAlertsExtension, "rendering markdown with GitHub Alerts support:\n%s")
 	// A transformer cannot return an error from Transform, so each one that can
 	// fail keeps its failure for collection here.
 	if err == nil && ghAlertsExtension.Pipeline != nil && ghAlertsExtension.Pipeline.GetError() != nil {
@@ -451,8 +454,9 @@ func CompileMarkdown(ctx context.Context, markdown []byte, stdlib *stdlib.Lib, p
 
 // includeTransformer is the AST include transformer for the document at
 // path, reporting to its warnings.
-func includeTransformer(path string, opts Options, tmpl *template.Template) *ctransformer.IncludeTransformer {
+func includeTransformer(ctx context.Context, path string, opts Options, tmpl *template.Template) *ctransformer.IncludeTransformer {
 	t := ctransformer.NewIncludeTransformer(path, filepath.Dir(path), opts.IncludePath, tmpl)
+	t.Context = ctx
 	t.Warnings = opts.Warnings
 	t.Root = opts.Root
 
@@ -460,8 +464,9 @@ func includeTransformer(path string, opts Options, tmpl *template.Template) *ctr
 }
 
 // macroTransformer is the AST macro transformer for the document at path.
-func macroTransformer(path string, opts Options, tmpl *template.Template) *ctransformer.MacroTransformer {
+func macroTransformer(ctx context.Context, path string, opts Options, tmpl *template.Template) *ctransformer.MacroTransformer {
 	t := ctransformer.NewMacroTransformer(path, filepath.Dir(path), opts.IncludePath, tmpl)
+	t.Context = ctx
 	t.Root = opts.Root
 
 	return t
@@ -543,8 +548,8 @@ func newConfluenceExtension(ctx context.Context, stdlib *stdlib.Lib, path string
 		// made every relative Template: resolve under "doc.md/", which no
 		// filesystem has, so the AST macro and include transformers only ever
 		// worked when --include-path happened to cover the file.
-		macroTransformer(path, opts, tmpl),
-		includeTransformer(path, opts, tmpl),
+		macroTransformer(ctx, path, opts, tmpl),
+		includeTransformer(ctx, path, opts, tmpl),
 	)
 	return &ConfluenceExtension{
 		ctx:             ctx,

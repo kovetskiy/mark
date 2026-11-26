@@ -85,9 +85,16 @@ type Options struct {
 	// be indented into the item too. Without it, such indentation is left
 	// out wherever it would be read so.
 	Ragged bool
+
+	// Collapsed lets an admonition be opened with '???' or '???+', its
+	// title hold a quoted word, and a run of '?' be written wherever one of
+	// '!' may be. Each of these is a choice of its own, so the same choices
+	// write other documents with it than without it.
+	Collapsed bool
 }
 
-// All is every option set.
+// All is every option set but Collapsed, so that the documents a seed wrote
+// before it was added are the ones it writes now.
 func All() Options {
 	return Options{
 		Bodiless: true, Unindented: true, Runless: true, Runs: true, Literal: true, Unclosed: true, DivRuns: true,
@@ -259,13 +266,24 @@ func (g *generator) pick(choices ...string) string {
 }
 
 // closing writes a line of a run. One that closes nothing is a paragraph.
-func (g *generator) closing(p *place, length int) {
-	g.line(p, g.run(length))
+func (g *generator) closing(p *place, marker byte, length int) {
+	g.line(p, g.run(marker, length))
 	g.text = p
 }
 
-func (g *generator) run(length int) string {
-	return strings.Repeat("!", length)
+func (g *generator) run(marker byte, length int) string {
+	return strings.Repeat(string(marker), length)
+}
+
+// anyMarker returns the character of a run that belongs to no admonition in
+// particular: '!', or with Collapsed either. Without Collapsed it makes no
+// choice, so that a document is the one the same choices wrote before.
+func (g *generator) anyMarker() byte {
+	if g.o.Collapsed && g.r.Intn(2) == 0 {
+		return '?'
+	}
+
+	return '!'
 }
 
 func (g *generator) blocks(p *place, count int) {
@@ -295,7 +313,7 @@ func (g *generator) block(p *place) {
 	case k == 12:
 		g.line(p, g.pick("# ", "## ")+g.word())
 	case k == 13 && g.o.Runs:
-		g.closing(p, 3+g.r.Intn(2))
+		g.closing(p, g.anyMarker(), 3+g.r.Intn(2))
 	default:
 		g.paragraph(p)
 	}
@@ -377,10 +395,28 @@ func (g *generator) admonition(p *place) {
 
 	length := 3 + g.pickInt(0, 0, 0, 1, 2)
 
-	opening := g.run(length) + " " + g.pick("note", "tip", "warning", "custom", "a")
+	marker := byte('!')
+	if g.o.Collapsed && g.r.Intn(2) == 0 {
+		marker = '?'
+	}
+
+	opening := g.run(marker, length)
+	if marker == '?' && g.r.Intn(2) == 0 {
+		opening += "+"
+	}
+
+	opening += " " + g.pick("note", "tip", "warning", "custom", "a")
 	if g.r.Intn(3) != 0 {
 		g.words++
-		opening += ` "t` + strconv.Itoa(g.words) + `"`
+		title := "t" + strconv.Itoa(g.words)
+
+		// A title runs to the last quote on its line, so it may hold quotes.
+		if g.o.Collapsed && g.r.Intn(4) == 0 {
+			g.words++
+			title += ` "t` + strconv.Itoa(g.words) + `"`
+		}
+
+		opening += ` "` + title + `"`
 	}
 
 	g.line(level, opening)
@@ -398,7 +434,7 @@ func (g *generator) admonition(p *place) {
 	if kind == 0 {
 		// No body: at most a closing run straight after.
 		if g.o.Runs && g.r.Intn(4) == 0 {
-			g.closing(level, length)
+			g.closing(level, marker, length)
 		}
 
 		return
@@ -421,9 +457,9 @@ func (g *generator) admonition(p *place) {
 				g.line(level, "## "+g.word())
 			}
 
-			g.closing(level, length+g.pickInt(0, 0, 1))
+			g.closing(level, marker, length+g.pickInt(0, 0, 1))
 		case g.r.Intn(4) != 0:
-			g.closing(level, max(3, length+g.pickInt(0, 0, 0, 1, -1)))
+			g.closing(level, marker, max(3, length+g.pickInt(0, 0, 0, 1, -1)))
 		}
 
 		return
@@ -435,7 +471,7 @@ func (g *generator) admonition(p *place) {
 	level.indentNoFurther()
 
 	if g.o.Runs && g.r.Intn(3) == 0 {
-		g.closing(level, max(3, length+g.pickInt(0, 0, 0, 1, -1)))
+		g.closing(level, marker, max(3, length+g.pickInt(0, 0, 0, 1, -1)))
 	}
 }
 
@@ -502,9 +538,9 @@ func (g *generator) literalLine(p *place, indent string, runs bool, others ...st
 
 	switch {
 	case k == 0 && runs:
-		g.line(p, indent+g.run(3+g.r.Intn(3)))
+		g.line(p, indent+g.run(g.anyMarker(), 3+g.r.Intn(3)))
 	case k == 1:
-		g.line(p, indent+g.run(3)+" note")
+		g.line(p, indent+g.run(g.anyMarker(), 3)+" note")
 	default:
 		g.line(p, indent+g.word())
 	}
@@ -548,7 +584,7 @@ func (g *generator) html(p *place) {
 		g.line(p, indent+block[1])
 
 		if g.o.Runs && g.r.Intn(4) == 0 {
-			g.closing(p, 3)
+			g.closing(p, g.anyMarker(), 3)
 		}
 
 		g.blank(p)
