@@ -790,16 +790,20 @@ func (api *API) getAttachmentsV2(ctx context.Context, pageID string) ([]Attachme
 	return attachments, nil
 }
 
+// labelV2 is a v2 label whose id can be encoded as a JSON number or string.
+type labelV2 struct {
+	ID     json.Number `json:"id"`
+	Name   string      `json:"name"`
+	Prefix string      `json:"prefix"`
+}
+
+// labelPageSize controls the requested number of labels per v2 response.
+const labelPageSize = 250
+
 // getPageLabelsV2 is GetPageLabels against v2, which hands the label id over as
 // a number where v1 makes it a string.
 func (api *API) getPageLabelsV2(ctx context.Context, page *PageInfo, prefix string) (*LabelInfo, error) {
-	type labelV2 struct {
-		ID     json.Number `json:"id"`
-		Name   string      `json:"name"`
-		Prefix string      `json:"prefix"`
-	}
-
-	query := url.Values{"limit": {"250"}}
+	query := url.Values{"limit": {strconv.Itoa(labelPageSize)}}
 	if prefix != "" {
 		query.Set("prefix", prefix)
 	}

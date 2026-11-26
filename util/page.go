@@ -9,7 +9,6 @@ import (
 	"strings"
 
 	"github.com/kovetskiy/mark/v17/confluence"
-	"github.com/kovetskiy/mark/v17/export"
 	"github.com/kovetskiy/mark/v17/page"
 	"github.com/urfave/cli/v3"
 )
@@ -248,7 +247,7 @@ func (line *commandLine) pageAction(args int, check func(*cli.Command) error, ru
 // title made only of digits is read as an id, and is named by URL instead.
 func parsePageRef(value, space string) (page.Ref, string, error) {
 	if strings.Contains(value, "://") {
-		ref, err := export.ParsePageURL(value)
+		ref, err := confluence.ParsePageURL(value)
 		if err != nil {
 			return page.Ref{}, "", err
 		}
