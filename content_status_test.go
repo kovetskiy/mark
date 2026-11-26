@@ -193,6 +193,23 @@ func TestPublishContentStatusWhenFingerprintCannotBeSaved(t *testing.T) {
 	assert.Equal(t, start.Version+1, page.Version)
 }
 
+func TestPublishContentStatusWithoutReadingBody(t *testing.T) {
+	server, _ := docsSpace(t)
+	server.SetFail(func(r *http.Request) (int, string, bool) {
+		if r.Method == http.MethodGet && r.URL.Query().Get("expand") == "version,body.storage" {
+			return http.StatusForbidden, `{"message":"page body cannot be read"}`, true
+		}
+		return 0, "", false
+	})
+	file := writeFile(t, t.TempDir(), "guide.md", "<!-- Space: DOCS -->\n<!-- Title: Guide -->\n<!-- Content-Status: Ready for review -->\n\nBody.\n")
+	config := changesOnlyConfig(server, file)
+	config.Update.ChangesOnly = false
+
+	require.NoError(t, Run(t.Context(), config))
+	id := mustFind(t, server, "Guide")
+	assert.Equal(t, "Ready for review", server.Page(id).ContentStatus)
+}
+
 func TestContentStatusIsCloudOnly(t *testing.T) {
 	server, _ := docsSpace(t)
 	server.SetCurrentUser(confluencetest.User{Username: "current", UserKey: "key-current"})

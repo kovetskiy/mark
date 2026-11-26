@@ -107,19 +107,14 @@ func (api *API) GetPersonalContentStatuses(ctx context.Context) ([]ContentStatus
 
 // GetPageContentStatus reads the assigned Cloud page status as a singleton or empty list.
 func (api *API) GetPageContentStatus(ctx context.Context, pageID string) ([]ContentStatus, error) {
-	type stateResponse struct {
-		ContentState *ContentStatus `json:"contentState"`
-	}
-
-	state, err := get[stateResponse](ctx, api.v1, []string{"content", pageID, "state"}, nil)
+	status, err := api.ReadPageContentStatus(ctx, pageID)
 	if err != nil {
-		return nil, requestError("read page status (Confluence Cloud endpoint)", err)
+		return nil, err
 	}
 
-	statuses := []ContentStatus{}
-	if state.ContentState != nil {
-		statuses = append(statuses, *state.ContentState)
+	if status == nil {
+		return []ContentStatus{}, nil
 	}
 
-	return statuses, nil
+	return []ContentStatus{*status}, nil
 }

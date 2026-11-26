@@ -103,7 +103,11 @@ func (r *publishRun) syncContentStatus(ctx context.Context, target *confluence.P
 		return false, nil
 	}
 
-	snapshot, err := r.api.GetPageByIDExpanded(ctx, target.ID, "version,body.storage")
+	expand := "version"
+	if hash != "" {
+		expand = "version,body.storage"
+	}
+	snapshot, err := r.api.GetPageByIDExpanded(ctx, target.ID, expand)
 	if err != nil {
 		return false, err
 	}

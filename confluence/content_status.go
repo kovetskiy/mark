@@ -10,12 +10,12 @@ import (
 
 // ReadPageContentStatus reads the status assigned to a published page or blog post.
 func (api *API) ReadPageContentStatus(ctx context.Context, pageID string) (*ContentStatus, error) {
-	var result struct {
+	type stateResponse struct {
 		ContentState *ContentStatus `json:"contentState"`
 	}
-	_, err := api.v1.do(ctx, nil, http.MethodGet, []string{"content", pageID, "state"},
-		url.Values{"status": {"current"}}, nil, &result)
-	return result.ContentState, requestError("read content status of page "+pageID, err)
+
+	state, err := get[stateResponse](ctx, api.v1, []string{"content", pageID, "state"}, url.Values{"status": {"current"}})
+	return state.ContentState, requestError("read content status of page "+pageID, err)
 }
 
 // ResolvePageContentStatus finds a unique name among the destination page's
