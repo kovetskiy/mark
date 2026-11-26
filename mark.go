@@ -2992,11 +2992,7 @@ func (r *publishRun) previewBody(
 	}
 	others = append(others, settings...)
 
-	previousHash, err := r.previousContentHash(ctx, previewed)
-	if err != nil {
-		return "", "", "", err
-	}
-	status, reason, err = previewChange(ctx, html, previewed, previousHash, relinked, others, file, r.config, meta, r.std)
+	status, reason, err = r.previewChange(ctx, doc, html, previewed, relinked, others)
 	if err != nil {
 		return "", "", "", err
 	}

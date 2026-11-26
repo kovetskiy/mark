@@ -65,6 +65,35 @@ func TestPublishContentStatus(t *testing.T) {
 	assert.Equal(t, cleared.Body, server.Page(id).Body)
 }
 
+func TestDryRunSkipsStatusFingerprintWhenPageWouldUpdate(t *testing.T) {
+	const source = "<!-- Space: DOCS -->\n<!-- Title: Guide -->\n<!-- Content-Status: Ready for review -->\n\nBody.\n"
+	for _, tt := range []struct {
+		name     string
+		markdown string
+	}{
+		{name: "retitle", markdown: strings.Replace(source, "Title: Guide", "Title: Revised guide", 1)},
+		{name: "attachment link", markdown: strings.Replace(source, "\n\nBody.", "\n<!-- Attachment: notes.txt -->\n\n[Notes](notes.txt)", 1)},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			server, _ := docsSpace(t)
+			dir := t.TempDir()
+			file := writeFile(t, dir, "guide.md", source)
+			config := trackingConfig(server, file)
+			config.Update.ChangesOnly = true
+			require.NoError(t, Run(t.Context(), config))
+			id := mustFind(t, server, "Guide")
+
+			writeFile(t, dir, "notes.txt", "Notes.")
+			writeFile(t, dir, "guide.md", tt.markdown)
+			server.ResetRequests()
+
+			preview := decodeReport(t, []byte(previewOf(t, config, "json"))).Pages[0]
+			assert.Equal(t, report.StatusWouldUpdate, preview.Status)
+			assert.Zero(t, server.CountRequests(http.MethodGet, "/content/"+id+"/property/"+statusFingerprintProperty))
+		})
+	}
+}
+
 func TestBlogPostContentStatus(t *testing.T) {
 	for _, gateway := range []bool{false, true} {
 		name := "site"

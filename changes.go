@@ -15,7 +15,6 @@ import (
 	"github.com/kovetskiy/mark/v17/metadata"
 	"github.com/kovetskiy/mark/v17/page"
 	"github.com/kovetskiy/mark/v17/report"
-	"github.com/kovetskiy/mark/v17/stdlib"
 )
 
 // previewChange says whether a real run would change the page, using the same
@@ -24,18 +23,15 @@ import (
 // others are what a real run would do to the page besides writing its body --
 // moving it, say -- which it does whatever the body comparison finds, so any of
 // them makes the page one that would change. They come back as the reason.
-func previewChange(
+func (r *publishRun) previewChange(
 	ctx context.Context,
+	doc *document,
 	body string,
 	existing *confluence.PageInfo,
-	previousHash string,
 	relinked bool,
 	others []string,
-	file string,
-	config PublishConfig,
-	meta *metadata.Meta,
-	std *stdlib.Lib,
 ) (report.Status, string, error) {
+	meta, file := doc.meta, doc.file
 	if existing == nil {
 		logctx.From(ctx).Info().Msgf("%s: page would be created", file)
 
@@ -47,34 +43,41 @@ func previewChange(
 		layout, sidebar, appearance, emoji, title = meta.Layout, meta.Sidebar, string(meta.ContentAppearance), meta.Emoji, meta.Title
 	}
 
-	wrapped, err := wrapLayout(std, layout, sidebar, body)
+	wrapped, err := wrapLayout(r.std, layout, sidebar, body)
 	if err != nil {
 		return "", "", err
 	}
 
-	hash := fingerprint.Content(wrapped, fingerprint.Properties{
-		Appearance:        appearance,
-		DefaultAppearance: defaultAppearance(config.Page.ContentAppearance),
-		Emoji:             emoji,
-	})
 	retitled := meta != nil && existing.Title != title
 	reason := strings.Join(others, "; ")
 
 	switch {
 	case retitled:
 		logctx.From(ctx).Info().Msgf("%s: page %q would be retitled to %q", file, existing.Title, title)
+		return report.StatusWouldUpdate, reason, nil
 	case relinked:
 		logctx.From(ctx).Info().Msgf("%s: page %q would be updated, with an attachment it does not have yet", file, existing.Title)
-	case previousHash == hash:
-		if len(others) == 0 {
-			logctx.From(ctx).Info().Msgf("%s: page %q is already up to date", file, existing.Title)
+		return report.StatusWouldUpdate, reason, nil
+	}
 
-			return report.StatusUnchanged, "", nil
-		}
+	previousHash, err := r.previousContentHash(ctx, existing)
+	if err != nil {
+		return "", "", err
+	}
+	hash := fingerprint.Content(wrapped, fingerprint.Properties{
+		Appearance:        appearance,
+		DefaultAppearance: defaultAppearance(r.config.Page.ContentAppearance),
+		Emoji:             emoji,
+	})
 
-		logctx.From(ctx).Info().Msgf("%s: page %q has an unchanged body but %s", file, existing.Title, reason)
-	default:
+	switch {
+	case previousHash != hash:
 		logctx.From(ctx).Info().Msgf("%s: page %q would be updated", file, existing.Title)
+	case len(others) == 0:
+		logctx.From(ctx).Info().Msgf("%s: page %q is already up to date", file, existing.Title)
+		return report.StatusUnchanged, "", nil
+	default:
+		logctx.From(ctx).Info().Msgf("%s: page %q has an unchanged body but %s", file, existing.Title, reason)
 	}
 
 	return report.StatusWouldUpdate, reason, nil
