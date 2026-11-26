@@ -60,17 +60,18 @@ func (api *API) ListLabels(ctx context.Context, query LabelQuery) ([]Label, erro
 		path = []string{query.Collection, query.ID, "labels"}
 	}
 
-	found, err := listV2[labelV2](
+	labels := []Label{}
+	err := walkV2(
 		ctx, api, path, url.Values{"limit": {strconv.Itoa(labelPageSize)}},
 		"list labels (Confluence Cloud endpoint)", false,
+		func(label labelV2) bool {
+			labels = append(labels, Label{ID: label.ID.String(), Name: label.Name, Prefix: label.Prefix})
+
+			return false
+		},
 	)
 	if err != nil {
 		return nil, err
-	}
-
-	labels := make([]Label, 0, len(found))
-	for _, label := range found {
-		labels = append(labels, Label{ID: label.ID.String(), Name: label.Name, Prefix: label.Prefix})
 	}
 
 	return labels, nil

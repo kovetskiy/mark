@@ -204,12 +204,11 @@ func listV1[T any](
 	}
 }
 
-// listV2 collects every result of a cursor-paged v2 listing.
-// With notFoundEmpty, a 404 on the first page is read as an empty listing.
-func listV2[T any](ctx context.Context, api *API, path []string, query url.Values, describe string, notFoundEmpty bool) ([]T, error) {
+// listV2 collects every result of a cursor-paged v2 listing; see eachV2.
+func listV2[T any](ctx context.Context, api *API, path []string, query url.Values, describe string) ([]T, error) {
 	var all []T
 
-	err := walkV2(ctx, api, path, query, describe, notFoundEmpty, func(result T) bool {
+	err := eachV2(ctx, api, path, query, describe, func(result T) bool {
 		all = append(all, result)
 
 		return false
@@ -766,7 +765,7 @@ func (api *API) getAttachmentsV2(ctx context.Context, pageID string) ([]Attachme
 
 	found, err := listV2[attachmentV2](
 		ctx, api, []string{collection, pageID, "attachments"}, url.Values{"limit": {"250"}},
-		"list attachments of page "+pageID, true,
+		"list attachments of page "+pageID,
 	)
 	if err != nil {
 		return nil, err
@@ -810,7 +809,7 @@ func (api *API) getPageLabelsV2(ctx context.Context, page *PageInfo, prefix stri
 	}
 
 	found, err := listV2[labelV2](
-		ctx, api, []string{v2Collection(page.Type), page.ID, "labels"}, query, "read labels of page "+page.ID, true,
+		ctx, api, []string{v2Collection(page.Type), page.ID, "labels"}, query, "read labels of page "+page.ID,
 	)
 	if err != nil {
 		return nil, err
