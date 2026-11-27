@@ -180,6 +180,63 @@ func TestRestrictPageUpdatesTakesNoContent(t *testing.T) {
 	assert.True(t, restricted)
 }
 
+// TestRestrictPageUpdatesExperimentalFallback: Data Center 10.2 answers the
+// POST to /rest/api/content/{id}/restriction with 405, and the lock is then
+// added through the experimental endpoint, by username, without a body.
+func TestRestrictPageUpdatesExperimentalFallback(t *testing.T) {
+	for _, status := range []int{http.StatusMethodNotAllowed, http.StatusNotFound} {
+		t.Run(http.StatusText(status), func(t *testing.T) {
+			var experimental []*http.Request
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				switch {
+				case r.URL.Path == "/rest/api/user/current":
+					w.Header().Set("Content-Type", "application/json")
+					_, _ = w.Write([]byte(`{"username":"current","userKey":"key-1"}`))
+				case r.URL.Path == "/rest/api/content/1/restriction" && r.Method == http.MethodPost:
+					w.WriteHeader(status)
+				case r.URL.Path == "/rest/experimental/content/1/restriction/byOperation/update/user" &&
+					r.Method == http.MethodPut:
+					experimental = append(experimental, r)
+					w.WriteHeader(http.StatusOK)
+				default:
+					http.NotFound(w, r)
+				}
+			}))
+			t.Cleanup(server.Close)
+
+			// A Personal Access Token: no login, so the username is asked for.
+			api := confluence.NewAPI(server.URL, confluence.Options{Password: "token"})
+			require.NoError(t, api.RestrictPageUpdates(context.Background(), &confluence.PageInfo{ID: "1"}, ""))
+			require.Len(t, experimental, 1)
+			assert.Equal(t, "current", experimental[0].URL.Query().Get("userName"))
+			assert.Equal(t, "no-check", experimental[0].Header.Get("X-Atlassian-Token"))
+			assert.Equal(t, "Bearer token", experimental[0].Header.Get("Authorization"))
+		})
+	}
+}
+
+// TestRestrictPageUpdatesExperimentalFallbackFails: a Confluence that has
+// neither endpoint still reports itself as too old.
+func TestRestrictPageUpdatesExperimentalFallbackFails(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/rest/api/user/current":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"username":"current","userKey":"key-1"}`))
+		case "/rest/api/content/1/restriction":
+			w.WriteHeader(http.StatusMethodNotAllowed)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(server.Close)
+
+	api := confluence.NewAPI(server.URL, confluence.Options{Password: "token"})
+	err := api.RestrictPageUpdates(context.Background(), &confluence.PageInfo{ID: "1"}, "")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "too old")
+}
+
 // TestRestrictPageUpdatesServerCurrentUser: on Server and Data Center an empty
 // name restricts the page to the login api authenticates with, or, for a
 // Personal Access Token, to the username the current user has.

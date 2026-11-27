@@ -2358,7 +2358,47 @@ func (api *API) RestrictPageUpdates(
 
 	_, err = retryUnavailable(ctx, api, "restrict updates of page "+page.ID, restrict, locked)
 
+	if status := statusOf(err); !cloud && (status == http.StatusNotFound || status == http.StatusMethodNotAllowed) {
+		logctx.From(ctx).Debug().Err(err).Msgf(
+			"restricting updates of page %s was refused; trying the experimental endpoint", page.ID,
+		)
+		err = api.restrictUpdatesExperimental(ctx, page.ID, id)
+	}
+
 	return api.restrictionError(ctx, "restrict updates of page "+page.ID, err)
+}
+
+// restrictUpdatesExperimental adds username to the users who may update the
+// page through PUT /rest/experimental/content/{id}/restriction/byOperation/
+// update/user, which Data Center (10.2 at least) still answers where it
+// refuses the POST to /rest/api/content/{id}/restriction with a 405. It adds
+// the one user and leaves every other restriction, read included, as it is,
+// which the replacing PUT of /rest/api cannot: that one has to be given every
+// restriction there is.
+func (api *API) restrictUpdatesExperimental(ctx context.Context, pageID, username string) error {
+	restrict := func() (struct{}, error) {
+		var answer any
+		_, err := api.site.do(
+			ctx,
+			// No body, so no Content-Type: the token is what lets the PUT past
+			// Confluence's XSRF check regardless.
+			http.Header{"X-Atlassian-Token": {"no-check"}},
+			http.MethodPut,
+			[]string{"rest", "experimental", "content", pageID, "restriction", "byOperation", "update", "user"},
+			url.Values{"userName": {username}},
+			nil,
+			&answer,
+		)
+		// Adding a user who may update already changes nothing.
+		return struct{}{}, markRepeatable(err)
+	}
+	locked := func() (struct{}, bool, error) {
+		return struct{}{}, api.updatesRestrictedTo(ctx, pageID, username), nil
+	}
+
+	_, err := retryUnavailable(ctx, api, "restrict updates of page "+pageID, restrict, locked)
+
+	return err
 }
 
 // CreateFolder creates a folder called title through the v2 API, under
